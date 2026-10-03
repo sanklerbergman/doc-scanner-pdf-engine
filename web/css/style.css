@@ -247,6 +247,7 @@ select:disabled, input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed
 .donate-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 8px; }
 
 .site-footer { margin-top: 40px; padding: 24px 0 40px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.92rem; }
+.site-footer .version { margin-top: 6px; font-size: 0.85rem; }
 
 /* Câmera da página: tela cheia, sempre escura (independe do tema). */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

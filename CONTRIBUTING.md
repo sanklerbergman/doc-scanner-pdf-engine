@@ -20,6 +20,7 @@ npm test    # testes
 - Mantenha o estilo do código existente (ES modules, sem build).
 - Teste no celular (ou no modo responsivo do navegador) quando mexer na interface.
 - Mudou arquivo do app? Aumente a versão de `CACHE` em `web/sw.js`.
+- Nova release: a versão fica em `package.json` e no rodapé do `web/index.html` (o teste confere que batem); depois `gh release create vX.Y.Z --generate-notes`.
 - Regras de segurança (bibliotecas, política da página, workflow): veja [SECURITY.md](SECURITY.md).
 
 ## Ideias de próximos passos

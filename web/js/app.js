@@ -616,6 +616,7 @@ function drawQr(canvas, qr) {
 }
 
 for (const link of document.querySelectorAll('[data-repo-link]')) link.href = CONFIG.repoUrl;
+for (const link of document.querySelectorAll('[data-release-link]')) link.href = `${CONFIG.repoUrl}/releases/tag/v${link.textContent}`;
 
 // ---------- Offline ----------
 // O service worker só guarda os arquivos do próprio app (HTML/CSS/JS) para funcionar sem internet.
