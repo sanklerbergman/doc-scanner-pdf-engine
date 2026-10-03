@@ -104,6 +104,10 @@
             <option value="high">Alta (arquivo maior)</option>
           </select>
         </label>
+        <p id="quality-tip" class="tip field-wide" hidden>
+          <span><strong>Página comprida ou com letra miúda:</strong> na qualidade Alta o texto pequeno sai mais nítido (o arquivo fica maior).</span>
+          <button id="quality-tip-apply" type="button" class="btn">Usar qualidade Alta</button>
+        </p>
         <label class="field field-wide">
           <span>Nome do arquivo</span>
           <input id="file-name" type="text" value="documento" maxlength="80" autocomplete="off" spellcheck="false">
@@ -175,6 +179,7 @@
   <dialog id="camera" class="camera" aria-labelledby="camera-title">
     <h2 id="camera-title" class="sr-only">Câmera</h2>
     <video id="camera-video" class="camera-video" playsinline muted autoplay></video>
+    <p id="camera-warning" class="camera-warning" role="status" hidden></p>
     <p id="camera-message" class="camera-message" role="status"></p>
     <div class="camera-bar">
       <button id="camera-torch" type="button" class="camera-btn" aria-pressed="false" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-bolt"/></svg> Luz</button>

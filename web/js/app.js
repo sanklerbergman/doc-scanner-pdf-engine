@@ -1,6 +1,7 @@
 import { buildPdf, layoutPage } from './pdf.js';
 import { FILTERS, decodeFile, detectQuad, renderPage, renderPageAsync, canvasToBlob } from './imaging.js';
 import { setupViewer } from './viewer.js';
+import { quadSize } from './geometry.js';
 import { setupCamera } from './camera.js';
 import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
@@ -40,11 +41,13 @@ const els = {
   status: $('#status'),
   undo: $('#undo'),
   pasteKey: $('#paste-key'),
+  qualityTip: $('#quality-tip'),
+  qualityTipApply: $('#quality-tip-apply'),
 };
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
 const lockedWhileBusy = [
-  'filterAll', 'pageSize', 'margin', 'quality', 'fileName', 'clear', 'pickFiles', 'takePhoto', 'undo',
+  'filterAll', 'pageSize', 'margin', 'quality', 'fileName', 'clear', 'pickFiles', 'takePhoto', 'undo', 'qualityTipApply',
 ].map((key) => els[key]);
 
 const state = { pages: [], busy: false, pdf: null };
@@ -99,9 +102,10 @@ async function addFiles(fileList) {
   for (const file of files) {
     announce(`Lendo ${file.name}…`);
     try {
-      const preview = await makePreview(file);
-      // quad: recorte do papel (4 cantos, de 0 a 1, na foto sem girar) ou null para usar a foto inteira.
-      const page = { id: nextId++, file, preview, quad: detectQuad(preview, preview.width, preview.height), rotation: 0, filter: els.filterAll.value, thumbUrl: '' };
+      const { preview, width, height } = await makePreview(file);
+      // width/height: tamanho da foto original. quad: recorte do papel (4 cantos, de 0 a 1, na foto sem girar)
+      // ou null para usar a foto inteira.
+      const page = { id: nextId++, file, preview, width, height, quad: detectQuad(preview, preview.width, preview.height), rotation: 0, filter: els.filterAll.value, thumbUrl: '' };
       if (page.quad) cropped++;
       await refreshThumb(page);
       state.pages.push(page);
@@ -122,7 +126,8 @@ async function addFiles(fileList) {
 async function makePreview(file) {
   const image = await decodeFile(file);
   try {
-    return renderPage(image.source, image.width, image.height, { maxSide: PREVIEW_SIDE });
+    const preview = renderPage(image.source, image.width, image.height, { maxSide: PREVIEW_SIDE });
+    return { preview, width: image.width, height: image.height };
   } finally {
     image.release();
   }
@@ -142,7 +147,37 @@ async function refreshThumb(page) {
 const filterOptions = (selected) =>
   Object.entries(FILTERS).map(([value, label]) => el('option', { value, textContent: label, selected: value === selected }));
 
+// ---------- Recomendação de qualidade ----------
+// A qualidade limita o lado MAIOR da página. Numa página comprida (conta, cupom, extrato) sobra pouca
+// largura e o texto miúdo perde definição. Quando a foto tem resolução para mais, sugere a qualidade Alta.
+
+const NARROW_SIDE = 1000; // lado menor, em pixels, abaixo do qual texto pequeno começa a sofrer
+
+function wouldGainFromHigh(page) {
+  const size = page.quad
+    ? quadSize(page.quad.map(([x, y]) => [x * page.width, y * page.height]))
+    : { width: page.width, height: page.height };
+  const long = Math.max(size.width, size.height);
+  const short = Math.min(size.width, size.height);
+  const scale = Math.min(1, QUALITY[els.quality.value].maxSide / long);
+  const scaleHigh = Math.min(1, QUALITY.high.maxSide / long);
+  return short * scale < NARROW_SIDE && scaleHigh > scale * 1.2;
+}
+
+function updateQualityTip() {
+  els.qualityTip.hidden = els.quality.value === 'high' || !state.pages.some(wouldGainFromHigh);
+}
+
+els.qualityTipApply.addEventListener('click', () => {
+  els.quality.value = 'high';
+  discardPdf();
+  updateQualityTip();
+  announce('Qualidade Alta selecionada.');
+  els.quality.focus();
+});
+
 function renderPages() {
+  updateQualityTip();
   const total = state.pages.length;
   els.workspace.hidden = total === 0;
   els.count.textContent = total ? `(${total})` : '';
@@ -334,6 +369,7 @@ els.filterAll.addEventListener('change', async () => {
 });
 
 for (const select of [els.pageSize, els.margin, els.quality]) select.addEventListener('change', discardPdf);
+els.quality.addEventListener('change', updateQualityTip);
 els.fileName.addEventListener('input', discardPdf);
 
 // "Limpar tudo" pede um segundo toque em vez de abrir um diálogo.

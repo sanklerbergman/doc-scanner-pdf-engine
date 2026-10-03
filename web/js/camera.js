@@ -4,6 +4,11 @@
 
 const $ = (selector) => document.querySelector(selector);
 
+// Brilho médio da imagem (0 a 255) abaixo do qual a câmera precisa de exposição longa e a foto borra.
+// Dois níveis para o aviso não ficar piscando quando o brilho está no limite.
+const DARK_BELOW = 60;
+const BRIGHT_ABOVE = 80;
+
 /**
  * @param {{onPhoto: (file: File) => void, useNative: () => void}} handlers
  *   onPhoto recebe cada foto tirada; useNative abre a câmera do sistema.
@@ -18,6 +23,10 @@ export function setupCamera({ onPhoto, useNative }) {
   const torch = $('#camera-torch');
   const shutter = $('#camera-shutter');
   const count = $('#camera-count');
+  const warning = $('#camera-warning');
+  const probe = document.createElement('canvas');
+  probe.width = probe.height = 32;
+  let lightTimer = 0;
   let stream = null;
   let track = null;
   let photos = 0;
@@ -56,6 +65,29 @@ export function setupCamera({ onPhoto, useNative }) {
       torch.hidden = false;
       setTorchState(false);
     }
+    lightTimer = setInterval(checkLight, 800);
+  }
+
+  // Mede a claridade do miolo da imagem e avisa quando está escuro demais para uma foto nítida.
+  function checkLight() {
+    if (!video.videoWidth) return;
+    const ctx = probe.getContext('2d', { willReadFrequently: true });
+    const w = video.videoWidth, h = video.videoHeight;
+    ctx.drawImage(video, w * 0.2, h * 0.2, w * 0.6, h * 0.6, 0, 0, 32, 32);
+    const { data } = ctx.getImageData(0, 0, 32, 32);
+    let sum = 0;
+    for (let p = 0; p < data.length; p += 4) sum += (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
+    const brightness = sum / (32 * 32);
+
+    const torchOn = torch.getAttribute('aria-pressed') === 'true';
+    const dark = warning.hidden ? brightness < DARK_BELOW : brightness < BRIGHT_ABOVE;
+    const warn = dark && !torchOn;
+    if (warn === !warning.hidden) return;
+    warning.hidden = !warn;
+    torch.classList.toggle('attention', warn);
+    warning.textContent = torch.hidden
+      ? 'Ambiente escuro: a foto pode sair borrada. Chegue perto de uma luz ou use a câmera do sistema com flash.'
+      : 'Ambiente escuro: a foto pode sair borrada. Toque em Luz.';
   }
 
   function setTorchState(on) {
@@ -67,6 +99,7 @@ export function setupCamera({ onPhoto, useNative }) {
     try {
       await track.applyConstraints({ advanced: [{ torch: on }] });
       setTorchState(on);
+      checkLight();
     } catch {
       torch.hidden = true;
       say('Este aparelho não deixou ligar a luz por aqui.');
@@ -95,6 +128,9 @@ export function setupCamera({ onPhoto, useNative }) {
 
   // Parar a trilha também apaga a luz.
   function stop() {
+    clearInterval(lightTimer);
+    warning.hidden = true;
+    torch.classList.remove('attention');
     stream?.getTracks().forEach((t) => t.stop());
     stream = track = null;
     video.srcObject = null;
