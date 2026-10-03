@@ -331,6 +331,15 @@ window.addEventListener('paste', (e) => {
   if (files?.length) addFiles(files);
 });
 
+// ---------- Feedback ----------
+
+const feedbackEmail = $('#feedback-email');
+if (CONFIG.feedbackEmail) {
+  feedbackEmail.href = `mailto:${CONFIG.feedbackEmail}?subject=${encodeURIComponent('Feedback - Scanner Doc')}`;
+  feedbackEmail.hidden = false;
+}
+$('#feedback-issue').href = `${CONFIG.repoUrl}/issues/new`;
+
 // ---------- Doação ----------
 
 const donate = $('#donate-link');

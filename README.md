@@ -56,11 +56,12 @@ scripts/serve.js     servidor de desenvolvimento
 
 Ao mudar arquivos do app, aumente a versão de `CACHE` em `web/sw.js` para os usuários offline receberem a atualização.
 
-## Doações
+## Feedback e doações
 
 Edite `web/js/config.js`:
 
 ```js
+feedbackEmail: 'voce@exemplo.com',                      // botão "Mandar um e-mail" (mailto)
 donationUrl: 'https://github.com/sponsors/seu-usuario', // ou Ko-fi, Apoia.se…
 pixKey: 'sua-chave-pix',
 ```
