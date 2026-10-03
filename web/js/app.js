@@ -1,5 +1,5 @@
 import { buildPdf, layoutPage } from './pdf.js';
-import { FILTERS, decodeFile, renderPage, canvasToBlob } from './imaging.js';
+import { FILTERS, decodeFile, renderPage, renderPageAsync, canvasToBlob } from './imaging.js';
 import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
 
@@ -11,6 +11,7 @@ const QUALITY = {
 const MARGINS = { none: 0, small: 18, normal: 36 };
 const PREVIEW_SIDE = 800; // cópia reduzida guardada em memória para as miniaturas
 const THUMB_SIDE = 480;
+const UNDO_MS = 10000; // tempo para desfazer a remoção de uma página
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -34,7 +35,14 @@ const els = {
   download: $('#download'),
   share: $('#share'),
   status: $('#status'),
+  undo: $('#undo'),
+  pasteKey: $('#paste-key'),
 };
+
+// Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
+const lockedWhileBusy = [
+  'filterAll', 'pageSize', 'margin', 'quality', 'fileName', 'clear', 'pickFiles', 'takePhoto', 'undo',
+].map((key) => els[key]);
 
 const state = { pages: [], busy: false, pdf: null };
 let nextId = 1;
@@ -55,6 +63,19 @@ function el(tag, props = {}, children = []) {
   return node;
 }
 
+// Ícone do sprite do index.html (#i-nome): decorativo, o texto ou o aria-label do botão já diz o que ele faz.
+function icon(name) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const use = document.createElementNS(NS, 'use');
+  use.setAttribute('href', `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
 function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
@@ -63,6 +84,7 @@ function formatBytes(bytes) {
 // ---------- Adicionar imagens ----------
 
 async function addFiles(fileList) {
+  if (state.busy) return; // arrastar ou colar durante a geração: ignora (os botões já estão travados)
   const files = [...fileList].filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
   if (!files.length) {
     announce('Por aqui só entram imagens (JPG, PNG, WebP…).', 'error');
@@ -117,24 +139,40 @@ function renderPages() {
   els.workspace.hidden = total === 0;
   els.count.textContent = total ? `(${total})` : '';
 
+  // Cartão: miniatura; número + remover (longe dos outros botões); mover ← → e girar; filtro.
   els.pages.replaceChildren(...state.pages.map((page, i) => {
-    const button = (action, label, text, disabled = false) => el('button', {
-      type: 'button', className: 'icon-btn', textContent: text, title: label, disabled,
+    const button = (action, label, disabled = false) => el('button', {
+      type: 'button', className: `icon-btn icon-btn-${action}`, title: label, disabled: disabled || state.busy,
       'aria-label': `${label} (página ${i + 1})`, 'data-action': action,
-    });
+    }, [icon(action)]);
 
     return el('li', { className: 'page-card', 'data-id': page.id }, [
       el('div', { className: 'thumb' }, [el('img', { src: page.thumbUrl, alt: `Página ${i + 1}: ${page.file.name}` })]),
       el('div', { className: 'page-tools' }, [
         el('span', { className: 'page-num', textContent: i + 1 }),
-        button('left', 'Mover para antes', '←', i === 0),
-        button('right', 'Mover para depois', '→', i === total - 1),
-        button('rotate', 'Girar', '⟳'),
-        button('remove', 'Remover', '✕'),
+        button('remove', 'Remover'),
+        button('left', 'Mover para antes', i === 0),
+        button('right', 'Mover para depois', i === total - 1),
+        button('rotate', 'Girar'),
       ]),
-      el('select', { className: 'page-filter', 'aria-label': `Filtro da página ${i + 1}` }, filterOptions(page.filter)),
+      el('select', {
+        className: 'page-filter', 'aria-label': `Filtro da página ${i + 1}`, disabled: state.busy,
+      }, filterOptions(page.filter)),
     ]);
   }));
+}
+
+// A lista é recriada a cada mudança: devolve o foco a um controle do cartão na posição `index`.
+function focusCard(index, selector) {
+  const card = els.pages.children[Math.min(index, els.pages.children.length - 1)];
+  const target = card?.querySelector(`${selector}:not(:disabled)`) ?? card?.querySelector('button:not(:disabled)');
+  if (target) target.focus();
+  else focusAddButton();
+}
+
+// Lista vazia: o foco vai para o botão principal de adicionar que estiver visível.
+function focusAddButton() {
+  (els.takePhoto.offsetParent ? els.takePhoto : els.pickFiles).focus();
 }
 
 function findPage(target) {
@@ -162,28 +200,86 @@ els.pages.addEventListener('click', async (event) => {
       page.rotation = (page.rotation + 90) % 360;
       await refreshThumb(page);
       renderPages();
-      els.pages.children[index]?.querySelector('[data-action="rotate"]')?.focus();
+      if (focusLost()) els.pages.children[state.pages.indexOf(page)]?.querySelector('[data-action="rotate"]')?.focus();
       break;
     case 'remove':
-      URL.revokeObjectURL(page.thumbUrl);
-      state.pages.splice(index, 1);
-      renderPages();
-      announce(`Página ${index + 1} removida.`);
+      removePage(index);
       break;
   }
 });
 
 els.pages.addEventListener('change', async (event) => {
-  if (!event.target.matches('.page-filter')) return;
+  if (!event.target.matches('.page-filter') || state.busy) return;
   const page = state.pages[findPage(event.target)];
   page.filter = event.target.value;
   discardPdf();
   await refreshThumb(page);
   renderPages();
+  // Quem trocou o filtro pelo teclado continua no mesmo seletor.
+  const index = state.pages.indexOf(page);
+  if (index >= 0 && focusLost()) focusCard(index, '.page-filter');
+});
+
+// A miniatura demora um pouco: se nesse meio-tempo a pessoa já foi para outro controle, não puxa o foco de volta.
+function focusLost() {
+  return !document.activeElement || document.activeElement === document.body;
+}
+
+// ---------- Remover com "Desfazer" ----------
+// A miniatura da página removida só é descartada quando o prazo para desfazer acaba.
+
+let removed = null; // { page, index, timer }
+
+function removePage(index) {
+  finishUndo();
+  const [page] = state.pages.splice(index, 1);
+  renderPages();
+  if (state.pages.length) focusCard(index, '[data-action="remove"]');
+  else focusAddButton();
+
+  removed = { page, index, timer: 0, message: `Página ${index + 1} removida. Dá para desfazer por alguns segundos.` };
+  announce(removed.message);
+  els.undo.setAttribute('aria-label', `Desfazer: trazer de volta a página ${index + 1}`);
+  els.undo.hidden = false;
+  scheduleUndoExpiry();
+}
+
+// Não some enquanto o botão está com foco ou sob o ponteiro: espera a pessoa terminar.
+function scheduleUndoExpiry() {
+  clearTimeout(removed.timer);
+  removed.timer = setTimeout(() => {
+    if (els.undo.matches(':focus, :hover')) scheduleUndoExpiry();
+    else finishUndo();
+  }, UNDO_MS);
+}
+
+function finishUndo() {
+  if (!removed) return;
+  clearTimeout(removed.timer);
+  URL.revokeObjectURL(removed.page.thumbUrl);
+  // O aviso não promete mais o que já não dá para fazer.
+  if (els.status.textContent === removed.message) announce(`Página ${removed.index + 1} removida.`);
+  removed = null;
+  els.undo.hidden = true;
+}
+
+els.undo.addEventListener('click', () => {
+  if (!removed || state.busy) return;
+  clearTimeout(removed.timer);
+  const { page, index } = removed;
+  removed = null;
+  els.undo.hidden = true;
+  const at = Math.min(index, state.pages.length);
+  state.pages.splice(at, 0, page);
+  discardPdf();
+  renderPages();
+  focusCard(at, '[data-action="remove"]');
+  announce(`Página ${at + 1} de volta.`);
 });
 
 els.filterAll.append(...filterOptions('document'));
 els.filterAll.addEventListener('change', async () => {
+  if (state.busy) return;
   discardPdf();
   for (const page of state.pages) {
     page.filter = els.filterAll.value;
@@ -205,6 +301,7 @@ els.clear.addEventListener('click', () => {
     return;
   }
   disarmClear();
+  finishUndo();
   for (const page of state.pages) URL.revokeObjectURL(page.thumbUrl);
   state.pages = [];
   discardPdf();
@@ -227,9 +324,14 @@ function pdfFileName() {
 
 function setBusy(busy) {
   state.busy = busy;
+  if (busy) disarmClear();
   els.generate.disabled = busy;
   els.generate.textContent = busy ? 'Gerando…' : 'Gerar PDF';
-  els.workspace.toggleAttribute('aria-busy', busy);
+  if (busy) els.workspace.setAttribute('aria-busy', 'true');
+  else els.workspace.removeAttribute('aria-busy');
+  for (const control of lockedWhileBusy) control.disabled = busy;
+  if (busy) for (const control of els.pages.querySelectorAll('button, select')) control.disabled = true;
+  else renderPages(); // recria os cartões liberados (mover nas pontas da lista continua desabilitado)
 }
 
 function discardPdf() {
@@ -249,15 +351,18 @@ async function generate() {
   const margin = MARGINS[els.margin.value];
   const size = els.pageSize.value;
 
+  const list = [...state.pages]; // retrato da lista: o PDF sai igual ao que estava na tela
+  let ok = false;
   try {
     const pages = [];
-    for (const [i, page] of state.pages.entries()) {
-      announce(`Processando página ${i + 1} de ${state.pages.length}…`);
+    for (const [i, page] of list.entries()) {
+      announce(`Processando página ${i + 1} de ${list.length}…`);
       await nextFrame();
       const image = await decodeFile(page.file);
       let canvas;
       try {
-        canvas = renderPage(image.source, image.width, image.height, { rotation: page.rotation, filter: page.filter, maxSide: quality.maxSide });
+        // O filtro roda num Web Worker: a página continua respondendo durante a geração.
+        canvas = await renderPageAsync(image.source, image.width, image.height, { rotation: page.rotation, filter: page.filter, maxSide: quality.maxSide });
       } finally {
         image.release();
       }
@@ -274,16 +379,18 @@ async function generate() {
 
     els.download.href = state.pdf.url;
     els.download.download = name;
-    els.resultInfo.textContent = `${name} · ${state.pages.length} ${state.pages.length === 1 ? 'página' : 'páginas'} · ${formatBytes(file.size)}`;
+    els.resultInfo.textContent = `${name} · ${list.length} ${list.length === 1 ? 'página' : 'páginas'} · ${formatBytes(file.size)}`;
     els.share.hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
     els.result.hidden = false;
     announce('PDF pronto. Ele só existe aqui no seu aparelho até você baixar.', 'success');
-    els.download.focus();
+    ok = true;
   } catch (err) {
     console.error(err);
     announce(`Algo deu errado ao gerar o PDF: ${err.message}`, 'error');
   } finally {
     setBusy(false);
+    // Foco só depois de liberar os controles (controle desabilitado não recebe foco).
+    (ok ? els.download : els.generate).focus();
   }
 }
 
@@ -299,6 +406,9 @@ els.share.addEventListener('click', async () => {
 });
 
 // ---------- Entrada: botões, arrastar e colar ----------
+
+// No Mac, colar é ⌘V.
+if (/mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || '')) els.pasteKey.textContent = '⌘V';
 
 els.pickFiles.addEventListener('click', () => els.fileInput.click());
 els.takePhoto.addEventListener('click', () => els.cameraInput.click());

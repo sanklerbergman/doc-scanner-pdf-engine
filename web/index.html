@@ -10,19 +10,39 @@
   <meta name="referrer" content="no-referrer">
   <title>Scanner Doc → PDF</title>
   <meta name="description" content="Transforme fotos de documentos em PDF direto no navegador. Sem upload, sem cadastro, sem rastreio. Projeto open source.">
-  <meta name="theme-color" content="#0f766e">
+  <meta name="theme-color" content="#0f766e" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#181c21" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="css/style.css">
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
+  <!-- Ícones: traço único de 2 px em currentColor. Sem fonte de ícones, sem atributo style (a CSP bloqueia). -->
+  <svg class="sprite" aria-hidden="true" focusable="false" hidden>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12.5l2.5 2.5L16 9.5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 6l-10 7L2 6"/></symbol>
+    <symbol id="i-issue" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></symbol>
+    <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><path d="M6 1v3M10 1v3M14 1v3"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></symbol>
+    <symbol id="i-remove" viewBox="0 0 24 24"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
+  </svg>
+
   <a class="skip" href="#main">Pular para o conteúdo</a>
 
   <header class="site-header">
     <div class="wrap header-inner">
       <a class="brand" href="./"><img src="icon.svg" alt="" width="28" height="28"> Scanner Doc</a>
-      <span class="badge">🔒 Nada sai do seu aparelho</span>
+      <span class="badge"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg> Nada sai do seu aparelho</span>
     </div>
   </header>
 
@@ -34,10 +54,12 @@
 
     <section id="dropzone" class="dropzone" aria-label="Adicionar imagens">
       <div class="dropzone-actions">
-        <button id="take-photo" type="button" class="btn btn-primary btn-lg">📷 Tirar foto</button>
-        <button id="pick-files" type="button" class="btn btn-lg">🖼️ Escolher imagens</button>
+        <!-- "Tirar foto" só aparece com tela de toque (o atributo capture é ignorado no computador);
+             sem ele, "Escolher imagens" vira o botão principal. Ver .touch-only e .btn-pick no CSS. -->
+        <button id="take-photo" type="button" class="btn btn-primary btn-lg touch-only"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-camera"/></svg> Tirar foto</button>
+        <button id="pick-files" type="button" class="btn btn-lg btn-pick"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-image"/></svg> Escolher imagens</button>
       </div>
-      <p class="hint">…ou arraste imagens para cá, ou cole com Ctrl+V.</p>
+      <p class="hint pointer-only">…ou arraste imagens para cá, ou cole com <kbd id="paste-key">Ctrl+V</kbd>.</p>
       <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
       <input id="file-input" type="file" accept="image/*,.heic,.heif" multiple hidden>
     </section>
@@ -90,16 +112,19 @@
       </div>
 
       <div id="result" class="result" hidden>
-        <p class="result-title">✅ PDF pronto</p>
+        <p class="result-title"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg> PDF pronto</p>
         <p id="result-info" class="muted"></p>
         <div class="result-actions">
-          <a id="download" class="btn btn-primary btn-lg" href="#">⬇️ Baixar PDF</a>
-          <button id="share" type="button" class="btn btn-lg" hidden>Compartilhar</button>
+          <a id="download" class="btn btn-primary btn-lg" href="#"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg> Baixar PDF</a>
+          <button id="share" type="button" class="btn btn-lg" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-share"/></svg> Compartilhar</button>
         </div>
       </div>
     </section>
 
-    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <div class="status-bar">
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+      <button id="undo" type="button" class="btn btn-ghost btn-undo" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-undo"/></svg> Desfazer</button>
+    </div>
 
     <section class="card privacy" aria-labelledby="privacy-title">
       <h2 id="privacy-title">O que acontece com seus documentos? Nada.</h2>
@@ -117,8 +142,8 @@
       <h2 id="feedback-title">Achou um bug? Teve uma ideia? 💬</h2>
       <p>Elogio, reclamação, sugestão ou "não funcionou no meu celular": tudo ajuda. Como o app não coleta nada, a gente só fica sabendo dos problemas se você contar.</p>
       <div class="donate-actions">
-        <a id="feedback-email" class="btn btn-primary" href="#" hidden>✉️ Mandar um e-mail</a>
-        <a id="feedback-issue" class="btn" href="#" target="_blank" rel="noopener noreferrer">🐙 Abrir uma issue no GitHub</a>
+        <a id="feedback-email" class="btn btn-primary" href="#" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mail"/></svg> Mandar um e-mail</a>
+        <a id="feedback-issue" class="btn" href="#" target="_blank" rel="noopener noreferrer"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-issue"/></svg> Abrir uma issue no GitHub</a>
       </div>
       <p class="muted small">O e-mail abre no seu próprio aplicativo de e-mail; a página continua sem enviar nada. Só não anexe documentos pessoais, por favor.</p>
     </section>
@@ -136,8 +161,8 @@
         </div>
       </div>
       <div class="donate-actions">
-        <a id="donate-link" class="btn btn-primary" href="#" target="_blank" rel="noopener noreferrer" hidden>☕ Pagar um café</a>
-        <a data-repo-link class="btn btn-ghost" href="#" target="_blank" rel="noopener noreferrer">⭐ Dar uma estrela no GitHub <span class="muted">(grátis e faz bem pro ego)</span></a>
+        <a id="donate-link" class="btn btn-primary" href="#" target="_blank" rel="noopener noreferrer" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-coffee"/></svg> Pagar um café</a>
+        <a data-repo-link class="btn btn-ghost" href="#" target="_blank" rel="noopener noreferrer"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-star"/></svg> Dar uma estrela no GitHub <span class="muted">(grátis e faz bem pro ego)</span></a>
       </div>
       <p class="muted small">Contribuir é 100% opcional e não libera nada extra. Aqui não tem versão Pro: todo mundo já é Pro.</p>
     </section>
