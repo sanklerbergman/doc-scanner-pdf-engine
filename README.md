@@ -5,7 +5,7 @@ Feito pela comunidade, para a comunidade.
 
 ## O que faz
 
-- Tirar foto (câmera do celular) ou escolher várias imagens — também aceita arrastar e colar (Ctrl+V)
+- Tirar foto com a câmera do celular, com **botão de luz** para ambientes escuros, ou escolher várias imagens — também aceita arrastar e colar (Ctrl+V)
 - Reordenar, girar e remover páginas
 - Filtros: **Documento** (remove sombra, fundo branco), **Cor realçada**, **Preto e branco** e **Original**
 - Tamanho A4, Carta ou igual à imagem; margem e qualidade ajustáveis

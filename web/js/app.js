@@ -1,5 +1,6 @@
 import { buildPdf, layoutPage } from './pdf.js';
 import { FILTERS, decodeFile, renderPage, renderPageAsync, canvasToBlob } from './imaging.js';
+import { setupCamera } from './camera.js';
 import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
 
@@ -411,7 +412,12 @@ els.share.addEventListener('click', async () => {
 if (/mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || '')) els.pasteKey.textContent = '⌘V';
 
 els.pickFiles.addEventListener('click', () => els.fileInput.click());
-els.takePhoto.addEventListener('click', () => els.cameraInput.click());
+// "Tirar foto" abre a câmera da página (com botão de luz); sem suporte, cai na câmera do sistema.
+const camera = setupCamera({
+  onPhoto: (file) => addFiles([file]),
+  useNative: () => els.cameraInput.click(),
+});
+els.takePhoto.addEventListener('click', () => (camera ? camera.open() : els.cameraInput.click()));
 for (const input of [els.fileInput, els.cameraInput]) {
   input.addEventListener('change', () => {
     addFiles(input.files);

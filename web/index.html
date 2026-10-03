@@ -34,6 +34,7 @@
     <symbol id="i-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></symbol>
     <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></symbol>
     <symbol id="i-remove" viewBox="0 0 24 24"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></symbol>
     <symbol id="i-undo" viewBox="0 0 24 24"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
   </svg>
 
@@ -167,6 +168,19 @@
       <p class="muted small">Contribuir é 100% opcional e não libera nada extra. Aqui não tem versão Pro: todo mundo já é Pro.</p>
     </section>
   </main>
+
+  <!-- Câmera dentro da página (js/camera.js): permite ligar a luz do celular, o que a câmera do sistema não deixa. -->
+  <dialog id="camera" class="camera" aria-labelledby="camera-title">
+    <h2 id="camera-title" class="sr-only">Câmera</h2>
+    <video id="camera-video" class="camera-video" playsinline muted autoplay></video>
+    <p id="camera-message" class="camera-message" role="status"></p>
+    <div class="camera-bar">
+      <button id="camera-torch" type="button" class="camera-btn" aria-pressed="false" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-bolt"/></svg> Luz</button>
+      <button id="camera-shutter" type="button" class="camera-shutter" aria-label="Tirar foto"></button>
+      <button id="camera-close" type="button" class="camera-btn">Concluir <span id="camera-count"></span></button>
+    </div>
+    <button id="camera-native" type="button" class="camera-native">Usar a câmera do sistema</button>
+  </dialog>
 
   <footer class="site-footer">
     <div class="wrap">

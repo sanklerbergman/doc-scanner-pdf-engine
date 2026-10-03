@@ -221,3 +221,38 @@ select:disabled, input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed
 .donate-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 8px; }
 
 .site-footer { margin-top: 40px; padding: 24px 0 40px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.92rem; }
+
+/* Câmera da página: tela cheia, sempre escura (independe do tema). */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.camera {
+  width: 100vw; height: 100dvh; max-width: none; max-height: none;
+  margin: 0; padding: 0; border: 0; background: #000; color: #fff;
+}
+.camera[open] { display: flex; flex-direction: column; }
+.camera::backdrop { background: #000; }
+.camera-video { flex: 1 1 0; min-height: 0; width: 100%; object-fit: contain; background: #000; }
+.camera-video.shot { animation: camera-shot 0.25s ease-out; }
+@keyframes camera-shot { from { opacity: 0.2; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .camera-video.shot { animation: none; } }
+.camera-message { margin: 0; padding: 8px 16px; min-height: 2.6em; text-align: center; font-size: 0.9rem; color: #d0d5dd; }
+.camera-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 4px 16px 12px; }
+.camera-bar > :first-child { justify-self: start; }
+.camera-bar > :last-child { justify-self: end; }
+.camera-shutter { grid-column: 2; }
+.camera-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 8px 14px;
+  border: 1px solid #667085; border-radius: 999px; background: #1d2129; color: #fff;
+  font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.camera-btn[aria-pressed="true"] { background: #fde68a; border-color: #fde68a; color: #1d2129; }
+.camera-shutter {
+  width: 72px; height: 72px; border-radius: 50%; border: 4px solid #fff;
+  background: #fff; box-shadow: inset 0 0 0 3px #000; cursor: pointer;
+}
+.camera-shutter:active { transform: scale(0.94); }
+.camera-shutter:disabled { opacity: 0.4; }
+.camera-native {
+  min-height: 44px; padding: 8px 16px 16px; border: 0; background: none;
+  color: #d0d5dd; font: inherit; font-size: 0.9rem; text-decoration: underline; cursor: pointer;
+}
+.camera :focus-visible { outline-color: #fde68a; }
