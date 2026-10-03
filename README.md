@@ -1,4 +1,4 @@
-# Scanner Doc & PDF Engine
+# Scanner Doc
 
 Foto de documento vira PDF, **100% no navegador**. Sem upload, sem cadastro, sem rastreio.
 Feito pela comunidade, para a comunidade.
