@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- connect-src 'none': a página não consegue abrir nenhuma conexão de rede (fetch, XHR, WebSocket, beacon).
+       Nem se alguém quisesse, suas imagens não teriam como sair daqui.
+       'wasm-unsafe-eval' só libera o WebAssembly do decodificador de HEIC (vendor/libheif), servido daqui mesmo. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; connect-src 'none'; font-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'self'; manifest-src 'self'; form-action 'none'; base-uri 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Scanner Doc → PDF</title>
+  <meta name="description" content="Transforme fotos de documentos em PDF direto no navegador. Sem upload, sem cadastro, sem rastreio. Projeto open source.">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Pular para o conteúdo</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="./"><img src="icon.svg" alt="" width="28" height="28"> Scanner Doc</a>
+      <span class="badge">🔒 Nada sai do seu aparelho</span>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <section class="hero">
+      <h1>Foto de documento vira PDF. Sem mandar nada pra ninguém.</h1>
+      <p class="lead">Tire uma foto ou escolha imagens, ajuste e baixe o PDF. Tudo acontece aqui no seu navegador: sem cadastro, sem upload, sem rastreio.</p>
+    </section>
+
+    <section id="dropzone" class="dropzone" aria-label="Adicionar imagens">
+      <div class="dropzone-actions">
+        <button id="take-photo" type="button" class="btn btn-primary btn-lg">📷 Tirar foto</button>
+        <button id="pick-files" type="button" class="btn btn-lg">🖼️ Escolher imagens</button>
+      </div>
+      <p class="hint">…ou arraste imagens para cá, ou cole com Ctrl+V.</p>
+      <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
+      <input id="file-input" type="file" accept="image/*,.heic,.heif" multiple hidden>
+    </section>
+
+    <section id="workspace" class="workspace" hidden aria-labelledby="pages-title">
+      <div class="workspace-head">
+        <h2 id="pages-title">Páginas <span id="page-count" class="muted"></span></h2>
+        <button id="clear" type="button" class="btn btn-ghost">Limpar tudo</button>
+      </div>
+
+      <ol id="pages" class="pages"></ol>
+
+      <div class="settings">
+        <label class="field">
+          <span>Filtro em todas as páginas</span>
+          <select id="filter-all"></select>
+        </label>
+        <label class="field">
+          <span>Tamanho da página</span>
+          <select id="page-size">
+            <option value="a4" selected>A4</option>
+            <option value="letter">Carta</option>
+            <option value="fit">Igual à imagem</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Margem</span>
+          <select id="margin">
+            <option value="none">Sem margem</option>
+            <option value="small" selected>Pequena</option>
+            <option value="normal">Normal</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Qualidade</span>
+          <select id="quality">
+            <option value="light">Leve (bom para e-mail)</option>
+            <option value="balanced" selected>Equilibrada</option>
+            <option value="high">Alta (arquivo maior)</option>
+          </select>
+        </label>
+        <label class="field field-wide">
+          <span>Nome do arquivo</span>
+          <input id="file-name" type="text" value="documento" maxlength="80" autocomplete="off" spellcheck="false">
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="generate" type="button" class="btn btn-primary btn-lg">Gerar PDF</button>
+      </div>
+
+      <div id="result" class="result" hidden>
+        <p class="result-title">✅ PDF pronto</p>
+        <p id="result-info" class="muted"></p>
+        <div class="result-actions">
+          <a id="download" class="btn btn-primary btn-lg" href="#">⬇️ Baixar PDF</a>
+          <button id="share" type="button" class="btn btn-lg" hidden>Compartilhar</button>
+        </div>
+      </div>
+    </section>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <section class="card privacy" aria-labelledby="privacy-title">
+      <h2 id="privacy-title">O que acontece com seus documentos? Nada.</h2>
+      <ul class="checklist">
+        <li><strong>Não existe upload.</strong> As imagens são processadas pelo seu próprio navegador. Não temos servidor que receba arquivos — esta é só uma página estática.</li>
+        <li><strong>Sem cookies, sem analytics, sem conta.</strong> Nenhum script, fonte ou pixel de terceiros. O app não guarda nada entre uma visita e outra.</li>
+        <li><strong>Metadados removidos.</strong> Localização GPS, modelo do celular e data da foto ficam de fora do PDF. O PDF também não leva nome de app nem carimbo.</li>
+        <li><strong>Funciona offline.</strong> Depois de aberto uma vez, dá pra usar até em modo avião.</li>
+        <li><strong>Bloqueado por regra, não por promessa.</strong> A página tem uma política de segurança (<code>connect-src 'none'</code>) que impede o navegador de abrir qualquer conexão a partir dela.</li>
+      </ul>
+      <p class="muted small">Não precisa acreditar na gente: abra as ferramentas do navegador (F12 → aba Rede) enquanto gera um PDF, ou <a data-repo-link href="#" rel="noopener noreferrer">leia o código</a>. Detalhe honesto: quem hospeda a página (GitHub Pages) vê que alguém abriu o site, como em qualquer site — mas nunca vê seus arquivos.</p>
+    </section>
+
+    <section class="card donate" aria-labelledby="donate-title">
+      <h2 id="donate-title">O café não se paga sozinho ☕</h2>
+      <p>Este app não tem anúncio, não tem plano premium e não vende seus dados — até porque nem fica com eles. Ele é feito pela comunidade, no tempo livre, movido a café e teimosia.</p>
+      <p>Se ele te poupou uma ida à papelaria, uma contribuição de qualquer valor ajuda a manter tudo no ar (e quem mantém, acordado). Se não der agora, tudo bem: o PDF sai exatamente igual. Ninguém vai fazer cara feia.</p>
+      <div class="donate-actions">
+        <a id="donate-link" class="btn btn-primary" href="#" target="_blank" rel="noopener noreferrer" hidden>☕ Pagar um café</a>
+        <button id="pix-copy" type="button" class="btn" hidden>Copiar chave Pix</button>
+        <a data-repo-link class="btn btn-ghost" href="#" target="_blank" rel="noopener noreferrer">⭐ Dar uma estrela no GitHub <span class="muted">(grátis e faz bem pro ego)</span></a>
+      </div>
+      <p class="muted small">Contribuir é 100% opcional e não libera nada extra. Aqui não tem versão Pro: todo mundo já é Pro.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Feito pela comunidade, para a comunidade. Código aberto sob licença MIT — <a data-repo-link href="#" rel="noopener noreferrer">contribua no GitHub</a>.</p>
+    </div>
+  </footer>
+</body>
+</html>
