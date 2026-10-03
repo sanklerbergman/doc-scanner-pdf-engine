@@ -13,8 +13,9 @@ const START_INSET = 0.04; // sem recorte ainda: os cantos começam um pouco para
  * @param {(page) => Promise<Blob>} deps.renderOriginal foto girada, sem recorte nem filtro
  * @param {(page) => number[][] | null} deps.detect cantos do papel nas coordenadas da foto, ou null
  * @param {(page, quad: number[][] | null) => Promise<void>} deps.applyCrop grava o recorte e atualiza a miniatura
+ * @param {(page) => void} deps.onClose chamado ao fechar, para devolver o foco ao cartão da página
  */
-export function setupViewer({ renderProcessed, renderOriginal, detect, applyCrop }) {
+export function setupViewer({ renderProcessed, renderOriginal, detect, applyCrop, onClose }) {
   const dialog = $('#viewer');
   const title = $('#viewer-title');
   const stage = $('#viewer-stage');
@@ -40,11 +41,13 @@ export function setupViewer({ renderProcessed, renderOriginal, detect, applyCrop
     if (blob) img.src = urls[kind];
   }
 
-  function open(target, name) {
+  // startInCrop: abre direto no ajuste do recorte (botão "Ajustar recorte" do cartão).
+  function open(target, name, startInCrop = false) {
     page = target;
     label = name;
     dialog.showModal();
-    showView();
+    if (startInCrop) showCrop();
+    else showView();
   }
 
   async function showView() {
@@ -182,7 +185,9 @@ export function setupViewer({ renderProcessed, renderOriginal, detect, applyCrop
     setUrl('crop', cropImage, null);
     image.removeAttribute('src');
     cropImage.removeAttribute('src');
+    const closed = page;
     page = null;
+    setTimeout(() => onClose(closed), 0); // depois de o navegador devolver o foco por conta própria
   });
 
   return { open };

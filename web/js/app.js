@@ -119,7 +119,10 @@ async function addFiles(fileList) {
     announce(`Não consegui abrir: ${failed.join(', ')}. Tente exportar como JPG ou PNG.`, 'error');
   } else {
     const added = files.length === 1 ? '1 imagem adicionada' : `${files.length} imagens adicionadas`;
-    announce(cropped ? `${added}, já recortada no papel. Toque na página para conferir ou ajustar.` : `${added}. Toque na página para ver em tela cheia.`);
+    const missed = files.length - cropped;
+    if (!missed) announce(`${added}, com o papel recortado automaticamente. Se os cantos não ficaram certos, use "Ajustar recorte".`);
+    else if (!cropped) announce(`${added}. Não achei as bordas do papel: use "Recortar" para marcar os cantos.`);
+    else announce(`${added}. Em ${missed === 1 ? 'uma delas' : `${missed} delas`} não achei as bordas do papel: use "Recortar" para marcar os cantos.`);
   }
 }
 
@@ -194,6 +197,11 @@ function renderPages() {
         type: 'button', className: 'thumb', 'data-action': 'view', disabled: state.busy,
         'aria-label': `Ver a página ${i + 1} em tela cheia e ajustar o recorte`,
       }, [el('img', { src: page.thumbUrl, alt: '' }), el('span', { className: 'thumb-zoom' }, [icon('expand')])]),
+      // Botão com texto: o recorte é o ajuste que mais muda o resultado e não pode ficar escondido atrás da miniatura.
+      el('button', {
+        type: 'button', className: 'btn btn-crop', 'data-action': 'crop', disabled: state.busy,
+        'aria-label': `Ajustar o recorte da página ${i + 1}`,
+      }, [icon('crop'), ` ${page.quad ? 'Ajustar recorte' : 'Recortar'}`]),
       el('div', { className: 'page-tools' }, [
         el('span', { className: 'page-num', textContent: i + 1 }),
         button('remove', 'Remover'),
@@ -231,8 +239,8 @@ els.pages.addEventListener('click', async (event) => {
   if (!button || state.busy) return;
   const index = findPage(button);
   const page = state.pages[index];
-  if (button.dataset.action === 'view') {
-    viewer.open(page, `Página ${index + 1} de ${state.pages.length}`);
+  if (button.dataset.action === 'view' || button.dataset.action === 'crop') {
+    viewer.open(page, `Página ${index + 1} de ${state.pages.length}`, button.dataset.action === 'crop');
     return;
   }
   discardPdf();
@@ -297,6 +305,11 @@ const viewer = setupViewer({
     discardPdf();
     await refreshThumb(page);
     renderPages();
+  },
+  // A lista pode ter sido recriada enquanto a tela cheia estava aberta: devolve o foco ao cartão da página.
+  onClose(page) {
+    const index = state.pages.indexOf(page);
+    if (index >= 0) focusCard(index, '.thumb');
   },
 });
 
