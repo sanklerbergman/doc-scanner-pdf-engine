@@ -255,7 +255,17 @@ select:disabled, input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed
 }
 .camera[open] { display: flex; flex-direction: column; }
 .camera::backdrop { background: #000; }
-.camera-video { flex: 1 1 0; min-height: 0; width: 100%; object-fit: contain; background: #000; }
+.camera-view { position: relative; flex: 1 1 0; min-height: 0; }
+.camera-video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+/* Contorno do papel encontrado, posicionado pelo camera.js sobre a área da imagem. */
+.camera-outline { position: absolute; overflow: visible; pointer-events: none; }
+.camera-outline polygon { fill: rgb(45 212 191 / 14%); stroke: #2dd4bf; stroke-width: 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.camera-chip {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  padding: 4px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 600;
+  background: rgb(29 33 41 / 80%); color: #d0d5dd;
+}
+.camera-chip.found { background: #2dd4bf; color: #062a26; }
 .camera-video.shot { animation: camera-shot 0.25s ease-out; }
 @keyframes camera-shot { from { opacity: 0.2; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .camera-video.shot { animation: none; } }

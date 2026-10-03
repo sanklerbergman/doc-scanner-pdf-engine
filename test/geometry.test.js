@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectDocument, warpPixels, quadSize, toRotated, fromRotated, isFullFrame, FULL_QUAD } from '../web/js/geometry.js';
+import { detectDocument, warpPixels, quadSize, quadAspect, toRotated, fromRotated, isFullFrame, FULL_QUAD } from '../web/js/geometry.js';
 
 // Papel claro (quadrilátero) sobre fundo escuro com textura.
 function scene(width, height, quad, { paper = 215, background = 70 } = {}) {
@@ -85,4 +85,50 @@ test('isFullFrame reconhece o quadro inteiro', () => {
   assert.ok(isFullFrame(FULL_QUAD));
   assert.ok(isFullFrame([[0.005, 0], [1, 0.004], [0.999, 1], [0, 0.996]]));
   assert.ok(!isFullFrame([[0.1, 0], [1, 0], [1, 1], [0, 1]]));
+});
+
+// Fotografa um retângulo com uma câmera ideal: papel no plano z=0, câmera inclinada, distância focal f.
+function photograph(paperWidth, paperHeight, { tilt, pan = 0, focal, distance, image = [3000, 4000] }) {
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => [(sx * paperWidth) / 2, (sy * paperHeight) / 2, 0]);
+  const [ct, st, cp, sp] = [Math.cos(tilt), Math.sin(tilt), Math.cos(pan), Math.sin(pan)];
+  return corners.map(([x, y, z]) => {
+    const y1 = y * ct - z * st, z1 = y * st + z * ct; // inclina em torno do eixo x
+    const x2 = x * cp + z1 * sp, z2 = -x * sp + z1 * cp; // e gira em torno do eixo y
+    const depth = z2 + distance;
+    return [image[0] / 2 + (focal * x2) / depth, image[1] / 2 + (focal * y1) / depth];
+  });
+}
+
+test('quadAspect recupera a proporção real de um papel fotografado de lado', () => {
+  for (const [w, h] of [[210, 297], [100, 360], [297, 210]]) {
+    const quad = photograph(w, h, { tilt: 0.6, pan: 0.25, focal: 3200, distance: 600 });
+    const aspect = quadAspect(quad, 3000, 4000);
+    assert.ok(aspect, `sem resultado para ${w}x${h}`);
+    assert.ok(Math.abs(aspect / (w / h) - 1) < 0.02, `${w}x${h}: ${aspect} em vez de ${w / h}`);
+  }
+});
+
+test('quadSize corrige a página achatada pela inclinação', () => {
+  const quad = photograph(100, 360, { tilt: 0.75, pan: 0.2, focal: 3200, distance: 700 });
+  const naive = quadSize(quad);
+  const fixed = quadSize(quad, 3000, 4000);
+  assert.ok(naive.width / naive.height > (100 / 360) * 1.15, 'a média dos lados deveria achatar');
+  assert.ok(Math.abs(fixed.width / fixed.height / (100 / 360) - 1) < 0.02);
+  assert.ok(fixed.width >= naive.width && fixed.height >= naive.height, 'não reduz nenhum lado');
+});
+
+test('quadAspect com inclinação num sentido só usa uma distância focal típica', () => {
+  // Caso mais comum: celular inclinado para a frente, bordas de cima e de baixo paralelas na foto.
+  for (const focal of [2800, 3250, 3800]) { // câmeras diferentes: o erro tem que ficar pequeno em todas
+    const quad = photograph(100, 360, { tilt: 0.7, focal, distance: 700 });
+    const naive = quadSize(quad);
+    const aspect = quadAspect(quad, 3000, 4000);
+    assert.ok(Math.abs(aspect / (100 / 360) - 1) < 0.1, `f=${focal}: ${aspect}`);
+    assert.ok(Math.abs(naive.width / naive.height / (100 / 360) - 1) > 0.2, 'a média dos lados erra bem mais');
+  }
+});
+
+test('quadAspect sem perspectiva devolve a proporção vista na foto', () => {
+  const aspect = quadAspect([[500, 500], [2500, 500], [2500, 3500], [500, 3500]], 3000, 4000); // foto de cima
+  assert.ok(Math.abs(aspect - 2000 / 3000) < 1e-6);
 });

@@ -91,7 +91,7 @@ export function detectQuad(source, width, height) {
 
 // Recorta o quad (cantos normalizados) e desfaz a perspectiva. O lado maior do resultado não passa de maxSide.
 function cropToQuad(source, width, height, quad, maxSide) {
-  const size = quadSize(quad.map(([x, y]) => [x * width, y * height]));
+  const size = quadSize(quad.map(([x, y]) => [x * width, y * height]), width, height);
   const scale = Math.min(1, maxSide / Math.max(size.width, size.height));
   // Reduz a foto antes, para o recorte amostrar perto de 1 pixel por pixel (sem serrilhado).
   const sw = Math.max(1, Math.round(width * scale));

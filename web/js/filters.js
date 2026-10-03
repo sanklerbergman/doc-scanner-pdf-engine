@@ -19,7 +19,8 @@ export function applyFilter({ data, width, height }, filter) {
   const n = width * height;
   const gray = new Uint8ClampedArray(n);
   for (let i = 0, p = 0; i < n; i++, p += 4) gray[i] = (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
-  const paper = paperBrightness(gray, width, height);
+  const { paper, brightest } = paperBrightness(gray, width, height);
+  if (filter !== 'enhance') calmShadows(gray, paper, brightest, width, height);
 
   if (filter === 'bw') {
     for (let i = 0, p = 0; i < n; i++, p += 4) data[p] = data[p + 1] = data[p + 2] = gray[i] < paper[i] * BW_INK ? 0 : 255;
@@ -51,7 +52,7 @@ function toneCurve({ black, white, gamma }) {
 }
 
 /**
- * Brilho do papel em cada pixel (Float32Array, mínimo 1).
+ * Brilho do papel em cada pixel (Float32Array, mínimo 1) e o brilho da região mais clara da foto.
  * Calculado numa versão reduzida da imagem (~320 px), em três passos:
  *  1. "fechamento" (máximo local seguido de mínimo local): apaga o que é fino e escuro (a tinta)
  *     sem deslocar bordas grandes, então a borda de uma sombra continua no lugar certo;
@@ -94,7 +95,27 @@ function paperBrightness(gray, width, height) {
       out[y * width + x] = top + (bottom - top) * ty;
     }
   }
-  return out;
+  return { paper: out, brightest };
+}
+
+/**
+ * Na sombra o filtro multiplica muito o sinal, e o ruído da câmera vem junto (vira granulado).
+ * Aqui o cinza é suavizado (média 3×3 ponderada) só onde o papel está escuro: quanto mais funda a sombra,
+ * mais suave. Em área bem iluminada nada muda, então o texto não perde nitidez.
+ */
+function calmShadows(gray, paper, brightest, width, height) {
+  const original = gray.slice();
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      const mix = (1 - paper[i] / brightest) * 1.8;
+      if (mix <= 0.05) continue;
+      const smooth = (original[i] * 4
+        + (original[i - 1] + original[i + 1] + original[i - width] + original[i + width]) * 2
+        + original[i - width - 1] + original[i - width + 1] + original[i + width - 1] + original[i + width + 1]) / 16;
+      gray[i] = mix >= 1 ? smooth : original[i] + (smooth - original[i]) * mix;
+    }
+  }
 }
 
 // Máximo (ou mínimo) numa janela quadrada, feito em duas passadas (linhas, depois colunas).

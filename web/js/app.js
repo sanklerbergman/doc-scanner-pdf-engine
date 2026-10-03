@@ -155,7 +155,7 @@ const NARROW_SIDE = 1000; // lado menor, em pixels, abaixo do qual texto pequeno
 
 function wouldGainFromHigh(page) {
   const size = page.quad
-    ? quadSize(page.quad.map(([x, y]) => [x * page.width, y * page.height]))
+    ? quadSize(page.quad.map(([x, y]) => [x * page.width, y * page.height]), page.width, page.height)
     : { width: page.width, height: page.height };
   const long = Math.max(size.width, size.height);
   const short = Math.min(size.width, size.height);

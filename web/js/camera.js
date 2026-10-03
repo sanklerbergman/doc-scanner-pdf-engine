@@ -1,6 +1,8 @@
 // Câmera dentro da página. Existe para dar o que a câmera do sistema (input capture) não dá:
-// acender a luz do celular e tirar várias fotos em sequência.
+// acender a luz do celular, tirar várias fotos em sequência e mostrar, antes da foto, se o papel foi encontrado.
 // A imagem da câmera só é desenhada num <canvas> local; nada é transmitido.
+
+import { detectQuad } from './imaging.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -24,6 +26,11 @@ export function setupCamera({ onPhoto, useNative }) {
   const shutter = $('#camera-shutter');
   const count = $('#camera-count');
   const warning = $('#camera-warning');
+  const view = $('#camera-view');
+  const outline = $('#camera-outline');
+  const outlineShape = outline.querySelector('polygon');
+  const chip = $('#camera-chip');
+  let misses = 0;
   const probe = document.createElement('canvas');
   probe.width = probe.height = 32;
   let lightTimer = 0;
@@ -65,7 +72,31 @@ export function setupCamera({ onPhoto, useNative }) {
       torch.hidden = false;
       setTorchState(false);
     }
-    lightTimer = setInterval(checkLight, 800);
+    lightTimer = setInterval(() => { checkLight(); findPaper(); }, 400);
+  }
+
+  // Contorno ao vivo: roda a mesma detecção usada no recorte e desenha o resultado sobre a imagem.
+  // Assim dá para ver, antes de fotografar, se o papel foi encontrado, e mexer no enquadramento ou na luz.
+  function findPaper() {
+    if (!video.videoWidth) return;
+    const quad = detectQuad(video, video.videoWidth, video.videoHeight);
+    // Uma falha isolada entre dois acertos não apaga o contorno (evita piscar).
+    misses = quad ? 0 : misses + 1;
+    if (quad) {
+      // O vídeo aparece inteiro e centralizado (object-fit: contain): o contorno ocupa só a área da imagem.
+      const scale = Math.min(view.clientWidth / video.videoWidth, view.clientHeight / video.videoHeight);
+      const w = video.videoWidth * scale, h = video.videoHeight * scale;
+      outline.style.width = `${w}px`;
+      outline.style.height = `${h}px`;
+      outline.style.left = `${(view.clientWidth - w) / 2}px`;
+      outline.style.top = `${(view.clientHeight - h) / 2}px`;
+      outlineShape.setAttribute('points', quad.map(([x, y]) => `${x * 100},${y * 100}`).join(' '));
+    }
+    const found = misses < 3 && outlineShape.getAttribute('points');
+    outline.toggleAttribute('hidden', !found); // <svg> não tem a propriedade .hidden dos elementos HTML
+    chip.hidden = false;
+    chip.textContent = found ? 'Papel encontrado' : 'Procurando o papel…';
+    chip.classList.toggle('found', Boolean(found));
   }
 
   // Mede a claridade do miolo da imagem e avisa quando está escuro demais para uma foto nítida.
@@ -130,6 +161,10 @@ export function setupCamera({ onPhoto, useNative }) {
   function stop() {
     clearInterval(lightTimer);
     warning.hidden = true;
+    outline.setAttribute('hidden', '');
+    chip.hidden = true;
+    outlineShape.setAttribute('points', '');
+    misses = 0;
     torch.classList.remove('attention');
     stream?.getTracks().forEach((t) => t.stop());
     stream = track = null;

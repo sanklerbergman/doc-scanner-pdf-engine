@@ -230,13 +230,53 @@ export function isConvex(quad) {
   return true;
 }
 
-// Tamanho da página recortada, em pixels da foto: média dos lados opostos.
-export function quadSize(quad) {
+/**
+ * Tamanho da página recortada, em pixels da foto.
+ * Sem o tamanho da foto: média dos lados opostos. Com ele, corrige a proporção: numa foto tirada de lado
+ * a parte de longe encolhe, e a média dos lados deixaria a página "achatada" (ver quadAspect).
+ */
+export function quadSize(quad, imageWidth, imageHeight) {
   const [tl, tr, br, bl] = quad;
-  return {
-    width: (distance(tl, tr) + distance(bl, br)) / 2,
-    height: (distance(tl, bl) + distance(tr, br)) / 2,
-  };
+  const top = distance(tl, tr), bottom = distance(bl, br), left = distance(tl, bl), right = distance(tr, br);
+  const naive = { width: (top + bottom) / 2, height: (left + right) / 2 };
+  const aspect = imageWidth && imageHeight ? quadAspect(quad, imageWidth, imageHeight) : null;
+  if (!aspect) return naive;
+  // Parte do maior lado visto em cada direção (nada é reduzido) e estica a outra até a proporção real.
+  const width = Math.max(top, bottom, Math.max(left, right) * aspect);
+  return { width, height: width / aspect };
+}
+
+/**
+ * Proporção real (largura ÷ altura) do retângulo cuja foto é o quad, pela geometria da câmera
+ * (Zhang & He, "Whiteboard scanning and image enhancement"): os quatro cantos de um retângulo em
+ * perspectiva determinam a distância focal e, com ela, a proporção verdadeira.
+ * Supõe o centro óptico no meio da foto. Devolve null se o resultado sair fora do plausível.
+ */
+export function quadAspect(quad, imageWidth, imageHeight) {
+  const cx = imageWidth / 2, cy = imageHeight / 2;
+  const [m1, m2, m4, m3] = quad.map(([x, y]) => [x - cx, y - cy, 1]); // m1 sup. esq., m2 sup. dir., m3 inf. esq., m4 inf. dir.
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+  const k2 = dot(cross(m1, m4), m3) / dot(cross(m2, m4), m3);
+  const k3 = dot(cross(m1, m4), m2) / dot(cross(m3, m4), m2);
+  const n2 = [k2 * m2[0] - m1[0], k2 * m2[1] - m1[1], k2 - 1]; // direção da largura
+  const n3 = [k3 * m3[0] - m1[0], k3 * m3[1] - m1[1], k3 - 1]; // direção da altura
+
+  // A distância focal sai da própria perspectiva quando o papel "foge" nos dois sentidos. No caso mais comum,
+  // celular inclinado num sentido só, ela fica indeterminada (divisão por ~0): aí vale a de uma câmera
+  // principal de celular típica, cerca de 0,65 × a diagonal da foto.
+  const diagonal = Math.hypot(imageWidth, imageHeight);
+  let focalSquared = (0.65 * diagonal) ** 2;
+  if (Math.abs(n2[2]) > 0.02 && Math.abs(n3[2]) > 0.02) {
+    const measured = -(n2[0] * n3[0] + n2[1] * n3[1]) / (n2[2] * n3[2]);
+    if (measured > (0.35 * diagonal) ** 2 && measured < (2 * diagonal) ** 2) focalSquared = measured;
+  }
+
+  const aspect = Math.sqrt(
+    ((n2[0] ** 2 + n2[1] ** 2) / focalSquared + n2[2] ** 2) / ((n3[0] ** 2 + n3[1] ** 2) / focalSquared + n3[2] ** 2));
+  const naive = (distance(quad[0], quad[1]) + distance(quad[3], quad[2])) / (distance(quad[0], quad[3]) + distance(quad[1], quad[2]));
+  return aspect > naive / 2.5 && aspect < naive * 2.5 ? aspect : null;
 }
 
 // Coeficientes da transformação projetiva que leva o retângulo (0..width, 0..height) ao quad.

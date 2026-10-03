@@ -178,7 +178,11 @@
   <!-- Câmera dentro da página (js/camera.js): permite ligar a luz do celular, o que a câmera do sistema não deixa. -->
   <dialog id="camera" class="camera" aria-labelledby="camera-title">
     <h2 id="camera-title" class="sr-only">Câmera</h2>
-    <video id="camera-video" class="camera-video" playsinline muted autoplay></video>
+    <div id="camera-view" class="camera-view">
+      <video id="camera-video" class="camera-video" playsinline muted autoplay></video>
+      <svg id="camera-outline" class="camera-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false" hidden><polygon points=""/></svg>
+      <span id="camera-chip" class="camera-chip" aria-hidden="true" hidden></span>
+    </div>
     <p id="camera-warning" class="camera-warning" role="status" hidden></p>
     <p id="camera-message" class="camera-message" role="status"></p>
     <div class="camera-bar">
