@@ -28,5 +28,6 @@ npm test    # testes
 - Detectar o papel também com sombra forte ou fundo claro
 - Lupa ao arrastar os cantos do recorte
 - Arrastar para reordenar páginas
-- Juntar PDFs existentes
 - Interface em outros idiomas
+
+Funcionalidades maiores (abrir .docx, juntar, dividir e comprimir PDF) estão planejadas em [MELHORIAS.md](MELHORIAS.md).
