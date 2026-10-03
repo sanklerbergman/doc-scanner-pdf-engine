@@ -20,12 +20,20 @@ Feito pela comunidade, para a comunidade.
 | Garantia | Como |
 | --- | --- |
 | Nenhum arquivo sai do aparelho | Todo o processamento é feito em `<canvas>` no navegador. Não há backend. |
-| Nem dá para enviar | CSP com `connect-src 'none'`: o navegador bloqueia fetch/XHR/WebSocket/beacon da página. |
+| Nem dá para enviar | CSP com `connect-src 'none'`: o navegador bloqueia fetch/XHR/WebSocket/beacon na página e no Worker dos filtros, que são os únicos lugares por onde as imagens passam. |
 | Zero terceiros | Sem analytics, cookies, CDN ou fontes externas. As duas bibliotecas (libheif, para HEIC, e um gerador de QR Code) são servidas pelo próprio site. |
 | Nada guardado | Sem `localStorage`/IndexedDB. O service worker só faz cache dos arquivos do app. |
 | PDF limpo | A foto é redesenhada, o que descarta o EXIF (GPS, modelo do celular, data). O PDF não tem `/Info`, datas nem "Producer". |
 
 Dá para conferir: F12 → aba **Rede** enquanto gera um PDF. As únicas requisições são os arquivos do próprio app e URLs `blob:` (memória local).
+
+### Limites dessa garantia
+
+- A política vale para a página e para o Worker dos filtros. O service worker (`sw.js`, cache offline) não é coberto por ela, porque o GitHub Pages não permite enviar cabeçalhos; ele não recebe imagens, só os arquivos do próprio app.
+- Nenhuma política de navegador impede o próprio site de ser alterado. A proteção contra isso é o código ser aberto e toda mudança passar por revisão.
+- Quem hospeda uma cópia modificada pode trocar qualquer coisa, inclusive a chave Pix. O endereço oficial é o que está na descrição do repositório.
+
+Achou uma falha de segurança? Veja [SECURITY.md](SECURITY.md).
 
 ## Contribuindo
 

@@ -6,6 +6,19 @@ import { setupCamera } from './camera.js';
 import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
 
+// O GitHub Pages não permite enviar o cabeçalho que proíbe embutir o site dentro de outro (frame-ancestors).
+// Então o próprio app se recusa a rodar dentro de um iframe: evita que outro site o exiba como se fosse dele
+// ou sobreponha botões falsos aos nossos (clickjacking).
+if (window.top !== window.self) {
+  const link = document.createElement('a');
+  link.href = location.href;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = 'Abrir o Scanner Doc em uma aba própria';
+  document.body.replaceChildren(link);
+  throw new Error('O Scanner Doc não funciona embutido em outro site.');
+}
+
 const QUALITY = {
   light: { maxSide: 1600, jpeg: 0.7 },
   balanced: { maxSide: 2400, jpeg: 0.82 },

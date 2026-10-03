@@ -190,7 +190,11 @@ const jobs = new Map();
 function getWorker() {
   if (worker !== undefined) return worker;
   try {
-    worker = new Worker(new URL('./filter-worker.js', import.meta.url), { type: 'module' });
+    // O Worker nasce de um blob de uma linha que importa o arquivo de verdade. Motivo: um Worker carregado
+    // direto de um arquivo só obedece à política de segurança enviada pelo servidor (e o GitHub Pages não
+    // envia nenhuma); um Worker de blob herda a da página, incluindo o connect-src 'none'.
+    const entry = new Blob([`import ${JSON.stringify(new URL('./filter-worker.js', import.meta.url).href)};`], { type: 'text/javascript' });
+    worker = new Worker(URL.createObjectURL(entry), { type: 'module' });
   } catch {
     return (worker = null);
   }

@@ -25,4 +25,4 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404).end('Não encontrado');
   }
-}).listen(port, () => console.log(`Scanner Doc em http://localhost:${port}`));
+}).listen(port, '127.0.0.1', () => console.log(`Scanner Doc em http://localhost:${port}`)); // só nesta máquina, não na rede local

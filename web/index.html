@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- connect-src 'none': a página não consegue abrir nenhuma conexão de rede (fetch, XHR, WebSocket, beacon).
        Nem se alguém quisesse, suas imagens não teriam como sair daqui.
-       'wasm-unsafe-eval' só libera o WebAssembly do decodificador de HEIC (vendor/libheif), servido daqui mesmo. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; connect-src 'none'; font-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'self'; manifest-src 'self'; form-action 'none'; base-uri 'none'">
+       'wasm-unsafe-eval' só libera o WebAssembly do decodificador de HEIC (vendor/libheif), servido daqui mesmo.
+       worker-src blob: existe para o Worker dos filtros nascer de um blob e herdar esta mesma política (ver js/imaging.js). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; connect-src 'none'; font-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'self' blob:; manifest-src 'self'; form-action 'none'; base-uri 'none'">
   <meta name="referrer" content="no-referrer">
   <title>Scanner Doc → PDF</title>
   <meta name="description" content="Transforme fotos de documentos em PDF direto no navegador. Sem upload, sem cadastro, sem rastreio. Projeto open source.">
