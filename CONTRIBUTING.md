@@ -20,10 +20,12 @@ npm test    # testes
 - Mantenha o estilo do código existente (ES modules, sem build).
 - Teste no celular (ou no modo responsivo do navegador) quando mexer na interface.
 - Mudou arquivo do app? Aumente a versão de `CACHE` em `web/sw.js`.
+- Regras de segurança (bibliotecas, política da página, workflow): veja [SECURITY.md](SECURITY.md).
 
 ## Ideias de próximos passos
 
-- Recorte manual e correção de perspectiva
+- Detectar o papel também com sombra forte ou fundo claro
+- Lupa ao arrastar os cantos do recorte
 - Arrastar para reordenar páginas
 - Juntar PDFs existentes
 - Interface em outros idiomas

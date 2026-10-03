@@ -3,10 +3,12 @@
 Foto de documento vira PDF, **100% no navegador**. Sem upload, sem cadastro, sem rastreio.
 Feito pela comunidade, para a comunidade.
 
+**Usar agora: https://sanklerbergman.github.io/doc-scanner-pdf-engine/**
+
 ## O que faz
 
-- Tirar foto com a câmera do celular, com **botão de luz** para ambientes escuros, ou escolher várias imagens — também aceita arrastar e colar (Ctrl+V)
-- **Recorte automático do papel** com correção de perspectiva, ajustável arrastando os cantos
+- Tirar foto com a câmera do celular, com **botão de luz**, aviso de ambiente escuro e contorno do papel ao vivo, ou escolher várias imagens (também aceita arrastar e colar)
+- **Recorte automático do papel** com correção de perspectiva e de proporção, ajustável arrastando os cantos
 - Ver cada página em tela cheia, como vai sair no PDF
 - Reordenar, girar e remover páginas
 - Filtros: **Documento** (remove sombra, fundo branco, reforça texto fraco), **Cor realçada**, **Preto e branco** e **Original**
@@ -19,7 +21,7 @@ Feito pela comunidade, para a comunidade.
 
 | Garantia | Como |
 | --- | --- |
-| Nenhum arquivo sai do aparelho | Todo o processamento é feito em `<canvas>` no navegador. Não há backend. |
+| Nenhum arquivo sai do aparelho | Todo o processamento é feito no navegador (`<canvas>` e um Web Worker). Não há backend. |
 | Nem dá para enviar | CSP com `connect-src 'none'`: o navegador bloqueia fetch/XHR/WebSocket/beacon na página e no Worker dos filtros, que são os únicos lugares por onde as imagens passam. |
 | Zero terceiros | Sem analytics, cookies, CDN ou fontes externas. As duas bibliotecas (libheif, para HEIC, e um gerador de QR Code) são servidas pelo próprio site. |
 | Nada guardado | Sem `localStorage`/IndexedDB. O service worker só faz cache dos arquivos do app. |
@@ -30,8 +32,8 @@ Dá para conferir: F12 → aba **Rede** enquanto gera um PDF. As únicas requisi
 ### Limites dessa garantia
 
 - A política vale para a página e para o Worker dos filtros. O service worker (`sw.js`, cache offline) não é coberto por ela, porque o GitHub Pages não permite enviar cabeçalhos; ele não recebe imagens, só os arquivos do próprio app.
-- Nenhuma política de navegador impede o próprio site de ser alterado. A proteção contra isso é o código ser aberto e toda mudança passar por revisão.
-- Quem hospeda uma cópia modificada pode trocar qualquer coisa, inclusive a chave Pix. O endereço oficial é o que está na descrição do repositório.
+- Nenhuma política de navegador impede o próprio site de ser alterado. A proteção contra isso é o código ser aberto, com o histórico de mudanças público.
+- Quem hospeda uma cópia modificada pode trocar qualquer coisa, inclusive a chave Pix. O endereço oficial é https://sanklerbergman.github.io/doc-scanner-pdf-engine/.
 
 Achou uma falha de segurança? Veja [SECURITY.md](SECURITY.md).
 
@@ -41,4 +43,4 @@ Veja [CONTRIBUTING.md](CONTRIBUTING.md). Regra de ouro: **nada de requisições 
 
 ## Licença
 
-[MIT](LICENSE). O decodificador de HEIC em `web/vendor/libheif/` é o [libheif-js](https://github.com/catdad-experiments/libheif-js), sob LGPL-3.0, distribuído sem alterações.
+[MIT](LICENSE). As duas bibliotecas em `web/vendor/` são distribuídas sem alterações e têm licença própria: o decodificador de HEIC [libheif-js](https://github.com/catdad-experiments/libheif-js) (LGPL-3.0) e o gerador de QR Code [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT).
