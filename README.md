@@ -25,51 +25,6 @@ Feito pela comunidade, para a comunidade.
 
 Dá para conferir: F12 → aba **Rede** enquanto gera um PDF. As únicas requisições são os arquivos do próprio app e URLs `blob:` (memória local).
 
-## Rodando localmente
-
-Precisa só do Node 18+ (sem `npm install`):
-
-```bash
-npm start      # http://localhost:8080
-npm test       # testes do gerador de PDF
-```
-
-## Estrutura
-
-```
-web/                 site estático (é isso que vai para o ar)
-  index.html         página + Content-Security-Policy
-  js/app.js          interface e fluxo
-  js/imaging.js      decodificação, rotação e filtros (canvas)
-  js/pdf.js          gerador de PDF mínimo (embute JPEG sem recomprimir)
-  js/pix.js          monta o código "Pix copia e cola"
-  js/config.js       links de doação e do repositório
-  vendor/libheif/    decodificador de HEIC (libheif-js, LGPL-3.0)
-  vendor/qrcode/     gerador de QR Code (qrcode-generator, MIT)
-  sw.js              cache offline
-test/                testes (node:test)
-scripts/serve.js     servidor de desenvolvimento
-```
-
-## Publicando (GitHub Pages)
-
-1. Em **Settings → Pages**, escolha **Source: GitHub Actions**.
-2. Todo push na `main` roda os testes e publica a pasta `web/`.
-
-Ao mudar arquivos do app, aumente a versão de `CACHE` em `web/sw.js` para os usuários offline receberem a atualização.
-
-## Feedback e doações
-
-Edite `web/js/config.js`:
-
-```js
-feedbackEmail: 'voce@exemplo.com',                      // botão "Mandar um e-mail" (mailto)
-donationUrl: 'https://github.com/sponsors/seu-usuario', // ou Ko-fi, Apoia.se…
-pixKey: 'sua-chave-pix',                                // QR Code + "Pix copia e cola", gerados no navegador
-```
-
-Campos vazios escondem o botão correspondente. Use chave Pix **aleatória de conta pessoa física**: chave de conta CNPJ/MEI mostra o CNPJ a quem paga, e o cadastro da empresa (endereço, telefone) é público. Doar nunca libera recurso extra — não existe versão Pro.
-
 ## Contribuindo
 
 Veja [CONTRIBUTING.md](CONTRIBUTING.md). Regra de ouro: **nada de requisições externas nem rastreamento.**
