@@ -154,6 +154,12 @@ select, input[type="text"] {
 .checklist { padding-left: 0; list-style: none; display: grid; gap: 10px; }
 .checklist li { padding-left: 28px; position: relative; }
 .checklist li::before { content: "✓"; position: absolute; left: 4px; color: var(--accent); font-weight: 700; }
+.pix { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin: 16px 0; padding: 16px; background: var(--surface-2); border-radius: var(--radius); }
+.pix-qr { width: 180px; height: 180px; border-radius: 8px; image-rendering: pixelated; flex: none; }
+.pix-info { flex: 1 1 240px; }
+.pix-info p { margin: 0 0 12px; }
+.pix-info p:last-child { margin: 12px 0 0; }
+.pix-code { display: block; word-break: break-all; user-select: all; padding: 8px; }
 .donate-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 8px; }
 
 .site-footer { margin-top: 40px; padding: 24px 0 40px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.92rem; }

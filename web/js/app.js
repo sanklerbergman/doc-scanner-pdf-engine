@@ -1,5 +1,6 @@
 import { buildPdf, layoutPage } from './pdf.js';
 import { FILTERS, decodeFile, renderPage, canvasToBlob } from './imaging.js';
+import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
 
 const QUALITY = {
@@ -347,18 +348,51 @@ if (CONFIG.donationUrl) {
   donate.href = CONFIG.donationUrl;
   donate.hidden = false;
 }
-const pix = $('#pix-copy');
-if (CONFIG.pixKey) {
-  pix.hidden = false;
-  pix.addEventListener('click', async () => {
+if (CONFIG.pixKey) setupPix();
+
+async function setupPix() {
+  const code = pixPayload(CONFIG.pixKey, { name: CONFIG.pixName, city: CONFIG.pixCity });
+  const copy = $('#pix-copy');
+  copy.addEventListener('click', async () => {
     try {
-      await navigator.clipboard.writeText(CONFIG.pixKey);
-      pix.textContent = 'Chave copiada! ✓';
+      await navigator.clipboard.writeText(code);
+      copy.textContent = 'Código copiado! ✓';
+      setTimeout(() => { copy.textContent = 'Copiar código Pix'; }, 3000);
     } catch {
-      pix.textContent = `Chave Pix: ${CONFIG.pixKey}`;
+      copy.replaceWith(el('code', { className: 'pix-code', textContent: code }));
     }
   });
+  $('#pix').hidden = false;
+
+  try {
+    const { default: qrcode } = await import('../vendor/qrcode/qrcode.js');
+    const qr = qrcode(0, 'M');
+    qr.addData(code);
+    qr.make();
+    drawQr($('#pix-qr'), qr);
+  } catch (err) {
+    console.error(err);
+    $('#pix-qr').hidden = true; // sem QR, o botão de copiar continua funcionando
+  }
 }
+
+// Sempre preto no branco, com margem: é o que os leitores dos bancos esperam.
+function drawQr(canvas, qr) {
+  const count = qr.getModuleCount();
+  const scale = 6;
+  const quiet = 4;
+  canvas.width = canvas.height = (count + quiet * 2) * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#000';
+  for (let row = 0; row < count; row++) {
+    for (let col = 0; col < count; col++) {
+      if (qr.isDark(row, col)) ctx.fillRect((col + quiet) * scale, (row + quiet) * scale, scale, scale);
+    }
+  }
+}
+
 for (const link of document.querySelectorAll('[data-repo-link]')) link.href = CONFIG.repoUrl;
 
 // ---------- Offline ----------

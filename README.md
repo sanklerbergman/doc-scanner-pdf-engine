@@ -19,7 +19,7 @@ Feito pela comunidade, para a comunidade.
 | --- | --- |
 | Nenhum arquivo sai do aparelho | Todo o processamento é feito em `<canvas>` no navegador. Não há backend. |
 | Nem dá para enviar | CSP com `connect-src 'none'`: o navegador bloqueia fetch/XHR/WebSocket/beacon da página. |
-| Zero terceiros | Sem analytics, cookies, CDN ou fontes externas. A única biblioteca (libheif, para HEIC) é servida pelo próprio site. |
+| Zero terceiros | Sem analytics, cookies, CDN ou fontes externas. As duas bibliotecas (libheif, para HEIC, e um gerador de QR Code) são servidas pelo próprio site. |
 | Nada guardado | Sem `localStorage`/IndexedDB. O service worker só faz cache dos arquivos do app. |
 | PDF limpo | A foto é redesenhada, o que descarta o EXIF (GPS, modelo do celular, data). O PDF não tem `/Info`, datas nem "Producer". |
 
@@ -42,8 +42,10 @@ web/                 site estático (é isso que vai para o ar)
   js/app.js          interface e fluxo
   js/imaging.js      decodificação, rotação e filtros (canvas)
   js/pdf.js          gerador de PDF mínimo (embute JPEG sem recomprimir)
+  js/pix.js          monta o código "Pix copia e cola"
   js/config.js       links de doação e do repositório
   vendor/libheif/    decodificador de HEIC (libheif-js, LGPL-3.0)
+  vendor/qrcode/     gerador de QR Code (qrcode-generator, MIT)
   sw.js              cache offline
 test/                testes (node:test)
 scripts/serve.js     servidor de desenvolvimento
@@ -63,10 +65,10 @@ Edite `web/js/config.js`:
 ```js
 feedbackEmail: 'voce@exemplo.com',                      // botão "Mandar um e-mail" (mailto)
 donationUrl: 'https://github.com/sponsors/seu-usuario', // ou Ko-fi, Apoia.se…
-pixKey: 'sua-chave-pix',
+pixKey: 'sua-chave-pix',                                // QR Code + "Pix copia e cola", gerados no navegador
 ```
 
-Campos vazios escondem o botão correspondente. Doar nunca libera recurso extra — não existe versão Pro.
+Campos vazios escondem o botão correspondente. Use chave Pix **aleatória de conta pessoa física**: chave de conta CNPJ/MEI mostra o CNPJ a quem paga, e o cadastro da empresa (endereço, telefone) é público. Doar nunca libera recurso extra — não existe versão Pro.
 
 ## Contribuindo
 
