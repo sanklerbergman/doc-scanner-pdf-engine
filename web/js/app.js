@@ -1,5 +1,6 @@
 import { buildPdf, layoutPage } from './pdf.js';
-import { FILTERS, decodeFile, renderPage, renderPageAsync, canvasToBlob } from './imaging.js';
+import { FILTERS, decodeFile, detectQuad, renderPage, renderPageAsync, canvasToBlob } from './imaging.js';
+import { setupViewer } from './viewer.js';
 import { setupCamera } from './camera.js';
 import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
@@ -10,8 +11,9 @@ const QUALITY = {
   high: { maxSide: 3508, jpeg: 0.92 },
 };
 const MARGINS = { none: 0, small: 18, normal: 36 };
-const PREVIEW_SIDE = 800; // cópia reduzida guardada em memória para as miniaturas
-const THUMB_SIDE = 480;
+const PREVIEW_SIDE = 1280; // cópia reduzida guardada em memória (miniaturas, detecção do papel, tela de recorte)
+const THUMB_SIDE = 960; // no celular a miniatura ocupa a largura da tela, em tela de alta densidade
+const VIEW_SIDE = 2000; // página em tela cheia
 const UNDO_MS = 10000; // tempo para desfazer a remoção de uma página
 
 const $ = (selector) => document.querySelector(selector);
@@ -93,10 +95,14 @@ async function addFiles(fileList) {
   }
   discardPdf();
   const failed = [];
+  let cropped = 0;
   for (const file of files) {
     announce(`Lendo ${file.name}…`);
     try {
-      const page = { id: nextId++, file, preview: await makePreview(file), rotation: 0, filter: els.filterAll.value, thumbUrl: '' };
+      const preview = await makePreview(file);
+      // quad: recorte do papel (4 cantos, de 0 a 1, na foto sem girar) ou null para usar a foto inteira.
+      const page = { id: nextId++, file, preview, quad: detectQuad(preview, preview.width, preview.height), rotation: 0, filter: els.filterAll.value, thumbUrl: '' };
+      if (page.quad) cropped++;
       await refreshThumb(page);
       state.pages.push(page);
       renderPages();
@@ -108,7 +114,8 @@ async function addFiles(fileList) {
   if (failed.length) {
     announce(`Não consegui abrir: ${failed.join(', ')}. Tente exportar como JPG ou PNG.`, 'error');
   } else {
-    announce(`${files.length === 1 ? '1 imagem adicionada' : `${files.length} imagens adicionadas`}.`);
+    const added = files.length === 1 ? '1 imagem adicionada' : `${files.length} imagens adicionadas`;
+    announce(cropped ? `${added}, já recortada no papel. Toque na página para conferir ou ajustar.` : `${added}. Toque na página para ver em tela cheia.`);
   }
 }
 
@@ -123,7 +130,7 @@ async function makePreview(file) {
 
 async function refreshThumb(page) {
   const canvas = renderPage(page.preview, page.preview.width, page.preview.height, {
-    rotation: page.rotation, filter: page.filter, maxSide: THUMB_SIDE,
+    rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: THUMB_SIDE,
   });
   const blob = await canvasToBlob(canvas, 'image/jpeg', 0.8);
   if (page.thumbUrl) URL.revokeObjectURL(page.thumbUrl);
@@ -148,7 +155,10 @@ function renderPages() {
     }, [icon(action)]);
 
     return el('li', { className: 'page-card', 'data-id': page.id }, [
-      el('div', { className: 'thumb' }, [el('img', { src: page.thumbUrl, alt: `Página ${i + 1}: ${page.file.name}` })]),
+      el('button', {
+        type: 'button', className: 'thumb', 'data-action': 'view', disabled: state.busy,
+        'aria-label': `Ver a página ${i + 1} em tela cheia e ajustar o recorte`,
+      }, [el('img', { src: page.thumbUrl, alt: '' }), el('span', { className: 'thumb-zoom' }, [icon('expand')])]),
       el('div', { className: 'page-tools' }, [
         el('span', { className: 'page-num', textContent: i + 1 }),
         button('remove', 'Remover'),
@@ -186,6 +196,10 @@ els.pages.addEventListener('click', async (event) => {
   if (!button || state.busy) return;
   const index = findPage(button);
   const page = state.pages[index];
+  if (button.dataset.action === 'view') {
+    viewer.open(page, `Página ${index + 1} de ${state.pages.length}`);
+    return;
+  }
   discardPdf();
 
   switch (button.dataset.action) {
@@ -219,6 +233,36 @@ els.pages.addEventListener('change', async (event) => {
   // Quem trocou o filtro pelo teclado continua no mesmo seletor.
   const index = state.pages.indexOf(page);
   if (index >= 0 && focusLost()) focusCard(index, '.page-filter');
+});
+
+// ---------- Tela cheia e recorte ----------
+
+async function renderProcessed(page) {
+  const image = await decodeFile(page.file);
+  let canvas;
+  try {
+    canvas = await renderPageAsync(image.source, image.width, image.height, {
+      rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: VIEW_SIDE,
+    });
+  } finally {
+    image.release();
+  }
+  const blob = await canvasToBlob(canvas, 'image/jpeg', 0.9);
+  canvas.width = canvas.height = 0;
+  return blob;
+}
+
+const viewer = setupViewer({
+  renderProcessed,
+  renderOriginal: (page) => canvasToBlob(
+    renderPage(page.preview, page.preview.width, page.preview.height, { rotation: page.rotation }), 'image/jpeg', 0.9),
+  detect: (page) => detectQuad(page.preview, page.preview.width, page.preview.height),
+  async applyCrop(page, quad) {
+    page.quad = quad;
+    discardPdf();
+    await refreshThumb(page);
+    renderPages();
+  },
 });
 
 // A miniatura demora um pouco: se nesse meio-tempo a pessoa já foi para outro controle, não puxa o foco de volta.
@@ -363,7 +407,7 @@ async function generate() {
       let canvas;
       try {
         // O filtro roda num Web Worker: a página continua respondendo durante a geração.
-        canvas = await renderPageAsync(image.source, image.width, image.height, { rotation: page.rotation, filter: page.filter, maxSide: quality.maxSide });
+        canvas = await renderPageAsync(image.source, image.width, image.height, { rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: quality.maxSide });
       } finally {
         image.release();
       }

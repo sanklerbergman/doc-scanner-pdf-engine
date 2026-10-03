@@ -34,6 +34,8 @@
     <symbol id="i-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></symbol>
     <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></symbol>
     <symbol id="i-remove" viewBox="0 0 24 24"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></symbol>
+    <symbol id="i-crop" viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></symbol>
     <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></symbol>
     <symbol id="i-undo" viewBox="0 0 24 24"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
   </svg>
@@ -180,6 +182,35 @@
       <button id="camera-close" type="button" class="camera-btn">Concluir <span id="camera-count"></span></button>
     </div>
     <button id="camera-native" type="button" class="camera-native">Usar a câmera do sistema</button>
+  </dialog>
+
+  <!-- Página em tela cheia + ajuste do recorte (js/viewer.js). -->
+  <dialog id="viewer" class="viewer" aria-labelledby="viewer-title">
+    <div class="viewer-head">
+      <h2 id="viewer-title"></h2>
+      <button id="viewer-close" type="button" class="btn">Fechar</button>
+    </div>
+    <div id="viewer-stage" class="viewer-stage">
+      <img id="viewer-image" class="viewer-image" alt="">
+      <div id="crop" class="crop" hidden>
+        <img id="crop-image" alt="Foto original">
+        <svg class="crop-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polygon id="crop-polygon" points=""/></svg>
+        <button type="button" class="crop-handle"></button>
+        <button type="button" class="crop-handle"></button>
+        <button type="button" class="crop-handle"></button>
+        <button type="button" class="crop-handle"></button>
+      </div>
+    </div>
+    <p id="viewer-hint" class="viewer-hint" role="status"></p>
+    <div id="viewer-view-actions" class="viewer-actions">
+      <button id="viewer-crop" type="button" class="btn btn-primary"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-crop"/></svg> Ajustar recorte</button>
+    </div>
+    <div id="viewer-crop-actions" class="viewer-actions" hidden>
+      <button id="crop-detect" type="button" class="btn">Achar o papel</button>
+      <button id="crop-full" type="button" class="btn">Foto inteira</button>
+      <button id="crop-cancel" type="button" class="btn">Cancelar</button>
+      <button id="crop-apply" type="button" class="btn btn-primary">Aplicar recorte</button>
+    </div>
   </dialog>
 
   <footer class="site-footer">

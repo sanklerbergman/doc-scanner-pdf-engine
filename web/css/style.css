@@ -134,11 +134,20 @@ kbd {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 8px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow);
 }
+/* A miniatura é um botão: abre a página em tela cheia. Mostra a página inteira, já recortada e filtrada. */
 .thumb {
-  aspect-ratio: 3 / 4; background: var(--surface-2); border-radius: 8px;
+  position: relative; width: 100%; aspect-ratio: 3 / 4; padding: 0; border: 0;
+  background: var(--surface-2); border-radius: 8px; cursor: zoom-in;
   display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
-.thumb img { max-width: 100%; max-height: 100%; display: block; }
+.thumb:disabled { cursor: default; }
+.thumb img { max-width: 100%; max-height: 100%; display: block; box-shadow: 0 0 0 1px var(--border); }
+.thumb-zoom {
+  position: absolute; right: 6px; bottom: 6px; width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+}
+.thumb-zoom .icon { width: 18px; height: 18px; }
 /* Controles do cartão em duas linhas: número + remover em cima, mover/girar embaixo.
    Remover fica numa linha própria, longe dos outros botões. */
 .page-tools {
@@ -166,6 +175,17 @@ kbd {
   .pages { grid-template-columns: repeat(auto-fill, minmax(min(100%, 156px), 1fr)); }
   .page-card { padding: 6px; }
   .page-tools { --tool: 44px; }
+}
+
+/* Celular em pé: uma página por linha, grande o bastante para conferir o resultado sem abrir nada.
+   Os controles cabem todos numa linha só. */
+@media (max-width: 520px) {
+  .pages { grid-template-columns: 1fr; gap: 16px; }
+  .page-card { padding: 10px; }
+  .thumb { aspect-ratio: auto; height: min(62vh, 520px); }
+  .page-tools { --tool: 44px; grid-template-columns: auto repeat(3, minmax(var(--tool), 1fr)) var(--tool); gap: 8px; }
+  .page-num { grid-column: 1; padding: 0 8px 0 4px; font-size: 1.1rem; }
+  .icon-btn-remove { grid-column: 5; grid-row: 1; }
 }
 
 /* Ajustes */
@@ -256,3 +276,41 @@ select:disabled, input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed
   color: #d0d5dd; font: inherit; font-size: 0.9rem; text-decoration: underline; cursor: pointer;
 }
 .camera :focus-visible { outline-color: #fde68a; }
+
+/* Página em tela cheia e ajuste do recorte. */
+.viewer {
+  width: 100vw; height: 100dvh; max-width: none; max-height: none;
+  margin: 0; padding: 0; border: 0; background: var(--bg); color: var(--text);
+}
+.viewer[open] { display: flex; flex-direction: column; }
+.viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.viewer-head h2 { margin: 0; font-size: 1.05rem; }
+.viewer-stage {
+  flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; background: var(--surface-2); padding: 8px;
+}
+.viewer-image { max-width: 100%; max-height: 100%; display: block; cursor: zoom-in; box-shadow: var(--shadow), 0 0 0 1px var(--border); }
+/* Ampliado: a imagem passa a ter 2,2× a largura da tela e a área rola nos dois sentidos. */
+.viewer-stage.zoomed { display: block; overflow: auto; -webkit-overflow-scrolling: touch; }
+.viewer-stage.zoomed .viewer-image { max-width: none; max-height: none; width: 220%; cursor: zoom-out; }
+/* Altura fixa (duas linhas): trocar o texto não pode mexer no tamanho da foto no meio de um arrasto. */
+.viewer-hint { margin: 0; padding: 8px 16px 0; height: 3.8em; overflow: hidden; text-align: center; font-size: 0.9rem; color: var(--muted); background: var(--surface); }
+.viewer-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 8px 12px 14px; background: var(--surface); }
+.viewer-actions .btn { flex: 1 1 140px; max-width: 260px; }
+
+.crop { position: relative; flex: none; touch-action: none; }
+.crop img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; }
+.crop-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.crop-lines polygon { fill: rgb(45 212 191 / 18%); stroke: #2dd4bf; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.crop.invalid .crop-lines polygon { fill: rgb(249 112 102 / 18%); stroke: #f97066; }
+/* Alvo de 48 px para o dedo; o que se vê é a bolinha do meio. */
+.crop-handle {
+  position: absolute; width: 48px; height: 48px; margin: -24px 0 0 -24px; padding: 0;
+  border: 0; border-radius: 50%; background: none; cursor: grab; touch-action: none;
+}
+.crop-handle::before {
+  content: ""; position: absolute; inset: 13px; border-radius: 50%;
+  background: #fff; border: 3px solid #0f766e; box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
+}
+.crop-handle:active { cursor: grabbing; }
+.crop-handle:active::before, .crop-handle:focus-visible::before { inset: 9px; }

@@ -1,6 +1,7 @@
 // Decodificação, rotação e filtros de imagem. Tudo em <canvas>, tudo local.
 // Redesenhar a foto num canvas também descarta os metadados EXIF (GPS, modelo do celular etc.).
 import { applyFilter } from './filters.js';
+import { detectDocument, quadSize, warpPixels } from './geometry.js';
 
 export { applyFilter };
 
@@ -67,8 +68,64 @@ async function decodeHeif(file) {
   }
 }
 
-// Desenha a imagem reduzida (maxSide) e girada (0/90/180/270) num canvas novo, ainda sem filtro.
-function drawPage(source, width, height, { rotation = 0, filter = 'original', maxSide = Infinity }) {
+// Procura o papel na foto. Devolve os cantos normalizados (0 a 1) ou null.
+export function detectQuad(source, width, height) {
+  const scale = Math.min(1, 256 / Math.max(width, height));
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(source, 0, 0, w, h);
+  const { data } = ctx.getImageData(0, 0, w, h);
+  const gray = new Uint8Array(w * h);
+  for (let i = 0, p = 0; i < gray.length; i++, p += 4) gray[i] = (data[p] * 77 + data[p + 1] * 150 + data[p + 2] * 29) >> 8;
+  const quad = detectDocument(gray, w, h);
+  if (!quad) return null;
+  // Puxa os cantos um tiquinho para dentro: melhor perder um fio da margem do que deixar uma tira do fundo.
+  const cx = quad.reduce((sum, [x]) => sum + x, 0) / 4;
+  const cy = quad.reduce((sum, [, y]) => sum + y, 0) / 4;
+  return quad.map(([x, y]) => [x + (cx - x) * 0.012, y + (cy - y) * 0.012]);
+}
+
+// Recorta o quad (cantos normalizados) e desfaz a perspectiva. O lado maior do resultado não passa de maxSide.
+function cropToQuad(source, width, height, quad, maxSide) {
+  const size = quadSize(quad.map(([x, y]) => [x * width, y * height]));
+  const scale = Math.min(1, maxSide / Math.max(size.width, size.height));
+  // Reduz a foto antes, para o recorte amostrar perto de 1 pixel por pixel (sem serrilhado).
+  const sw = Math.max(1, Math.round(width * scale));
+  const sh = Math.max(1, Math.round(height * scale));
+  const scaled = document.createElement('canvas');
+  scaled.width = sw;
+  scaled.height = sh;
+  const ctx = scaled.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, sw, sh);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, 0, 0, sw, sh);
+
+  const outW = Math.max(1, Math.round(size.width * scale));
+  const outH = Math.max(1, Math.round(size.height * scale));
+  const pixels = warpPixels(ctx.getImageData(0, 0, sw, sh).data, sw, sh, quad.map(([x, y]) => [x * sw, y * sh]), outW, outH);
+  scaled.width = scaled.height = 0;
+
+  const out = document.createElement('canvas');
+  out.width = outW;
+  out.height = outH;
+  out.getContext('2d').putImageData(new ImageData(pixels, outW, outH), 0, 0);
+  return out;
+}
+
+// Desenha a imagem recortada (quad), reduzida (maxSide) e girada (0/90/180/270) num canvas novo, ainda sem filtro.
+function drawPage(source, width, height, { rotation = 0, filter = 'original', maxSide = Infinity, quad = null }) {
+  let cropped = null;
+  if (quad) {
+    cropped = cropToQuad(source, width, height, quad, maxSide);
+    source = cropped;
+    width = cropped.width;
+    height = cropped.height;
+  }
   const scale = Math.min(1, maxSide / Math.max(width, height));
   const w = Math.max(1, Math.round(width * scale));
   const h = Math.max(1, Math.round(height * scale));
@@ -85,10 +142,11 @@ function drawPage(source, width, height, { rotation = 0, filter = 'original', ma
   ctx.rotate((rotation * Math.PI) / 180);
   ctx.drawImage(source, -w / 2, -h / 2, w, h);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (cropped) cropped.width = cropped.height = 0;
   return { canvas, ctx };
 }
 
-// Versão síncrona, na thread principal: usada nas miniaturas (no máximo 480 px, rápido).
+// Versão síncrona, na thread principal: usada nas miniaturas (imagem pequena, rápido).
 export function renderPage(source, width, height, options = {}) {
   const { canvas, ctx } = drawPage(source, width, height, options);
   const filter = options.filter ?? 'original';

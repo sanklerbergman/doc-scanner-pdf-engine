@@ -6,8 +6,10 @@ Feito pela comunidade, para a comunidade.
 ## O que faz
 
 - Tirar foto com a câmera do celular, com **botão de luz** para ambientes escuros, ou escolher várias imagens — também aceita arrastar e colar (Ctrl+V)
+- **Recorte automático do papel** com correção de perspectiva, ajustável arrastando os cantos
+- Ver cada página em tela cheia, como vai sair no PDF
 - Reordenar, girar e remover páginas
-- Filtros: **Documento** (remove sombra, fundo branco), **Cor realçada**, **Preto e branco** e **Original**
+- Filtros: **Documento** (remove sombra, fundo branco, reforça texto fraco), **Cor realçada**, **Preto e branco** e **Original**
 - Tamanho A4, Carta ou igual à imagem; margem e qualidade ajustáveis
 - Baixar ou compartilhar o PDF (no celular)
 - Abre fotos **HEIC** do iPhone em qualquer navegador (decodificador embutido, carregado só quando precisa)
