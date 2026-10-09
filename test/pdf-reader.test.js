@@ -200,6 +200,19 @@ test('saída sem metadados, JavaScript, ações nem anotações clicáveis; apar
   assert.match(latin1(form.data), /\(Maria\) Tj/);
 });
 
+test('recursos com nomes como /B ou /JS não somem na cópia', async () => {
+  const doc = await openPdf(makeRawPdf({
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    3: '<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /B 5 0 R /JS 5 0 R /Parent 5 0 R >> >> >>',
+    4: { data: 'BT /B 12 Tf (x) Tj /JS 12 Tf (y) Tj ET' },
+    5: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  }).bytes);
+  const { doc: copy } = await merge([[doc, 0]]);
+  const fonts = copy.resolve(copy.resolve(copy.pages[0].attrs.Resources).get('Font'));
+  assert.deepEqual([...fonts.keys()], ['B', 'JS', 'Parent']);
+});
+
 test('reabre o PDF gerado pelo próprio app', async () => {
   const own = buildPdf([{ jpeg: fixture('gray-16x24.jpg'), ...layoutPage(16, 24, 'letter', 0) }]);
   const doc = await openPdf(own);

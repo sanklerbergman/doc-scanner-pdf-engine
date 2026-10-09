@@ -3,6 +3,12 @@
 // O desenho usa o PDF.js da Mozilla (pdf-render.js, ~1,7 MB, carregado na primeira vez). Se ele falhar,
 // a página aparece como um cartão com o formato da folha e o número. No PDF novo, ela sai igual ao original.
 import { openPdf, copyPages, PdfError } from './pdf-reader.js';
+import { compressObjects, compressibleBytes } from './pdf-compress.js';
+
+// PDF "pesado": imagens que dá para recomprimir somando 1 MB ou mais, e pelo menos 40% do arquivo.
+// Aí o app já liga a compressão e avisa (dá para desligar com um toque).
+const HEAVY_IMAGES = 1024 * 1024;
+const HEAVY_SHARE = 0.4;
 
 export { copyPages, PdfError };
 
@@ -28,6 +34,50 @@ export async function drawPdfPage(doc, page, options) {
   }
 }
 
+/**
+ * Comprimir: versões menores das imagens e streams que as páginas usam (ver pdf-compress.js).
+ * @param {object} doc documento do pdf-reader
+ * @param {number[]} indices páginas que vão para o PDF novo
+ * @param {{maxSide: number, jpeg: number}} quality nível de qualidade do app (lado maior e qualidade do JPEG)
+ * @param {(done: number, total: number) => void} [onProgress]
+ */
+export function compressPdf(doc, indices, quality, onProgress) {
+  return compressObjects(doc, indices, { encode: (input) => encodeJpeg(input, quality), onProgress });
+}
+
+// Recodifica uma imagem em JPEG pelo canvas, reduzindo o lado maior para quality.maxSide.
+async function encodeJpeg({ jpeg, pixels }, { maxSide, jpeg: level }) {
+  let source;
+  let release = () => {};
+  if (jpeg) {
+    // imageOrientation 'none': dentro do PDF, a orientação EXIF do JPEG não vale.
+    const bitmap = await createImageBitmap(new Blob([jpeg], { type: 'image/jpeg' }), { imageOrientation: 'none' });
+    source = bitmap;
+    release = () => bitmap.close();
+  } else {
+    source = document.createElement('canvas');
+    source.width = pixels.width;
+    source.height = pixels.height;
+    source.getContext('2d').putImageData(new ImageData(pixels.data, pixels.width, pixels.height), 0, 0);
+    release = () => { source.width = source.height = 0; };
+  }
+  try {
+    const scale = Math.min(1, maxSide / Math.max(source.width, source.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(source.width * scale));
+    canvas.height = Math.max(1, Math.round(source.height * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', level));
+    const result = blob && { data: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height };
+    canvas.width = canvas.height = 0;
+    return result;
+  } finally {
+    release();
+  }
+}
+
 // Libera a memória dos PDFs abertos no PDF.js (ao limpar a lista).
 export async function releasePdfPreviews() {
   if (renderer) (await renderer.catch(() => null))?.releaseAll();
@@ -35,7 +85,8 @@ export async function releasePdfPreviews() {
 
 /**
  * @param {File} file
- * @returns {Promise<{doc: object, pages: Array<{index: number, width: number, height: number}>, notes: string[]}>}
+ * @returns {Promise<{doc: object, pages: Array<{index: number, width: number, height: number}>, notes: string[],
+ *   heavy: boolean}>} heavy: PDF pesado por causa de imagens que a compressão consegue diminuir
  */
 export async function openPdfFile(file) {
   if (file.size > MAX_FILE) throw new PdfError('O PDF passa de 200 MB.');
@@ -48,7 +99,9 @@ export async function openPdfFile(file) {
     notes.push('Links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.');
   }
   const pages = doc.pages.map((page, index) => ({ index, width: page.width, height: page.height }));
-  return { doc, pages, notes };
+  const images = compressibleBytes(doc);
+  const heavy = images >= HEAVY_IMAGES && images >= file.size * HEAVY_SHARE;
+  return { doc, pages, notes, heavy };
 }
 
 // Nome do formato, quando é um dos comuns (tolerância de 2 pt).

@@ -177,7 +177,7 @@ class Parser {
 // ---------- Filtros (só o necessário para ler a estrutura) ----------
 
 // Preditores PNG (/Predictor 10 a 15), usados nas tabelas xref em stream.
-function unpredict(data, params) {
+export function unpredict(data, params) {
   const predictor = params?.get('Predictor') ?? 1;
   if (predictor < 10) return data;
   const colors = params.get('Colors') ?? 1;
@@ -639,7 +639,16 @@ function flattenAnnotations(doc, page) {
 }
 
 // Chaves que não vão para o PDF novo, em qualquer objeto copiado: metadados, ações e estrutura.
-const DROPPED_KEYS = new Set(['Metadata', 'PieceInfo', 'AA', 'OpenAction', 'JS', 'JavaScript', 'StructParent', 'StructParents', 'Parent', 'Annots', 'B', 'Thumb', 'OCProperties']);
+export const DROPPED_KEYS = new Set(['Metadata', 'PieceInfo', 'AA', 'OpenAction', 'JS', 'JavaScript', 'StructParent', 'StructParents', 'Parent', 'Annots', 'Thumb', 'OCProperties']);
+
+// Dicionários de recursos por nome (/Font << /F1 ... >>, /XObject << /Im0 ... >>): as chaves são nomes livres
+// escolhidos pelo programa que gerou o PDF, então nenhuma delas é descartada (uma imagem pode se chamar /JS).
+export const NAME_MAPS = new Set(['Font', 'XObject', 'ExtGState', 'ColorSpace', 'Pattern', 'Shading', 'Properties']);
+
+// Chaves do dicionário que vão para a cópia.
+export function keptEntries(dict, names = false) {
+  return [...dict].filter(([key]) => names || !DROPPED_KEYS.has(key));
+}
 
 function formatNumber(n) {
   if (Number.isInteger(n)) return String(n);
@@ -666,6 +675,8 @@ function formatString(bytes) {
  * Objetos compartilhados entre as páginas (uma fonte usada em todas, por exemplo) são copiados uma vez só.
  * @param {PdfDocument} doc
  * @param {number[]} indices posições das páginas (a partir de 0)
+ * @param {{replace?: Map<number, PdfStream>}} [options] replace: objetos trocados na cópia (ex.: imagens
+ *   recomprimidas pelo pdf-compress.js), pelo número no PDF de origem
  * Anotações (links, comentários, campos de formulário) não são copiadas como anotações: o que elas mostram
  * (o valor preenchido num campo, um carimbo, o selo de uma assinatura) é desenhado na própria página.
  * Assim o PDF novo fica igual ao que se via, mas sem nada clicável nem editável.
@@ -673,7 +684,7 @@ function formatString(bytes) {
  *   objects: cada objeto como uma lista de partes; {ref: i} aponta para objects[i].
  *   pages: por página, {mediaBox, cropBox, rotate, resources, contents, group}, também em partes.
  */
-export function copyPages(doc, indices) {
+export function copyPages(doc, indices, { replace } = {}) {
   const objects = [];
   const local = new Map(); // num no PDF de origem → posição em objects
   const queue = [];
@@ -696,7 +707,7 @@ export function copyPages(doc, indices) {
 
   // Valor → partes. Referência a objeto que não existe vira null. Stream só existe como objeto próprio:
   // um stream novo dentro de outro valor (top = false) vira um objeto à parte, e no lugar fica a referência.
-  function write(value, out, top = false) {
+  function write(value, out, top = false, names = false) {
     if (value instanceof PdfRef) {
       if (doc.resolve(value) === null) out.push('null');
       else out.push(refTo(value));
@@ -711,10 +722,9 @@ export function copyPages(doc, indices) {
       out.push(']');
     } else if (value instanceof PdfDict) {
       out.push('<<');
-      for (const [key, item] of value) {
-        if (DROPPED_KEYS.has(key)) continue;
+      for (const [key, item] of keptEntries(value, names)) {
         out.push(formatName(key), ' ');
-        write(item, out);
+        write(item, out, false, NAME_MAPS.has(key));
         out.push(' ');
       }
       out.push('>>');
@@ -775,7 +785,7 @@ q ${matrix.map(formatNumber).join(' ')} cm /Annot${i} Do Q`;
   }
   while (queue.length) {
     const num = queue.shift();
-    objects[local.get(num)] = write(doc.object(num), [], true);
+    objects[local.get(num)] = write(replace?.get(num) ?? doc.object(num), [], true);
   }
   return { objects, pages };
 }

@@ -149,11 +149,11 @@ O ganho depende do tipo de PDF, e isso precisa estar claro na interface:
 
 Tarefas:
 
-- [ ] Recodificar imagens `DCTDecode`, limitando o lado maior (reaproveitar os níveis de `QUALITY`)
-- [ ] Recodificar imagens `FlateDecode` em RGB ou cinza, com preditores PNG. CMYK, `Indexed` e máscaras ficam como estão.
-- [ ] Comprimir com `CompressionStream('deflate')` os streams que estão sem compressão
-- [ ] Descartar objetos não usados e versões antigas de atualizações incrementais
-- [ ] Mostrar "antes → depois". Se o arquivo não diminuir, avisar e manter o original.
+- [x] Recodificar imagens `DCTDecode`, limitando o lado maior (reaproveitar os níveis de `QUALITY`)
+- [x] Recodificar imagens `FlateDecode` em RGB ou cinza, com preditores PNG. CMYK, `Indexed` e máscaras ficam como estão.
+- [x] Comprimir com `CompressionStream('deflate')` os streams que estão sem compressão
+- [x] Descartar objetos não usados e versões antigas de atualizações incrementais (a cópia só leva o que as páginas usam)
+- [x] Mostrar "antes → depois". Se o arquivo não diminuir, avisar e manter o original.
 
 ### Segurança e privacidade
 
@@ -173,7 +173,7 @@ Tarefas:
   - [x] PDF criptografado (deve recusar)
 - [x] Juntar: número de páginas, ordem e xref válida
 - [x] Dividir: intervalos e páginas com atributos herdados
-- [ ] Comprimir: tamanho menor em PDF de fotos e original mantido quando não diminui
+- [x] Comprimir: tamanho menor em PDF de fotos e original mantido quando não diminui
 - [x] Saída sem `/Info`, XMP nem JavaScript
 - [x] Detecção de assinatura digital
 - [ ] Abrir os PDFs gerados no Acrobat, no Chrome e no visualizador do iPhone
@@ -184,9 +184,9 @@ Tarefas:
 - **Prévia do resultado:** antes de gerar, o app mostra os arquivos que vão sair e as páginas de cada um, acompanhando a opção "Gerar", os intervalos e o nome do arquivo.
 - **Links e campos de formulário:** não são copiados como anotações. O que eles mostram (o valor preenchido num campo, um carimbo, o selo de uma assinatura) é desenhado na própria página, então o PDF novo fica igual ao que se via, mas sem nada clicável nem editável.
 - **PDF assinado:** o app avisa que a assinatura deixa de valer no PDF novo e deixa seguir.
-- **Versão:** ler, juntar e dividir saem junto com o .docx, na v2.0.0. Comprimir (fase 3) fica para depois.
+- **Versão:** ler, juntar, dividir e comprimir saem junto com o .docx, na v2.0.0.
+- **Comprimir:** é a opção "Imagens dos PDFs" (manter, comprimir com a qualidade Leve ou com a Equilibrada). Quando o PDF é pesado por causa de imagens (1 MB ou mais de imagens recomprimíveis, pelo menos 40% do arquivo), o app já liga a compressão e mostra um aviso no topo da lista, com um botão para manter o original; se a pessoa já escolheu a opção, o app não mexe. Máscaras de transparência (SMask) também ficam como estão. PDF assinado: só o aviso que já aparece ao abrir, como em juntar e dividir.
 
 ### Perguntas em aberto
 
-- Comprimir PDF assinado: bloquear ou só avisar? (O aviso de juntar e dividir já existe.)
 - Dividir em vários arquivos: limite de arquivos por vez, por causa da memória no celular?

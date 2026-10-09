@@ -220,6 +220,9 @@ select:disabled, input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 0.92rem;
 }
 .tip span { flex: 1 1 240px; }
+/* PDF pesado: no topo da lista de páginas, com borda de destaque. */
+.compress-tip { margin: 8px 0 4px; border: 1px solid var(--accent); }
+.compress-tip .btn { flex: none; }
 
 .actions { margin-top: 20px; display: flex; justify-content: center; }
 .actions .btn { width: 100%; max-width: 360px; }

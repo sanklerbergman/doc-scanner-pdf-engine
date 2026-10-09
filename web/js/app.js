@@ -89,15 +89,20 @@ const els = {
   outputPreview: $('#output-preview'),
   outputSummary: $('#output-summary'),
   outputFiles: $('#output-files'),
+  pdfCompress: $('#pdf-compress'),
+  compressTip: $('#compress-tip'),
+  compressTipText: $('#compress-tip-text'),
+  compressTipToggle: $('#compress-tip-toggle'),
 };
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
 const lockedWhileBusy = [
   'filterAll', 'pageSize', 'margin', 'quality', 'fileName', 'clear', 'pickFiles', 'takePhoto', 'undo', 'qualityTipApply',
-  'outputMode', 'ranges',
+  'outputMode', 'ranges', 'pdfCompress', 'compressTipToggle',
 ].map((key) => els[key]);
 
-const state = { pages: [], busy: false, output: null }; // output: PDFs gerados, [{file, url}]
+// compressChosen: a pessoa já mexeu na opção de comprimir (aí o app não liga nem desliga sozinho).
+const state = { pages: [], busy: false, output: null, compressChosen: false }; // output: PDFs gerados, [{file, url}]
 let nextId = 1;
 
 function announce(message, kind = 'info') {
@@ -229,7 +234,9 @@ async function addPdfFile(file) {
   let module;
   try {
     module = await loadPdfTools();
-    const { doc, pages, notes } = await module.openPdfFile(file);
+    const { doc, pages, notes, heavy } = await module.openPdfFile(file);
+    doc.heavy = heavy;
+    doc.size = file.size;
     for (const info of pages) {
       const page = {
         id: nextId++, kind: 'pdf', name: file.name, number: info.index + 1, total: pages.length,
@@ -240,7 +247,14 @@ async function addPdfFile(file) {
     }
     renderPages();
     const count = pages.length === 1 ? '1 página adicionada' : `${pages.length} páginas adicionadas`;
-    return { message: [`${file.name}: ${count}.`, ...notes].join(' ') };
+    // PDF pesado por causa de imagens: já liga a compressão, a não ser que a pessoa tenha escolhido antes.
+    let compress = '';
+    if (heavy && !state.compressChosen) {
+      els.pdfCompress.value = 'light';
+      compress = `É um PDF pesado (${formatBytes(file.size)}): deixei a compressão das imagens ligada, para o arquivo ficar bem menor.`;
+      updateCompressTip();
+    }
+    return { message: [`${file.name}: ${count}.`, compress, ...notes].filter(Boolean).join(' ') };
   } catch (err) {
     console.error(err);
     const reason = module && err instanceof module.PdfError ? err.message : 'Não deu para ler o PDF.';
@@ -330,6 +344,8 @@ function renderPages() {
   const hasPhotos = state.pages.some(isPhoto);
   for (const control of [els.filterAll, els.pageSize, els.margin, els.quality]) control.closest('.field').hidden = !hasPhotos;
   els.documentNote.hidden = state.pages.every(isPhoto);
+  els.pdfCompress.closest('.field').hidden = !state.pages.some((page) => page.kind === 'pdf');
+  updateCompressTip();
   els.rangesField.hidden = els.outputMode.value !== 'ranges';
   renderOutputPreview();
 
@@ -566,6 +582,8 @@ els.clear.addEventListener('click', () => {
   for (const page of state.pages) URL.revokeObjectURL(page.thumbUrl);
   if (state.pages.some((page) => page.kind === 'pdf')) loadPdfTools().then((tools) => tools.releasePdfPreviews()).catch(() => {});
   state.pages = [];
+  state.compressChosen = false;
+  els.pdfCompress.value = 'none';
   discardPdf();
   renderPages();
   announce('Tudo limpo. Nada ficou guardado.');
@@ -666,8 +684,28 @@ async function generate() {
     }
 
     const tools = list.some((page) => page.kind === 'pdf') ? await loadPdfTools() : null;
+
+    // Comprimir: as imagens de cada PDF de origem são recodificadas uma vez só, para todos os arquivos.
+    const level = tools ? els.pdfCompress.value : 'none';
+    const replacements = new Map();
+    if (level !== 'none') {
+      const used = new Map();
+      for (const i of new Set(groups.flat())) {
+        const page = list[i];
+        if (page.kind !== 'pdf') continue;
+        if (!used.has(page.doc)) used.set(page.doc, new Set());
+        used.get(page.doc).add(page.index);
+      }
+      for (const [doc, indices] of used) {
+        replacements.set(doc, await tools.compressPdf(doc, [...indices], QUALITY[level], (done, total) => {
+          announce(`Comprimindo as imagens do PDF (${done} de ${total})…`);
+        }));
+      }
+    }
+
     const base = baseFileName();
     const files = [];
+    let notSmaller = 0;
     for (const [g, group] of groups.entries()) {
       announce(groups.length === 1 ? 'Montando o PDF…' : `Montando o PDF ${g + 1} de ${groups.length}…`);
       await nextFrame();
@@ -679,21 +717,41 @@ async function generate() {
         if (!wanted.has(page.doc)) wanted.set(page.doc, []);
         wanted.get(page.doc).push(page.index);
       }
-      const copies = new Map([...wanted].map(([doc, indices]) => [doc, tools.copyPages(doc, indices)]));
-      const groupPages = group.map((i) => {
-        const page = list[i];
-        if (page.kind !== 'pdf') return pages[i];
-        const source = copies.get(page.doc);
-        return { copy: { source, page: source.pages.get(page.index) }, rotation: page.rotation };
-      });
+      const build = (compressed) => {
+        const copies = new Map([...wanted].map(([doc, indices]) => [doc, tools.copyPages(doc, indices, {
+          replace: compressed ? replacements.get(doc) : undefined,
+        })]));
+        return buildPdf(group.map((i) => {
+          const page = list[i];
+          if (page.kind !== 'pdf') return pages[i];
+          const source = copies.get(page.doc);
+          return { copy: { source, page: source.pages.get(page.index) }, rotation: page.rotation };
+        }));
+      };
+      // Comprimido só fica se diminuir; senão, vai a versão sem recomprimir.
+      let bytes = build(false);
+      let before = null;
+      if (wanted.size && replacements.size) {
+        const small = build(true);
+        if (small.length < bytes.length) {
+          before = bytes.length;
+          bytes = small;
+        } else {
+          notSmaller++;
+        }
+      }
       const name = groups.length === 1 ? `${base}.pdf` : groupFileName(base, group, list.length);
-      files.push(new File([buildPdf(groupPages)], name, { type: 'application/pdf' }));
+      files.push({ file: new File([bytes], name, { type: 'application/pdf' }), before });
     }
-    state.output = files.map((file) => ({ file, url: URL.createObjectURL(file) }));
+    state.output = files.map(({ file, before }) => ({ file, before, url: URL.createObjectURL(file) }));
     showResult(groups);
-    announce(files.length === 1
+    const ready = files.length === 1
       ? 'PDF pronto. Ele só existe aqui no seu aparelho até você baixar.'
-      : `${files.length} PDFs prontos. Eles só existem aqui no seu aparelho até você baixar.`, 'success');
+      : `${files.length} PDFs prontos. Eles só existem aqui no seu aparelho até você baixar.`;
+    const kept = !notSmaller ? '' : notSmaller === files.length && files.length === 1
+      ? ' Comprimir não diminuiu este PDF (o tamanho está no texto e nas fontes, ou as imagens já eram leves): ficou sem recomprimir.'
+      : ` ${notSmaller === 1 ? 'Um arquivo não diminuiu' : `${notSmaller} arquivos não diminuíram`} com a compressão e ${notSmaller === 1 ? 'ficou' : 'ficaram'} sem recomprimir.`;
+    announce(ready + kept, 'success');
     ok = true;
   } catch (err) {
     console.error(err);
@@ -706,23 +764,30 @@ async function generate() {
   }
 }
 
+// "1,2 MB" ou, quando comprimiu, "1,2 MB (antes 4,8 MB, −75%)".
+function sizeText(size, before) {
+  if (!before) return formatBytes(size);
+  return `${formatBytes(size)} (antes ${formatBytes(before)}, −${Math.round((1 - size / before) * 100)}%)`;
+}
+
 function showResult(groups) {
   const files = state.output;
   const total = files.reduce((sum, { file }) => sum + file.size, 0);
+  const totalBefore = files.some(({ before }) => before) ? files.reduce((sum, { file, before }) => sum + (before ?? file.size), 0) : null;
   const pages = (n) => `${n} ${n === 1 ? 'página' : 'páginas'}`;
   const single = files.length === 1;
   els.resultTitle.textContent = single ? 'PDF pronto' : `${files.length} PDFs prontos`;
   els.resultInfo.textContent = single
-    ? `${files[0].file.name} · ${pages(groups[0].length)} · ${formatBytes(total)}`
-    : `${formatBytes(total)} no total`;
+    ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}`
+    : `${sizeText(total, totalBefore)} no total`;
   els.download.hidden = !single;
   els.download.href = files[0].url;
   els.download.download = files[0].file.name;
   els.downloadAll.hidden = single;
   els.resultFiles.hidden = single;
-  els.resultFiles.replaceChildren(...(single ? [] : files.map(({ file, url }, i) => el('li', {}, [
+  els.resultFiles.replaceChildren(...(single ? [] : files.map(({ file, url, before }, i) => el('li', {}, [
     el('a', { href: url, download: file.name, textContent: file.name }),
-    el('span', { className: 'muted', textContent: ` · ${pages(groups[i].length)} · ${formatBytes(file.size)}` }),
+    el('span', { className: 'muted', textContent: ` · ${pages(groups[i].length)} · ${sizeText(file.size, before)}` }),
   ]))));
   const all = files.map(({ file }) => file);
   els.share.hidden = !(navigator.canShare && navigator.canShare({ files: all }));
@@ -795,6 +860,38 @@ els.outputMode.addEventListener('change', () => {
   els.rangesField.hidden = els.outputMode.value !== 'ranges';
   renderOutputPreview();
   if (!els.rangesField.hidden) els.ranges.focus();
+});
+els.pdfCompress.addEventListener('change', () => {
+  state.compressChosen = true;
+  discardPdf();
+  updateCompressTip();
+});
+
+// ---------- Aviso de PDF pesado ----------
+// Aparece sozinho quando a lista tem um PDF pesado por causa de imagens. Diz o que está acontecendo
+// (comprimindo ou não) e troca com um toque, sem precisar achar a opção.
+
+function updateCompressTip() {
+  const heavy = [...new Set(state.pages.filter((page) => page.kind === 'pdf' && page.doc.heavy).map((page) => page.doc))];
+  els.compressTip.hidden = !heavy.length;
+  if (!heavy.length) return;
+  const size = formatBytes(heavy.reduce((sum, doc) => sum + doc.size, 0));
+  const on = els.pdfCompress.value !== 'none';
+  const what = heavy.length === 1 ? `Este PDF é pesado (${size})` : `Estes PDFs são pesados (${size} ao todo)`;
+  els.compressTipText.replaceChildren(el('strong', { textContent: `${what}.` }), on
+    ? ' As imagens vão ser comprimidas: o arquivo novo fica bem menor, bom para WhatsApp e e-mail.'
+    : ' Comprimir as imagens deixa o arquivo bem menor, bom para WhatsApp e e-mail.');
+  els.compressTipToggle.textContent = on ? 'Manter o original' : 'Comprimir';
+  els.compressTip.classList.toggle('tip-on', on);
+}
+
+els.compressTipToggle.addEventListener('click', () => {
+  els.pdfCompress.value = els.pdfCompress.value === 'none' ? 'light' : 'none';
+  state.compressChosen = true;
+  discardPdf();
+  updateCompressTip();
+  announce(els.pdfCompress.value === 'none' ? 'Compressão desligada: as imagens vão como estão.' : 'Compressão ligada.');
+  els.compressTipToggle.focus();
 });
 els.ranges.addEventListener('input', () => {
   discardPdf();

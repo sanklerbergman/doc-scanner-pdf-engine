@@ -54,7 +54,7 @@
   <main id="main" class="wrap">
     <section class="hero">
       <h1>Foto de documento vira PDF. Sem mandar nada pra ninguém.</h1>
-      <p class="lead">Tire uma foto, escolha imagens, abra um documento do Word ou junte e separe PDFs. Ajuste e baixe o PDF. Tudo acontece aqui no seu navegador: sem cadastro, sem upload, sem rastreio.</p>
+      <p class="lead">Tire uma foto, escolha imagens, abra um documento do Word ou junte, separe e comprima PDFs. Ajuste e baixe o PDF. Tudo acontece aqui no seu navegador: sem cadastro, sem upload, sem rastreio.</p>
     </section>
 
     <section id="dropzone" class="dropzone" aria-label="Adicionar imagens ou documentos">
@@ -75,6 +75,12 @@
         <h2 id="pages-title">Páginas <span id="page-count" class="muted"></span></h2>
         <button id="clear" type="button" class="btn btn-ghost">Limpar tudo</button>
       </div>
+
+      <!-- Aviso de PDF pesado (js/app.js, updateCompressTip): no topo da lista, para ser visto logo, mesmo no celular. -->
+      <p id="compress-tip" class="tip compress-tip" role="status" hidden>
+        <span id="compress-tip-text"></span>
+        <button id="compress-tip-toggle" type="button" class="btn"></button>
+      </p>
 
       <ol id="pages" class="pages"></ol>
 
@@ -117,6 +123,14 @@
             <option value="single" selected>Tudo num PDF só</option>
             <option value="each">Um PDF por página</option>
             <option value="ranges">Um PDF por intervalo</option>
+          </select>
+        </label>
+        <label class="field" hidden>
+          <span>Imagens dos PDFs</span>
+          <select id="pdf-compress">
+            <option value="none" selected>Manter como estão</option>
+            <option value="light">Comprimir (arquivo menor)</option>
+            <option value="balanced">Comprimir pouco</option>
           </select>
         </label>
         <label id="ranges-field" class="field" hidden>

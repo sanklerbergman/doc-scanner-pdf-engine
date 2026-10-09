@@ -15,7 +15,7 @@ Feito pela comunidade, para a comunidade.
 - Tamanho A4, Carta ou igual à imagem; margem e qualidade ajustáveis
 - Baixar ou compartilhar o PDF (no celular)
 - Abre **documentos do Word (.docx)**: o PDF sai com texto de verdade (selecionável e pesquisável), com títulos, listas, negrito e itálico, no tamanho de página e nas margens do documento. As páginas podem ser misturadas com fotos
-- **Junta e separa PDFs**: abra um ou mais PDFs, reordene, remova ou misture as páginas com fotos e documentos, e gere um PDF só, um por página ou um por intervalo (ex.: 1-3, 4-10). Dá para ver cada página antes e conferir, numa prévia, os arquivos que vão sair. As páginas vão como estão no original, com o texto selecionável; links, formulários, scripts e metadados ficam de fora. Avisa quando o PDF tem assinatura digital, que deixa de valer no arquivo novo
+- **Junta, separa e comprime PDFs**: abra um ou mais PDFs, reordene, remova ou misture as páginas com fotos e documentos, e gere um PDF só, um por página ou um por intervalo (ex.: 1-3, 4-10). Dá para ver cada página antes e conferir, numa prévia, os arquivos que vão sair. As páginas vão como estão no original, com o texto selecionável; links, formulários, scripts e metadados ficam de fora. Para diminuir PDFs escaneados ou de fotos, as imagens podem ser recomprimidas, com o "antes → depois" do tamanho. Avisa quando o PDF tem assinatura digital, que deixa de valer no arquivo novo
 - Abre fotos **HEIC** do iPhone em qualquer navegador (decodificador embutido, carregado só quando precisa)
 - Funciona offline depois do primeiro acesso
 
