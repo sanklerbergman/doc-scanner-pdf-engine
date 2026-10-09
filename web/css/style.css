@@ -231,6 +231,36 @@ select:disabled, input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed
 .result-title { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 1.2rem; font-weight: 700; margin: 0; }
 .result-title .icon { color: var(--accent); }
 .result-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 12px; }
+/* Prévia do resultado: um bloco por arquivo que vai sair, com as miniaturas das páginas dele. */
+.output-preview { border-top: 1px solid var(--border); padding-top: 12px; }
+.output-title { margin: 0; font-size: 0.92rem; font-weight: 600; }
+.output-summary { margin: 2px 0 8px; font-size: 0.92rem; color: var(--muted); }
+.output-summary.error { color: var(--danger); }
+.output-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 420px; overflow: auto; }
+.output-files li { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--surface-2); }
+.output-name { margin: 0 0 6px; display: flex; align-items: center; gap: 6px; font-size: 0.92rem; overflow-wrap: anywhere; }
+.output-name .icon { width: 18px; height: 18px; flex: none; color: var(--accent); }
+.output-thumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; }
+.output-thumb {
+  position: relative; width: 56px; height: 72px; padding: 0; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); cursor: zoom-in; display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.output-thumb img { max-width: 100%; max-height: 100%; display: block; }
+.output-thumb span {
+  position: absolute; left: 3px; bottom: 3px; min-width: 18px; padding: 0 4px; border-radius: 6px;
+  font-size: 0.72rem; font-weight: 700; line-height: 18px; text-align: center; background: var(--text); color: var(--bg);
+}
+.output-thumb:disabled { cursor: default; }
+@media (hover: hover) { .output-thumb:hover:not(:disabled) { border-color: var(--accent); } }
+.output-more { font-size: 0.85rem; color: var(--muted); padding: 0 4px 6px; }
+
+/* Vários PDFs (dividir): um link por arquivo, rolando se forem muitos. */
+.result-files {
+  list-style: none; margin: 12px auto 0; padding: 0; max-width: 520px; max-height: 260px; overflow: auto;
+  text-align: left; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+}
+.result-files li { padding: 10px 12px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.result-files li:first-child { border-top: 0; }
 
 .status-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 12px; margin: 16px 0; }
 .status { min-height: 1.5em; text-align: center; color: var(--muted); margin: 0; }

@@ -54,7 +54,7 @@
   <main id="main" class="wrap">
     <section class="hero">
       <h1>Foto de documento vira PDF. Sem mandar nada pra ninguém.</h1>
-      <p class="lead">Tire uma foto, escolha imagens ou abra um documento do Word, ajuste e baixe o PDF. Tudo acontece aqui no seu navegador: sem cadastro, sem upload, sem rastreio.</p>
+      <p class="lead">Tire uma foto, escolha imagens, abra um documento do Word ou junte e separe PDFs. Ajuste e baixe o PDF. Tudo acontece aqui no seu navegador: sem cadastro, sem upload, sem rastreio.</p>
     </section>
 
     <section id="dropzone" class="dropzone" aria-label="Adicionar imagens ou documentos">
@@ -64,10 +64,10 @@
         <button id="take-photo" type="button" class="btn btn-primary btn-lg touch-only"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-camera"/></svg> Tirar foto</button>
         <button id="pick-files" type="button" class="btn btn-lg btn-pick"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-image"/></svg> Escolher arquivos</button>
       </div>
-      <p class="hint">Fotos e imagens (JPG, PNG, HEIC…) ou documentos do Word (.docx).</p>
+      <p class="hint">Fotos e imagens (JPG, PNG, HEIC…), PDFs ou documentos do Word (.docx).</p>
       <p class="hint pointer-only">…ou arraste os arquivos para cá, ou cole uma imagem com <kbd id="paste-key">Ctrl+V</kbd>.</p>
       <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
-      <input id="file-input" type="file" accept="image/*,.heic,.heif,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" multiple hidden>
+      <input id="file-input" type="file" accept="image/*,.heic,.heif,.pdf,application/pdf,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" multiple hidden>
     </section>
 
     <section id="workspace" class="workspace" hidden aria-labelledby="pages-title">
@@ -111,7 +111,25 @@
           <span><strong>Página comprida ou com letra miúda:</strong> na qualidade Alta o texto pequeno sai mais nítido (o arquivo fica maior).</span>
           <button id="quality-tip-apply" type="button" class="btn">Usar qualidade Alta</button>
         </p>
-        <p id="document-note" class="tip field-wide" hidden><span>As páginas de documento do Word saem com o tamanho de página e as margens do próprio arquivo, com texto de verdade (dá para selecionar e pesquisar no PDF).</span></p>
+        <label class="field">
+          <span>Gerar</span>
+          <select id="output-mode">
+            <option value="single" selected>Tudo num PDF só</option>
+            <option value="each">Um PDF por página</option>
+            <option value="ranges">Um PDF por intervalo</option>
+          </select>
+        </label>
+        <label id="ranges-field" class="field" hidden>
+          <span>Intervalos (números da lista)</span>
+          <input id="ranges" type="text" placeholder="Ex.: 1-3, 4-10" maxlength="200" autocomplete="off" spellcheck="false">
+        </label>
+        <!-- Prévia do resultado: que arquivos vão sair e que páginas entram em cada um (js/app.js). -->
+        <div id="output-preview" class="output-preview field-wide" hidden>
+          <p class="output-title">Prévia do resultado</p>
+          <p id="output-summary" class="output-summary" role="status"></p>
+          <ol id="output-files" class="output-files"></ol>
+        </div>
+        <p id="document-note" class="tip field-wide" hidden><span>Páginas de documentos do Word e de PDFs saem com o tamanho e as margens do próprio arquivo. O texto continua de verdade: dá para selecionar e pesquisar.</span></p>
         <label class="field field-wide">
           <span>Nome do arquivo</span>
           <input id="file-name" type="text" value="documento" maxlength="80" autocomplete="off" spellcheck="false">
@@ -123,9 +141,11 @@
       </div>
 
       <div id="result" class="result" hidden>
-        <p class="result-title"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg> PDF pronto</p>
+        <p class="result-title"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg> <span id="result-title">PDF pronto</span></p>
         <p id="result-info" class="muted"></p>
+        <ul id="result-files" class="result-files" hidden></ul>
         <div class="result-actions">
+          <button id="download-all" type="button" class="btn btn-primary btn-lg" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg> Baixar todos</button>
           <a id="download" class="btn btn-primary btn-lg" href="#"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg> Baixar PDF</a>
           <button id="share" type="button" class="btn btn-lg" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-share"/></svg> Compartilhar</button>
         </div>
@@ -142,7 +162,7 @@
       <ul class="checklist">
         <li><strong>Não existe upload.</strong> As imagens são processadas pelo seu próprio navegador. Não temos servidor que receba arquivos — esta é só uma página estática.</li>
         <li><strong>Sem cookies, sem analytics, sem conta.</strong> Nenhum script, fonte ou pixel de terceiros. O app não guarda nada entre uma visita e outra.</li>
-        <li><strong>Metadados removidos.</strong> Localização GPS, modelo do celular e data da foto ficam de fora do PDF; do documento do Word, autor e empresa também. O PDF também não leva nome de app nem carimbo.</li>
+        <li><strong>Metadados removidos.</strong> Localização GPS, modelo do celular e data da foto ficam de fora do PDF; do documento do Word e dos PDFs abertos, autor, empresa e programa também. O PDF também não leva nome de app nem carimbo.</li>
         <li><strong>Funciona offline.</strong> Depois de aberto uma vez, dá pra usar até em modo avião.</li>
         <li><strong>Bloqueado por regra, não por promessa.</strong> A página tem uma política de segurança (<code>connect-src 'none'</code>) que impede o navegador de abrir qualquer conexão a partir dela.</li>
       </ul>

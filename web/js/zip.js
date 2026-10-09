@@ -3,6 +3,8 @@
 // Contra "ZIP bomb" (arquivo pequeno que descompacta para gigabytes), há limite de entradas e de tamanho
 // descompactado por arquivo e no total; o limite vale para o que sai de fato, não para o que o ZIP declara.
 
+import { inflate, InflateError } from './inflate.js';
+
 export const ZIP_LIMITS = {
   maxEntries: 10000,
   maxFileSize: 32 * 1024 * 1024,
@@ -86,7 +88,7 @@ export function openZip(bytes, limits = {}) {
 
     let data;
     if (entry.method === 0) data = raw;
-    else if (entry.method === 8) data = await inflate(raw, Math.min(maxFileSize, maxTotalSize - total));
+    else if (entry.method === 8) data = await inflateEntry(raw, Math.min(maxFileSize, maxTotalSize - total));
     else throw new ZipError('O arquivo usa uma compressão que não é suportada.');
 
     if (data.length !== entry.size || crc32(data) !== entry.crc) throw new ZipError(CORRUPTED);
@@ -102,33 +104,13 @@ export function openZip(bytes, limits = {}) {
   };
 }
 
-// Descompacta (deflate puro, sem cabeçalho) parando assim que passar do limite.
-async function inflate(raw, limit) {
-  if (typeof DecompressionStream !== 'function') {
-    throw new ZipError('Este navegador não consegue abrir o arquivo. Atualize o navegador e tente de novo.');
+async function inflateEntry(raw, limit) {
+  try {
+    return await inflate(raw, 'deflate-raw', limit);
+  } catch (err) {
+    if (err instanceof InflateError) throw new ZipError(err.message);
+    throw err;
   }
-  const reader = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
-  const chunks = [];
-  let length = 0;
-  for (;;) {
-    let result;
-    try {
-      result = await reader.read();
-    } catch {
-      throw new ZipError(CORRUPTED);
-    }
-    if (result.done) break;
-    length += result.value.length;
-    if (length > limit) {
-      reader.cancel().catch(() => {});
-      throw new ZipError(TOO_BIG);
-    }
-    chunks.push(result.value);
-  }
-  const out = new Uint8Array(length);
-  let pos = 0;
-  for (const chunk of chunks) { out.set(chunk, pos); pos += chunk.length; }
-  return out;
 }
 
 // XML do Office: UTF-8 quase sempre; UTF-16 se começar com a marca de ordem dos bytes.

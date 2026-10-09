@@ -122,23 +122,23 @@ Dá para começar pela opção 1 e decidir a 2 depois.
 
 ### Fase 1: ler PDF
 
-- [ ] Leitor de PDF (`web/js/pdf-reader.js`):
-  - [ ] objetos
-  - [ ] xref clássica e em stream
-  - [ ] object streams
-  - [ ] árvore de páginas com herança
-- [ ] Copiar uma página com tudo o que ela usa (fontes, imagens, conteúdo), renumerando os objetos no PDF novo
-- [ ] `pdf.js` (escritor): aceitar páginas copiadas de outro PDF, além das de imagem (e de texto, do .docx)
+- [x] Leitor de PDF (`web/js/pdf-reader.js`):
+  - [x] objetos
+  - [x] xref clássica e em stream
+  - [x] object streams
+  - [x] árvore de páginas com herança
+- [x] Copiar uma página com tudo o que ela usa (fontes, imagens, conteúdo), renumerando os objetos no PDF novo
+- [x] `pdf.js` (escritor): aceitar páginas copiadas de outro PDF, além das de imagem (e de texto, do .docx)
 
 ### Fase 2: juntar e dividir
 
-- [ ] `accept` do input e `addFiles` aceitam `.pdf`
-- [ ] Cada página do PDF entra na lista como uma página do tipo `pdf`. Recorte e filtros ficam escondidos, e girar fica disponível, usando `/Rotate`.
-- [ ] **Juntar:** abrir vários PDFs e gerar um só
-- [ ] **Dividir:**
-  - [ ] gerar um PDF só com as páginas que ficaram na lista
-  - [ ] opção "um PDF por página" ou por intervalos (ex.: 1-3, 4-10)
-  - [ ] vários arquivos de saída: baixar um por um ou compartilhar todos de uma vez (`navigator.share` com vários arquivos)
+- [x] `accept` do input e `addFiles` aceitam `.pdf`
+- [x] Cada página do PDF entra na lista como uma página do tipo `pdf`. Recorte e filtros ficam escondidos, e girar fica disponível, usando `/Rotate`.
+- [x] **Juntar:** abrir vários PDFs e gerar um só
+- [x] **Dividir:**
+  - [x] gerar um PDF só com as páginas que ficaram na lista
+  - [x] opção "um PDF por página" ou por intervalos (ex.: 1-3, 4-10)
+  - [x] vários arquivos de saída: baixar um por um ou compartilhar todos de uma vez (`navigator.share` com vários arquivos)
 
 ### Fase 3: comprimir
 
@@ -165,22 +165,28 @@ Tarefas:
 
 ### Testes
 
-- [ ] Fixtures pequenas:
-  - [ ] PDF gerado pelo próprio app
-  - [ ] PDF com xref em stream
-  - [ ] PDF com atualização incremental
-  - [ ] PDF com xref quebrada
-  - [ ] PDF criptografado (deve recusar)
-- [ ] Juntar: número de páginas, ordem e xref válida
-- [ ] Dividir: intervalos e páginas com atributos herdados
+- [x] PDFs pequenos montados pelos próprios testes (`test/helpers/pdf.js`):
+  - [x] PDF gerado pelo próprio app
+  - [x] PDF com xref em stream
+  - [x] PDF com atualização incremental
+  - [x] PDF com xref quebrada
+  - [x] PDF criptografado (deve recusar)
+- [x] Juntar: número de páginas, ordem e xref válida
+- [x] Dividir: intervalos e páginas com atributos herdados
 - [ ] Comprimir: tamanho menor em PDF de fotos e original mantido quando não diminui
-- [ ] Saída sem `/Info`, XMP nem JavaScript
-- [ ] Detecção de assinatura digital
+- [x] Saída sem `/Info`, XMP nem JavaScript
+- [x] Detecção de assinatura digital
 - [ ] Abrir os PDFs gerados no Acrobat, no Chrome e no visualizador do iPhone
+
+### Decisões
+
+- **Miniaturas:** começou sem renderizador (um cartão com o formato da folha) e passou a usar o PDF.js da Mozilla 6.3.289 (`web/vendor/pdfjs/`, ~1,7 MB, carregado só quando aparece um PDF), a pedido, para dar para ver as páginas. O cartão continua como reserva se o desenho falhar. O nosso gerador continua sendo o `js/pdf.js`; o PDF.js só desenha (`js/pdf-render.js`).
+- **Prévia do resultado:** antes de gerar, o app mostra os arquivos que vão sair e as páginas de cada um, acompanhando a opção "Gerar", os intervalos e o nome do arquivo.
+- **Links e campos de formulário:** não são copiados como anotações. O que eles mostram (o valor preenchido num campo, um carimbo, o selo de uma assinatura) é desenhado na própria página, então o PDF novo fica igual ao que se via, mas sem nada clicável nem editável.
+- **PDF assinado:** o app avisa que a assinatura deixa de valer no PDF novo e deixa seguir.
+- **Versão:** ler, juntar e dividir saem junto com o .docx, na v2.0.0. Comprimir (fase 3) fica para depois.
 
 ### Perguntas em aberto
 
-- Miniaturas: começar sem renderizador ou trazer o pdf.js da Mozilla?
-- Links e campos de formulário: preservar ou descartar? Preservar dá mais trabalho e pode carregar coisas indesejadas.
-- Comprimir PDF assinado: bloquear ou só avisar?
+- Comprimir PDF assinado: bloquear ou só avisar? (O aviso de juntar e dividir já existe.)
 - Dividir em vários arquivos: limite de arquivos por vez, por causa da memória no celular?

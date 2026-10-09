@@ -1,6 +1,6 @@
 // Service worker: guarda só os arquivos do próprio app para funcionar offline.
 // Rede primeiro (pega atualizações), cache como reserva. Imagens do usuário nunca passam por aqui.
-const CACHE = 'scanner-doc-v15';
+const CACHE = 'scanner-doc-v17';
 const APP_FILES = [
   './',
   './index.html',
@@ -20,6 +20,11 @@ const APP_FILES = [
   './js/fonts.js',
   './js/zip.js',
   './js/xml.js',
+  './js/inflate.js',
+  './js/ranges.js',
+  './js/pdf-reader.js',
+  './js/pdf-open.js',
+  './js/pdf-render.js',
   './js/config.js',
   './icon.svg',
   './manifest.webmanifest',

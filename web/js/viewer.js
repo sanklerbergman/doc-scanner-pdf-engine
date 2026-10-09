@@ -10,14 +10,15 @@ const START_INSET = 0.04; // sem recorte ainda: os cantos começam um pouco para
 /**
  * @param {object} deps
  * @param {(page) => Promise<Blob>} deps.renderProcessed página pronta (recorte + giro + filtro), em boa resolução
- * @param {(page) => boolean} deps.canCrop false para página sem foto (documento do Word)
+ * @param {(page) => boolean} deps.canCrop false para página sem foto (documento do Word, PDF)
+ * @param {(page) => string | null} [deps.viewHint] texto de ajuda da tela cheia, se a página pedir um diferente
  * @param {(page) => Promise<Blob>} deps.renderOriginal foto girada, sem recorte nem filtro
  * @param {(page) => number[][] | null} deps.detect cantos do papel nas coordenadas da foto, ou null
  * @param {(page, quad: number[][] | null) => Promise<void>} deps.applyCrop grava o recorte e atualiza a miniatura
  * @param {(page, delta: number) => {page, label: string} | null} deps.step página vizinha (delta -1 ou +1), ou null
  * @param {(page) => void} deps.onClose chamado ao fechar, para devolver o foco ao cartão da página
  */
-export function setupViewer({ renderProcessed, canCrop, renderOriginal, detect, applyCrop, step, onClose }) {
+export function setupViewer({ renderProcessed, canCrop, viewHint = () => null, renderOriginal, detect, applyCrop, step, onClose }) {
   const dialog = $('#viewer');
   const title = $('#viewer-title');
   const stage = $('#viewer-stage');
@@ -70,7 +71,7 @@ export function setupViewer({ renderProcessed, canCrop, renderOriginal, detect, 
       const blob = await renderProcessed(page);
       if (mine !== token) return;
       setUrl('view', image, blob);
-      hint.textContent = 'É assim que a página vai sair no PDF. Toque na imagem para ampliar.';
+      hint.textContent = viewHint(page) ?? 'É assim que a página vai sair no PDF. Toque na imagem para ampliar.';
     } catch (err) {
       console.error(err);
       if (mine === token) hint.textContent = 'Mostrando a miniatura (não deu para carregar em alta qualidade).';

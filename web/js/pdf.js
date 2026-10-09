@@ -1,7 +1,8 @@
-// Gerador de PDF mínimo, sem dependências. Dois tipos de página:
+// Gerador de PDF mínimo, sem dependências. Três tipos de página:
 // - foto: imagem JPEG (filtro DCTDecode), que entra no PDF byte a byte, sem recompressão;
 // - texto (documento do Word): texto de verdade, selecionável, com as fontes padrão do PDF
-//   (Helvetica, Times e Courier, codificação WinAnsi), sem embutir fonte.
+//   (Helvetica, Times e Courier, codificação WinAnsi), sem embutir fonte;
+// - copiada de outro PDF (juntar e dividir): os objetos vêm prontos do pdf-reader.js, renumerados aqui.
 // Nenhum metadado é gravado (sem /Info, sem datas, sem "Producer").
 
 const encoder = new TextEncoder();
@@ -106,6 +107,8 @@ function textContent(page, fontNames) {
  * - texto: {width, height, items, rotation?}, com items vindos de layout.js: {type: 'text', x, y, text, font,
  *   size, color?, wordSpacing?, rise?} e {type: 'line', x1, x2, y, width, color?}, origem no canto superior
  *   esquerdo e y na linha de base do texto. rotation (0, 90, 180 ou 270) vira /Rotate.
+ * - copiada: {copy: {source, page}, rotation?}, com source = {objects} e page = descritor de copyPages
+ *   (pdf-reader.js). Páginas do mesmo source compartilham os objetos (fontes, imagens), gravados uma vez só.
  * Medidas em pontos (1/72 pol.).
  * @returns {Uint8Array}
  */
@@ -133,12 +136,12 @@ export function buildPdf(pages) {
   let nextId = 3;
   for (const page of pages) {
     pageIds.push(nextId);
-    nextId += page.jpeg ? 3 : 2;
+    nextId += page.jpeg ? 3 : page.copy ? 1 : 2;
   }
   const fontIds = new Map();
   const fontNames = new Map();
   for (const page of pages) {
-    if (page.jpeg) continue;
+    if (page.jpeg || page.copy) continue;
     for (const item of page.items) {
       if (item.type !== 'text' || fontIds.has(item.font)) continue;
       if (!STANDARD_FONTS.includes(item.font)) throw new Error(`Fonte desconhecida: ${item.font}`);
@@ -147,7 +150,17 @@ export function buildPdf(pages) {
     }
   }
 
-  push('%PDF-1.4\n');
+  // Objetos das páginas copiadas: cada PDF de origem ganha uma faixa de números, depois das fontes.
+  const sources = new Map();
+  for (const page of pages) {
+    if (!page.copy || sources.has(page.copy.source)) continue;
+    sources.set(page.copy.source, nextId);
+    nextId += page.copy.source.objects.length;
+  }
+  const parts = (list, base) => list.map((part) => (part?.ref !== undefined ? `${base + part.ref} 0 R` : part));
+
+  // Página copiada pode usar recursos de versões mais novas do formato (transparência, JPEG 2000…).
+  push(sources.size ? '%PDF-1.7\n' : '%PDF-1.4\n');
   push(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a])); // marca de arquivo binário
 
   object(1, '<< /Type /Catalog /Pages 2 0 R >>');
@@ -156,6 +169,22 @@ export function buildPdf(pages) {
   pages.forEach((page, i) => {
     const id = pageIds[i];
     const mediaBox = `/MediaBox [0 0 ${num(page.width)} ${num(page.height)}]`;
+
+    if (page.copy) {
+      const { source, page: copied } = page.copy;
+      const base = sources.get(source);
+      const box = (name, value) => (value ? ` /${name} [${value.map(num).join(' ')}]` : '');
+      const rotate = (copied.rotate + (page.rotation ?? 0)) % 360;
+      object(id,
+        `<< /Type /Page /Parent 2 0 R${box('MediaBox', copied.mediaBox)}${box('CropBox', copied.cropBox)}`,
+        rotate ? ` /Rotate ${rotate}` : '',
+        copied.userUnit ? ` /UserUnit ${num(copied.userUnit)}` : '',
+        ' /Resources ', ...parts(copied.resources, base),
+        ...(copied.contents ? [' /Contents ', ...parts(copied.contents, base)] : []),
+        ...(copied.group ? [' /Group ', ...parts(copied.group, base)] : []),
+        ' >>');
+      return;
+    }
 
     if (!page.jpeg) {
       const used = new Set(page.items.filter((item) => item.type === 'text').map((item) => item.font));
@@ -189,6 +218,9 @@ export function buildPdf(pages) {
 
   for (const [font, id] of fontIds) {
     object(id, `<< /Type /Font /Subtype /Type1 /BaseFont /${font} /Encoding /WinAnsiEncoding >>`);
+  }
+  for (const [source, base] of sources) {
+    source.objects.forEach((list, i) => object(base + i, ...parts(list, base)));
   }
 
   const xrefOffset = length;
