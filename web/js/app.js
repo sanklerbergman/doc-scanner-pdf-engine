@@ -30,6 +30,23 @@ const THUMB_SIDE = 960; // no celular a miniatura ocupa a largura da tela, em te
 const VIEW_SIDE = 2000; // página em tela cheia
 const UNDO_MS = 10000; // tempo para desfazer a remoção de uma página
 
+const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const isDocx = (file) => /\.docx$/i.test(file.name) || file.type === DOCX_TYPE;
+const isOldWord = (file) => /\.doc$/i.test(file.name) || file.type === 'application/msword';
+const isImage = (file) => file.type.startsWith('image/') || /\.(heic|heif)$/i.test(file.name);
+// Página de documento do Word (texto já distribuído em páginas). As outras são fotos.
+const isDocument = (page) => page.kind === 'document';
+
+// Leitura de .docx (ZIP, XML, layout): carregada só quando aparece o primeiro documento.
+let documents;
+function loadDocuments() {
+  documents ??= import('./document.js').catch((err) => {
+    documents = undefined; // sem rede e sem cache: tenta de novo na próxima vez
+    throw err;
+  });
+  return documents;
+}
+
 const $ = (selector) => document.querySelector(selector);
 const els = {
   dropzone: $('#dropzone'),
@@ -56,6 +73,7 @@ const els = {
   pasteKey: $('#paste-key'),
   qualityTip: $('#quality-tip'),
   qualityTipApply: $('#quality-tip-apply'),
+  documentNote: $('#document-note'),
 };
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
@@ -100,42 +118,82 @@ function formatBytes(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
 }
 
-// ---------- Adicionar imagens ----------
+// ---------- Adicionar imagens e documentos ----------
 
 async function addFiles(fileList) {
   if (state.busy) return; // arrastar ou colar durante a geração: ignora (os botões já estão travados)
-  const files = [...fileList].filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
+  const files = [...fileList].filter((f) => isImage(f) || isDocx(f) || isOldWord(f));
   if (!files.length) {
-    announce('Por aqui só entram imagens (JPG, PNG, WebP…).', 'error');
+    announce('Por aqui só entram imagens (JPG, PNG, WebP…) e documentos do Word (.docx).', 'error');
     return;
   }
   discardPdf();
   const failed = [];
+  const documentMessages = [];
+  const documentErrors = [];
+  let images = 0;
   let cropped = 0;
   for (const file of files) {
     announce(`Lendo ${file.name}…`);
+    if (!isImage(file)) {
+      const result = await addDocument(file);
+      if (result.error) documentErrors.push(result.error);
+      else documentMessages.push(result.message);
+      continue;
+    }
     try {
       const { preview, width, height } = await makePreview(file);
       // width/height: tamanho da foto original. quad: recorte do papel (4 cantos, de 0 a 1, na foto sem girar)
       // ou null para usar a foto inteira.
-      const page = { id: nextId++, file, preview, width, height, quad: detectQuad(preview, preview.width, preview.height), rotation: 0, filter: els.filterAll.value, thumbUrl: '' };
+      const page = { id: nextId++, kind: 'photo', file, preview, width, height, quad: detectQuad(preview, preview.width, preview.height), rotation: 0, filter: els.filterAll.value, thumbUrl: '' };
       if (page.quad) cropped++;
       await refreshThumb(page);
       state.pages.push(page);
       renderPages();
+      images++;
     } catch (err) {
       console.error(err);
       failed.push(file.name);
     }
   }
-  if (failed.length) {
-    announce(`Não consegui abrir: ${failed.join(', ')}. Tente exportar como JPG ou PNG.`, 'error');
-  } else {
-    const added = files.length === 1 ? '1 imagem adicionada' : `${files.length} imagens adicionadas`;
-    const missed = files.length - cropped;
-    if (!missed) announce(`${added}, com o papel recortado automaticamente. Se os cantos não ficaram certos, use "Ajustar recorte".`);
-    else if (!cropped) announce(`${added}. Não achei as bordas do papel: use "Recortar" para marcar os cantos.`);
-    else announce(`${added}. Em ${missed === 1 ? 'uma delas' : `${missed} delas`} não achei as bordas do papel: use "Recortar" para marcar os cantos.`);
+
+  const messages = [];
+  if (failed.length) messages.push(`Não consegui abrir: ${failed.join(', ')}. Tente exportar como JPG ou PNG.`);
+  else if (images) messages.push(imagesMessage(images, cropped));
+  messages.push(...documentErrors, ...documentMessages);
+  announce(messages.join(' '), failed.length || documentErrors.length ? 'error' : 'info');
+}
+
+function imagesMessage(count, cropped) {
+  const added = count === 1 ? '1 imagem adicionada' : `${count} imagens adicionadas`;
+  const missed = count - cropped;
+  if (!missed) return `${added}, com o papel recortado automaticamente. Se os cantos não ficaram certos, use "Ajustar recorte".`;
+  if (!cropped) return `${added}. Não achei as bordas do papel: use "Recortar" para marcar os cantos.`;
+  return `${added}. Em ${missed === 1 ? 'uma delas' : `${missed} delas`} não achei as bordas do papel: use "Recortar" para marcar os cantos.`;
+}
+
+// Um .docx vira várias páginas na lista, que dá para reordenar e misturar com fotos.
+// O texto já sai distribuído nas páginas, com o tamanho e as margens do próprio documento.
+async function addDocument(file) {
+  if (isOldWord(file) && !isDocx(file)) {
+    return { error: `${file.name} é do Word antigo (.doc): abra no Word, use "Salvar como" e escolha .docx.` };
+  }
+  let module;
+  try {
+    module = await loadDocuments();
+    const { pages, notes } = await module.openDocument(file);
+    for (const [i, layout] of pages.entries()) {
+      const page = { id: nextId++, kind: 'document', name: file.name, number: i + 1, total: pages.length, layout, rotation: 0, thumbUrl: '' };
+      await refreshThumb(page);
+      state.pages.push(page);
+    }
+    renderPages();
+    const count = pages.length === 1 ? '1 página adicionada' : `${pages.length} páginas adicionadas`;
+    return { message: [`${file.name}: ${count}.`, ...notes].join(' ') };
+  } catch (err) {
+    console.error(err);
+    const reason = module && err instanceof module.DocxError ? err.message : 'Não deu para ler o documento.';
+    return { error: `Não consegui abrir ${file.name}. ${reason}` };
   }
 }
 
@@ -150,12 +208,24 @@ async function makePreview(file) {
 }
 
 async function refreshThumb(page) {
-  const canvas = renderPage(page.preview, page.preview.width, page.preview.height, {
-    rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: THUMB_SIDE,
-  });
-  const blob = await canvasToBlob(canvas, 'image/jpeg', 0.8);
+  const blob = isDocument(page)
+    ? await drawDocument(page, THUMB_SIDE)
+    : await canvasToBlob(renderPage(page.preview, page.preview.width, page.preview.height, {
+      rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: THUMB_SIDE,
+    }), 'image/jpeg', 0.8);
   if (page.thumbUrl) URL.revokeObjectURL(page.thumbUrl);
   page.thumbUrl = URL.createObjectURL(blob);
+}
+
+// Página de documento desenhada como vai sair no PDF. PNG: texto nítido, sem os borrões do JPEG.
+async function drawDocument(page, maxSide) {
+  const { drawDocumentPage } = await loadDocuments();
+  const canvas = drawDocumentPage(page.layout, { maxSide, rotation: page.rotation });
+  try {
+    return await canvasToBlob(canvas, 'image/png');
+  } finally {
+    canvas.width = canvas.height = 0;
+  }
 }
 
 // ---------- Lista de páginas ----------
@@ -170,6 +240,7 @@ const filterOptions = (selected) =>
 const NARROW_SIDE = 1000; // lado menor, em pixels, abaixo do qual texto pequeno começa a sofrer
 
 function wouldGainFromHigh(page) {
+  if (isDocument(page)) return false; // texto de verdade: a qualidade não muda nada
   const size = page.quad
     ? quadSize(page.quad.map(([x, y]) => [x * page.width, y * page.height]), page.width, page.height)
     : { width: page.width, height: page.height };
@@ -198,23 +269,35 @@ function renderPages() {
   els.workspace.hidden = total === 0;
   els.count.textContent = total ? `(${total})` : '';
 
+  // Filtro, tamanho, margem e qualidade só valem para fotos: o documento do Word segue o próprio arquivo.
+  const hasPhotos = state.pages.some((page) => !isDocument(page));
+  for (const control of [els.filterAll, els.pageSize, els.margin, els.quality]) control.closest('.field').hidden = !hasPhotos;
+  els.documentNote.hidden = !state.pages.some(isDocument);
+
   // Cartão: miniatura; número + remover (longe dos outros botões); mover ← → e girar; filtro.
+  // Página de documento: no lugar do recorte e do filtro, de qual arquivo ela veio.
   els.pages.replaceChildren(...state.pages.map((page, i) => {
     const button = (action, label, disabled = false) => el('button', {
       type: 'button', className: `icon-btn icon-btn-${action}`, title: label, disabled: disabled || state.busy,
       'aria-label': `${label} (página ${i + 1})`, 'data-action': action,
     }, [icon(action)]);
+    const doc = isDocument(page);
 
     return el('li', { className: 'page-card', 'data-id': page.id }, [
       el('button', {
         type: 'button', className: 'thumb', 'data-action': 'view', disabled: state.busy,
-        'aria-label': `Ver a página ${i + 1} em tela cheia e ajustar o recorte`,
+        'aria-label': doc ? `Ver a página ${i + 1} em tela cheia` : `Ver a página ${i + 1} em tela cheia e ajustar o recorte`,
       }, [el('img', { src: page.thumbUrl, alt: '' }), el('span', { className: 'thumb-zoom' }, [icon('expand')])]),
-      // Botão com texto: o recorte é o ajuste que mais muda o resultado e não pode ficar escondido atrás da miniatura.
-      el('button', {
-        type: 'button', className: 'btn btn-crop', 'data-action': 'crop', disabled: state.busy,
-        'aria-label': `Ajustar o recorte da página ${i + 1}`,
-      }, [icon('crop'), ` ${page.quad ? 'Ajustar recorte' : 'Recortar'}`]),
+      doc
+        ? el('p', { className: 'page-source', title: page.name }, [
+          icon('file'), el('span', { className: 'page-source-name', textContent: page.name }),
+          el('span', { textContent: ` · ${page.number}/${page.total}`, 'aria-label': `, página ${page.number} de ${page.total}` }),
+        ])
+        // Botão com texto: o recorte é o ajuste que mais muda o resultado e não pode ficar escondido atrás da miniatura.
+        : el('button', {
+          type: 'button', className: 'btn btn-crop', 'data-action': 'crop', disabled: state.busy,
+          'aria-label': `Ajustar o recorte da página ${i + 1}`,
+        }, [icon('crop'), ` ${page.quad ? 'Ajustar recorte' : 'Recortar'}`]),
       el('div', { className: 'page-tools' }, [
         el('span', { className: 'page-num', textContent: i + 1 }),
         button('remove', 'Remover'),
@@ -222,9 +305,9 @@ function renderPages() {
         button('right', 'Mover para depois', i === total - 1),
         button('rotate', 'Girar'),
       ]),
-      el('select', {
+      ...(doc ? [] : [el('select', {
         className: 'page-filter', 'aria-label': `Filtro da página ${i + 1}`, disabled: state.busy,
-      }, filterOptions(page.filter)),
+      }, filterOptions(page.filter))]),
     ]);
   }));
 }
@@ -294,6 +377,7 @@ els.pages.addEventListener('change', async (event) => {
 // ---------- Tela cheia e recorte ----------
 
 async function renderProcessed(page) {
+  if (isDocument(page)) return drawDocument(page, VIEW_SIDE);
   const image = await decodeFile(page.file);
   let canvas;
   try {
@@ -310,6 +394,12 @@ async function renderProcessed(page) {
 
 const viewer = setupViewer({
   renderProcessed,
+  step(page, delta) {
+    const index = state.pages.indexOf(page) + delta;
+    const next = state.pages[index];
+    return next ? { page: next, label: `Página ${index + 1} de ${state.pages.length}` } : null;
+  },
+  canCrop: (page) => !isDocument(page),
   renderOriginal: (page) => canvasToBlob(
     renderPage(page.preview, page.preview.width, page.preview.height, { rotation: page.rotation }), 'image/jpeg', 0.9),
   detect: (page) => detectQuad(page.preview, page.preview.width, page.preview.height),
@@ -388,6 +478,7 @@ els.filterAll.addEventListener('change', async () => {
   if (state.busy) return;
   discardPdf();
   for (const page of state.pages) {
+    if (isDocument(page)) continue;
     page.filter = els.filterAll.value;
     await refreshThumb(page);
   }
@@ -465,6 +556,10 @@ async function generate() {
     for (const [i, page] of list.entries()) {
       announce(`Processando página ${i + 1} de ${list.length}…`);
       await nextFrame();
+      if (isDocument(page)) {
+        pages.push({ ...page.layout, rotation: page.rotation }); // texto: o PDF desenha direto, sem imagem
+        continue;
+      }
       const image = await decodeFile(page.file);
       let canvas;
       try {

@@ -38,6 +38,7 @@
     <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></symbol>
     <symbol id="i-crop" viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></symbol>
     <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></symbol>
     <symbol id="i-undo" viewBox="0 0 24 24"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
   </svg>
 
@@ -53,19 +54,20 @@
   <main id="main" class="wrap">
     <section class="hero">
       <h1>Foto de documento vira PDF. Sem mandar nada pra ninguém.</h1>
-      <p class="lead">Tire uma foto ou escolha imagens, ajuste e baixe o PDF. Tudo acontece aqui no seu navegador: sem cadastro, sem upload, sem rastreio.</p>
+      <p class="lead">Tire uma foto, escolha imagens ou abra um documento do Word, ajuste e baixe o PDF. Tudo acontece aqui no seu navegador: sem cadastro, sem upload, sem rastreio.</p>
     </section>
 
-    <section id="dropzone" class="dropzone" aria-label="Adicionar imagens">
+    <section id="dropzone" class="dropzone" aria-label="Adicionar imagens ou documentos">
       <div class="dropzone-actions">
         <!-- "Tirar foto" só aparece com tela de toque (o atributo capture é ignorado no computador);
-             sem ele, "Escolher imagens" vira o botão principal. Ver .touch-only e .btn-pick no CSS. -->
+             sem ele, "Escolher arquivos" vira o botão principal. Ver .touch-only e .btn-pick no CSS. -->
         <button id="take-photo" type="button" class="btn btn-primary btn-lg touch-only"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-camera"/></svg> Tirar foto</button>
-        <button id="pick-files" type="button" class="btn btn-lg btn-pick"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-image"/></svg> Escolher imagens</button>
+        <button id="pick-files" type="button" class="btn btn-lg btn-pick"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-image"/></svg> Escolher arquivos</button>
       </div>
-      <p class="hint pointer-only">…ou arraste imagens para cá, ou cole com <kbd id="paste-key">Ctrl+V</kbd>.</p>
+      <p class="hint">Fotos e imagens (JPG, PNG, HEIC…) ou documentos do Word (.docx).</p>
+      <p class="hint pointer-only">…ou arraste os arquivos para cá, ou cole uma imagem com <kbd id="paste-key">Ctrl+V</kbd>.</p>
       <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
-      <input id="file-input" type="file" accept="image/*,.heic,.heif" multiple hidden>
+      <input id="file-input" type="file" accept="image/*,.heic,.heif,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" multiple hidden>
     </section>
 
     <section id="workspace" class="workspace" hidden aria-labelledby="pages-title">
@@ -109,6 +111,7 @@
           <span><strong>Página comprida ou com letra miúda:</strong> na qualidade Alta o texto pequeno sai mais nítido (o arquivo fica maior).</span>
           <button id="quality-tip-apply" type="button" class="btn">Usar qualidade Alta</button>
         </p>
+        <p id="document-note" class="tip field-wide" hidden><span>As páginas de documento do Word saem com o tamanho de página e as margens do próprio arquivo, com texto de verdade (dá para selecionar e pesquisar no PDF).</span></p>
         <label class="field field-wide">
           <span>Nome do arquivo</span>
           <input id="file-name" type="text" value="documento" maxlength="80" autocomplete="off" spellcheck="false">
@@ -139,7 +142,7 @@
       <ul class="checklist">
         <li><strong>Não existe upload.</strong> As imagens são processadas pelo seu próprio navegador. Não temos servidor que receba arquivos — esta é só uma página estática.</li>
         <li><strong>Sem cookies, sem analytics, sem conta.</strong> Nenhum script, fonte ou pixel de terceiros. O app não guarda nada entre uma visita e outra.</li>
-        <li><strong>Metadados removidos.</strong> Localização GPS, modelo do celular e data da foto ficam de fora do PDF. O PDF também não leva nome de app nem carimbo.</li>
+        <li><strong>Metadados removidos.</strong> Localização GPS, modelo do celular e data da foto ficam de fora do PDF; do documento do Word, autor e empresa também. O PDF também não leva nome de app nem carimbo.</li>
         <li><strong>Funciona offline.</strong> Depois de aberto uma vez, dá pra usar até em modo avião.</li>
         <li><strong>Bloqueado por regra, não por promessa.</strong> A página tem uma política de segurança (<code>connect-src 'none'</code>) que impede o navegador de abrir qualquer conexão a partir dela.</li>
       </ul>
@@ -200,16 +203,22 @@
       <h2 id="viewer-title"></h2>
       <button id="viewer-close" type="button" class="btn">Fechar</button>
     </div>
-    <div id="viewer-stage" class="viewer-stage">
-      <img id="viewer-image" class="viewer-image" alt="">
-      <div id="crop" class="crop" hidden>
-        <img id="crop-image" alt="Foto original">
-        <svg class="crop-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polygon id="crop-polygon" points=""/></svg>
-        <button type="button" class="crop-handle"></button>
-        <button type="button" class="crop-handle"></button>
-        <button type="button" class="crop-handle"></button>
-        <button type="button" class="crop-handle"></button>
+    <!-- Moldura: as setas de anterior/próxima ficam nas laterais, como num leitor de PDF, e não rolam junto
+         com a imagem ampliada. Também dá para usar as setas do teclado ou deslizar o dedo. -->
+    <div class="viewer-frame">
+      <div id="viewer-stage" class="viewer-stage">
+        <img id="viewer-image" class="viewer-image" alt="">
+        <div id="crop" class="crop" hidden>
+          <img id="crop-image" alt="Foto original">
+          <svg class="crop-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polygon id="crop-polygon" points=""/></svg>
+          <button type="button" class="crop-handle"></button>
+          <button type="button" class="crop-handle"></button>
+          <button type="button" class="crop-handle"></button>
+          <button type="button" class="crop-handle"></button>
+        </div>
       </div>
+      <button id="viewer-prev" type="button" class="viewer-step viewer-step-prev" aria-label="Página anterior" title="Página anterior" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-left"/></svg></button>
+      <button id="viewer-next" type="button" class="viewer-step viewer-step-next" aria-label="Próxima página" title="Próxima página" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-right"/></svg></button>
     </div>
     <p id="viewer-hint" class="viewer-hint" role="status"></p>
     <div id="viewer-view-actions" class="viewer-actions">
@@ -226,7 +235,7 @@
   <footer class="site-footer">
     <div class="wrap">
       <p>Feito pela comunidade, para a comunidade. Código aberto sob licença MIT — <a data-repo-link href="#" rel="noopener noreferrer">contribua no GitHub</a>.</p>
-      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">1.0.0</a></p>
+      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">2.0.0</a></p>
     </div>
   </footer>
 </body>

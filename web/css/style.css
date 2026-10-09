@@ -113,7 +113,7 @@ kbd {
 .hint { margin: 16px 0 0; color: var(--muted); }
 
 /* "Tirar foto" só faz sentido com câmera e toque; arrastar e colar, só com mouse/trackpad.
-   Sem toque, "Escolher imagens" assume o papel de botão principal. */
+   Sem toque, "Escolher arquivos" assume o papel de botão principal. */
 @media not all and (pointer: coarse) {
   .touch-only { display: none; }
   .btn-pick { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
@@ -149,6 +149,14 @@ kbd {
 }
 .thumb-zoom .icon { width: 18px; height: 18px; }
 .btn-crop { width: 100%; padding: 6px 8px; font-size: 0.92rem; }
+/* Página de documento do Word: de qual arquivo veio e qual página dele é. */
+.page-source {
+  margin: 0; min-height: 36px; display: flex; align-items: center; gap: 6px;
+  font-size: 0.88rem; color: var(--muted); white-space: nowrap;
+}
+.page-source .icon { width: 18px; height: 18px; flex: none; }
+.page-source-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.hint + .hint { margin-top: 4px; }
 /* Controles do cartão em duas linhas: número + remover em cima, mover/girar embaixo.
    Remover fica numa linha própria, longe dos outros botões. */
 .page-tools {
@@ -304,14 +312,26 @@ select:disabled, input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed
 .viewer[open] { display: flex; flex-direction: column; }
 .viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .viewer-head h2 { margin: 0; font-size: 1.05rem; }
+.viewer-frame { flex: 1 1 0; min-height: 0; position: relative; display: flex; }
+.viewer-step {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+  width: 48px; height: 48px; border-radius: 50%; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 25%); cursor: pointer; opacity: 0.92;
+}
+.viewer-step .icon { width: 24px; height: 24px; }
+.viewer-step-prev { left: 12px; } /* o JS encosta a seta na borda da página (viewer.js, placeSteps) */
+.viewer-step-next { right: 12px; }
+@media (hover: hover) { .viewer-step:hover { opacity: 1; border-color: var(--accent); } }
 .viewer-stage {
-  flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center;
+  flex: 1 1 0; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center;
   overflow: hidden; background: var(--surface-2); padding: 8px;
 }
-.viewer-image { max-width: 100%; max-height: 100%; display: block; cursor: zoom-in; box-shadow: var(--shadow), 0 0 0 1px var(--border); }
+.viewer-image { max-width: 100%; max-height: 100%; display: block; cursor: zoom-in; box-shadow: var(--shadow), 0 0 0 1px var(--border); touch-action: pan-y pinch-zoom; }
 /* Ampliado: a imagem passa a ter 2,2× a largura da tela e a área rola nos dois sentidos. */
 .viewer-stage.zoomed { display: block; overflow: auto; -webkit-overflow-scrolling: touch; }
-.viewer-stage.zoomed .viewer-image { max-width: none; max-height: none; width: 220%; cursor: zoom-out; }
+.viewer-stage.zoomed .viewer-image { max-width: none; max-height: none; width: 220%; cursor: zoom-out; touch-action: auto; }
 /* Altura fixa (duas linhas): trocar o texto não pode mexer no tamanho da foto no meio de um arrasto. */
 .viewer-hint { margin: 0; padding: 8px 16px 0; height: 3.8em; overflow: hidden; text-align: center; font-size: 0.9rem; color: var(--muted); background: var(--surface); }
 .viewer-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 8px 12px 14px; background: var(--surface); }

@@ -31,28 +31,28 @@ O caminho das fotos não muda. O PDF gerado a partir de imagens deve continuar i
 
 #### Fase 1: só texto
 
-- [ ] Leitor de ZIP mínimo (`web/js/zip.js`): ler o diretório central e descompactar com `DecompressionStream('deflate-raw')`
-- [ ] Leitor de XML mínimo (`web/js/xml.js`): o Node não tem `DOMParser`, e os testes rodam em Node
-- [ ] Leitura do `word/document.xml` (`web/js/docx.js`):
-  - [ ] parágrafos e quebras de linha
-  - [ ] negrito, itálico e sublinhado
-  - [ ] títulos (`Heading1`… via `word/styles.xml`)
-  - [ ] listas simples com marcador e número
-  - [ ] alinhamento
-- [ ] Layout de texto (`web/js/layout.js`):
-  - [ ] tabela de larguras da Helvetica e da Times (AFM)
-  - [ ] quebra de linha por palavra
-  - [ ] paginação respeitando o tamanho da página (A4/Carta) e a margem
-- [ ] `pdf.js`: páginas de texto com fontes padrão, além das páginas de imagem
-- [ ] Interface:
-  - [ ] `accept` do input com `.docx`
-  - [ ] `addFiles` aceita `.docx`
-  - [ ] página com tipo `foto` ou `documento`
-  - [ ] recorte, filtros e "Ajustar recorte" escondidos em páginas de documento
-  - [ ] miniatura desenhada a partir do layout
-- [ ] Um `.docx` vira várias páginas na lista, que podem ser reordenadas e misturadas com fotos
-- [ ] Carregar os módulos de documento só quando aparecer um `.docx`, como acontece com o libheif
-- [ ] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`
+- [x] Leitor de ZIP mínimo (`web/js/zip.js`): ler o diretório central e descompactar com `DecompressionStream('deflate-raw')`
+- [x] Leitor de XML mínimo (`web/js/xml.js`): o Node não tem `DOMParser`, e os testes rodam em Node
+- [x] Leitura do `word/document.xml` (`web/js/docx.js`):
+  - [x] parágrafos e quebras de linha
+  - [x] negrito, itálico e sublinhado
+  - [x] títulos (`Heading1`… via `word/styles.xml`)
+  - [x] listas simples com marcador e número
+  - [x] alinhamento
+- [x] Layout de texto (`web/js/layout.js`):
+  - [x] tabela de larguras da Helvetica e da Times (AFM)
+  - [x] quebra de linha por palavra
+  - [x] paginação respeitando o tamanho da página (A4/Carta) e a margem
+- [x] `pdf.js`: páginas de texto com fontes padrão, além das páginas de imagem
+- [x] Interface:
+  - [x] `accept` do input com `.docx`
+  - [x] `addFiles` aceita `.docx`
+  - [x] página com tipo `foto` ou `documento`
+  - [x] recorte, filtros e "Ajustar recorte" escondidos em páginas de documento
+  - [x] miniatura desenhada a partir do layout
+- [x] Um `.docx` vira várias páginas na lista, que podem ser reordenadas e misturadas com fotos
+- [x] Carregar os módulos de documento só quando aparecer um `.docx`, como acontece com o libheif
+- [x] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`
 
 #### Fase 2: imagens e tabelas
 
@@ -62,10 +62,10 @@ O caminho das fotos não muda. O PDF gerado a partir de imagens deve continuar i
 
 #### Fase 3: acabamento
 
-- [ ] Fonte serifada ou sem serifa conforme o documento
-- [ ] Recuo de primeira linha e espaçamento entre parágrafos
-- [ ] Quebra de página manual (`w:br w:type="page"`)
-- [ ] Aviso do que foi ignorado (ex.: "o documento tinha gráficos que não aparecem no PDF")
+- [x] Fonte serifada ou sem serifa conforme o documento
+- [x] Recuo de primeira linha e espaçamento entre parágrafos
+- [x] Quebra de página manual (`w:br w:type="page"`)
+- [x] Aviso do que foi ignorado (ex.: "o documento tinha gráficos que não aparecem no PDF")
 
 ### Segurança e privacidade
 
@@ -78,19 +78,19 @@ O caminho das fotos não muda. O PDF gerado a partir de imagens deve continuar i
 
 ### Testes
 
-- [ ] ZIP: arquivo armazenado e comprimido, ZIP corrompido e limites de ZIP bomb
-- [ ] XML: entidades (`&amp;`, `&#233;`), CDATA e namespaces (`w:`)
-- [ ] DOCX: fixtures pequenas em `test/fixtures/` (parágrafo, negrito, lista, título e acentos)
-- [ ] Layout: quebra de linha, paginação e palavra maior que a linha
-- [ ] PDF: estrutura válida (xref) com páginas de texto e mistura de texto com foto
-- [ ] PDF de fotos continua idêntico ao de antes
+- [x] ZIP: arquivo armazenado e comprimido, ZIP corrompido e limites de ZIP bomb
+- [x] XML: entidades (`&amp;`, `&#233;`), CDATA e namespaces (`w:`)
+- [x] DOCX: parágrafo, negrito, lista, título e acentos, com os .docx montados pelos próprios testes (`test/helpers/docx.js`)
+- [x] Layout: quebra de linha, paginação e palavra maior que a linha
+- [x] PDF: estrutura válida (xref) com páginas de texto e mistura de texto com foto
+- [x] PDF de fotos continua idêntico ao de antes
 - [ ] Teste real no iPhone, no site publicado
 
-### Perguntas em aberto
+### Decisões
 
-- Tamanho da página: seguir o do documento (`w:pgSz`) ou o escolhido no app (A4/Carta)?
-- Margem: seguir a do documento (`w:pgMar`) ou a do app?
-- Documento com recurso não suportado: gerar mesmo assim com aviso, ou recusar?
+- **Tamanho da página e margem:** seguem o documento (`w:pgSz` e `w:pgMar`; A4 e 2,5 cm quando faltam). A paginação acontece ao abrir o arquivo, e as opções do app (A4/Carta, margem, filtro, qualidade) valem só para fotos.
+- **Recurso não suportado:** o PDF é gerado mesmo assim, e o app avisa o que ficou de fora (imagens, gráficos, formas, equações, notas, cabeçalho e rodapé). Tabelas aparecem como texto corrido até a fase 2.
+- **Caracteres fora das fontes padrão** (grego, emoji, setas): viram "?", com aviso. Bullets das fontes Symbol e Wingdings viram "•".
 
 ## Ferramentas de PDF: juntar, dividir e comprimir
 

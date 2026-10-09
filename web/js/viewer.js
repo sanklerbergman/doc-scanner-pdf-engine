@@ -10,12 +10,14 @@ const START_INSET = 0.04; // sem recorte ainda: os cantos começam um pouco para
 /**
  * @param {object} deps
  * @param {(page) => Promise<Blob>} deps.renderProcessed página pronta (recorte + giro + filtro), em boa resolução
+ * @param {(page) => boolean} deps.canCrop false para página sem foto (documento do Word)
  * @param {(page) => Promise<Blob>} deps.renderOriginal foto girada, sem recorte nem filtro
  * @param {(page) => number[][] | null} deps.detect cantos do papel nas coordenadas da foto, ou null
  * @param {(page, quad: number[][] | null) => Promise<void>} deps.applyCrop grava o recorte e atualiza a miniatura
+ * @param {(page, delta: number) => {page, label: string} | null} deps.step página vizinha (delta -1 ou +1), ou null
  * @param {(page) => void} deps.onClose chamado ao fechar, para devolver o foco ao cartão da página
  */
-export function setupViewer({ renderProcessed, renderOriginal, detect, applyCrop, onClose }) {
+export function setupViewer({ renderProcessed, canCrop, renderOriginal, detect, applyCrop, step, onClose }) {
   const dialog = $('#viewer');
   const title = $('#viewer-title');
   const stage = $('#viewer-stage');
@@ -28,6 +30,8 @@ export function setupViewer({ renderProcessed, renderOriginal, detect, applyCrop
   const viewActions = $('#viewer-view-actions');
   const cropActions = $('#viewer-crop-actions');
   const applyButton = $('#crop-apply');
+  const prevButton = $('#viewer-prev');
+  const nextButton = $('#viewer-next');
 
   let page = null;
   let label = '';
@@ -55,7 +59,8 @@ export function setupViewer({ renderProcessed, renderOriginal, detect, applyCrop
     title.textContent = label;
     crop.hidden = true;
     cropActions.hidden = true;
-    viewActions.hidden = false;
+    viewActions.hidden = !canCrop(page);
+    updateNav(true);
     image.hidden = false;
     stage.classList.remove('zoomed');
     image.src = page.thumbUrl; // aparece na hora; a versão nítida entra em seguida
@@ -75,6 +80,7 @@ export function setupViewer({ renderProcessed, renderOriginal, detect, applyCrop
   async function showCrop() {
     const mine = ++token;
     title.textContent = `Recorte: ${label}`;
+    updateNav(false); // no meio do recorte, trocar de página perderia os cantos arrastados
     image.hidden = true;
     viewActions.hidden = true;
     stage.classList.remove('zoomed');
@@ -146,9 +152,72 @@ export function setupViewer({ renderProcessed, renderOriginal, detect, applyCrop
     });
   });
 
+  // ---------- Anterior / próxima ----------
+
+  // As setas encostam nas bordas da página exibida, sem sair da tela (no celular, ficam nas bordas da tela).
+  function placeSteps() {
+    const frame = stage.parentElement.getBoundingClientRect();
+    const box = image.hidden || stage.classList.contains('zoomed') || !image.complete ? frame : image.getBoundingClientRect();
+    const gap = 16;
+    const size = prevButton.offsetWidth || 48;
+    prevButton.style.left = `${Math.max(12, box.left - frame.left - size - gap)}px`;
+    nextButton.style.right = `${Math.max(12, frame.right - box.right - size - gap)}px`;
+  }
+  image.addEventListener('load', placeSteps);
+  new ResizeObserver(placeSteps).observe(stage);
+
+  // Na primeira e na última página, a seta que não leva a lugar nenhum some; no recorte, as duas.
+  function updateNav(enabled) {
+    prevButton.hidden = !enabled || !step(page, -1);
+    nextButton.hidden = !enabled || !step(page, 1);
+    placeSteps();
+  }
+
+  function go(delta) {
+    if (!page || !crop.hidden) return;
+    const next = step(page, delta);
+    if (!next) return;
+    page = next.page;
+    label = next.label;
+    showView();
+    // Chegou na ponta e a seta clicada sumiu: o foco passa para a outra seta (ou para "Fechar").
+    if (document.activeElement?.hidden) (!prevButton.hidden ? prevButton : !nextButton.hidden ? nextButton : $('#viewer-close')).focus();
+  }
+
+  prevButton.addEventListener('click', () => go(-1));
+  nextButton.addEventListener('click', () => go(1));
+  dialog.addEventListener('keydown', (event) => {
+    if (!crop.hidden || event.target.matches('select, input')) return;
+    if (event.key === 'ArrowLeft') go(-1);
+    else if (event.key === 'ArrowRight') go(1);
+    else return;
+    event.preventDefault();
+  });
+
+  // Deslizar para o lado na imagem (sem zoom) também troca de página.
+  // Sem zoom, o deslizar horizontal é nosso (ver touch-action no CSS); com zoom, rola a imagem.
+  image.draggable = false; // no mouse, arrastar a imagem não pode virar "arrastar arquivo"
+  let swipe = null;
+  let swiped = false;
+  image.addEventListener('pointerdown', (event) => { swipe = { x: event.clientX, y: event.clientY }; });
+  image.addEventListener('pointerup', (event) => {
+    if (!swipe || stage.classList.contains('zoomed')) return;
+    const dx = event.clientX - swipe.x;
+    const dy = event.clientY - swipe.y;
+    swipe = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      swiped = true; // o "click" que vem logo depois não deve ampliar a imagem
+      go(dx < 0 ? 1 : -1);
+    }
+  });
+
   $('#viewer-crop').addEventListener('click', showCrop);
   $('#viewer-close').addEventListener('click', () => dialog.close());
-  image.addEventListener('click', () => stage.classList.toggle('zoomed'));
+  image.addEventListener('click', () => {
+    if (swiped) { swiped = false; return; }
+    stage.classList.toggle('zoomed');
+    placeSteps();
+  });
 
   $('#crop-detect').addEventListener('click', () => {
     const quad = detect(page);
