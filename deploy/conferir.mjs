@@ -24,7 +24,12 @@ const expectedCsp = {
 
 async function check(file) {
   const path = file === 'index.html' ? '' : file;
-  const response = await fetch(new URL(path, BASE), { cache: 'no-store', redirect: 'error' });
+  // Pede como um navegador: o Cloudflare só injeta script (ex.: Web Analytics) quando a requisição aceita HTML.
+  const response = await fetch(new URL(path, BASE), {
+    cache: 'no-store',
+    redirect: 'error',
+    headers: { accept: 'text/html,application/xhtml+xml,*/*;q=0.8' },
+  });
   if (!response.ok) return `${path || '/'}: HTTP ${response.status}`;
   const live = Buffer.from(await response.arrayBuffer());
   if (!live.equals(await readFile(WEB + file))) return `${path || '/'}: conteúdo diferente do repositório`;
