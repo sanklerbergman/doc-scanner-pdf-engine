@@ -48,3 +48,7 @@ Veja [CONTRIBUTING.md](CONTRIBUTING.md). Regra de ouro: **nada de requisições 
 ## Licença
 
 [MIT](LICENSE). As três bibliotecas em `web/vendor/` são distribuídas sem alterações e têm licença própria: o decodificador de HEIC [libheif-js](https://github.com/catdad-experiments/libheif-js) (LGPL-3.0), o renderizador de PDF [PDF.js](https://github.com/mozilla/pdf.js) (Apache-2.0) e o gerador de QR Code [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT).
+
+---
+
+<p>por <a href="https://sankler.com.br"><picture><source srcset="web/sankler-logo-reduzido-fundo-escuro.svg" media="(prefers-color-scheme: dark)"><img src="web/sankler-logo-reduzido-fundo-claro.svg" alt="Sankler" height="18"></picture></a></p>

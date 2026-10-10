@@ -29,6 +29,8 @@ const APP_FILES = [
   './js/pdf-compress.js',
   './js/config.js',
   './icon.svg',
+  './sankler-logo-reduzido-fundo-claro.svg',
+  './sankler-logo-reduzido-fundo-escuro.svg',
   './manifest.webmanifest',
 ];
 
