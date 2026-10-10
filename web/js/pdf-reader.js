@@ -57,7 +57,8 @@ const latin1 = (bytes, start, end) => {
 export class Parser {
   constructor(bytes, pos = 0) {
     this.bytes = bytes;
-    this.pos = pos;
+    // A posição pode vir do arquivo (offset, /First) e ser negativa ou quebrada: vira o fim, e a leitura recusa.
+    this.pos = Number.isInteger(pos) && pos >= 0 ? pos : bytes.length;
   }
 
   skip() {
@@ -186,6 +187,7 @@ export function unpredict(data, params) {
   const colors = params.get('Colors') ?? 1;
   const bpc = params.get('BitsPerComponent') ?? 8;
   const columns = params.get('Columns') ?? 1;
+  if (![colors, bpc, columns].every((v) => Number.isInteger(v) && v > 0)) throw new PdfError('Preditor PNG inválido.');
   const bpp = Math.max(1, Math.ceil((colors * bpc) / 8));
   const rowLength = Math.ceil((colors * bpc * columns) / 8);
   const rows = Math.floor(data.length / (rowLength + 1));
@@ -324,13 +326,20 @@ class PdfDocument {
         parser.skip();
         const count = Number(parser.token());
         if (!Number.isFinite(count)) return null;
+        // A contagem vem do arquivo e pode ser absurda (4294967296): a subseção acaba onde acabam as entradas.
         for (let i = 0; i < count; i++) {
           parser.skip();
-          const off = Number(parser.token());
+          const start = parser.pos;
+          const offText = parser.token();
           parser.skip();
-          parser.token(); // geração
+          const gen = parser.token();
           parser.skip();
           const kind = parser.token();
+          if (!/^\d+$/.test(offText) || !/^\d+$/.test(gen) || (kind !== 'n' && kind !== 'f')) {
+            parser.pos = start; // próxima subseção ou o trailer
+            break;
+          }
+          const off = Number(offText);
           const num = Number(word) + i;
           if (kind === 'n' && !this.entries.has(num) && off > 0) this.addEntry(num, { type: 1, offset: off });
           else if (kind === 'f' && !this.entries.has(num)) this.entries.set(num, { type: 0 });
@@ -345,6 +354,8 @@ class PdfDocument {
     const widths = dict.get('W');
     if (!Array.isArray(widths) || widths.length < 3) return null;
     const [w0, w1, w2] = widths;
+    // Linha de tamanho zero faria o laço de /Index rodar sem avançar; campo de mais de 7 bytes não cabe num número.
+    if (![w0, w1, w2].every((w) => Number.isInteger(w) && w >= 0 && w <= 7) || w0 + w1 + w2 === 0) return null;
     const size = dict.get('Size') ?? 0;
     const index = dict.get('Index') ?? [0, size];
     const rowLength = w0 + w1 + w2;
@@ -458,12 +469,16 @@ class PdfDocument {
 
   // Dados de um stream de estrutura (xref ou object stream) descompactados.
   async decode(stream) {
-    let filters = stream.dict.get('Filter');
-    let params = stream.dict.get('DecodeParms');
+    let filters = this.resolve(stream.dict.get('Filter'));
+    let params = this.resolve(stream.dict.get('DecodeParms'));
     if (filters instanceof PdfName) { filters = [filters]; params = [params]; }
+    if (filters != null && !Array.isArray(filters)) throw new PdfError('Filtro inválido na estrutura do PDF.');
     let data = stream.data;
-    for (const [i, filter] of (filters ?? []).entries()) {
-      if (!isName(filter, 'FlateDecode')) throw new PdfError(`Filtro não suportado na estrutura do PDF: ${filter?.value}`);
+    for (const [i, item] of (filters ?? []).entries()) {
+      const filter = this.resolve(item);
+      if (!isName(filter, 'FlateDecode')) {
+        throw new PdfError(`Filtro não suportado na estrutura do PDF: ${filter instanceof PdfName ? filter.value : 'inválido'}`);
+      }
       const limit = Math.min(this.limits.maxStreamSize, this.limits.maxTotalSize - this.decoded);
       data = await inflate(data, 'deflate', limit, { lenient: true });
       this.decoded += data.length;
@@ -554,20 +569,23 @@ class PdfDocument {
     return pages;
   }
 
+  // Retângulo [x1 y1 x2 y2]. Coordenada absurda (passa do inteiro de 32 bits dos leitores) invalida a caixa.
   box(value) {
     const box = this.resolve(value);
     if (!Array.isArray(box) || box.length !== 4) return null;
     const n = box.map((v) => this.resolve(v));
-    if (!n.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+    if (!n.every((v) => typeof v === 'number' && Math.abs(v) < 2 ** 31)) return null;
     return [Math.min(n[0], n[2]), Math.min(n[1], n[3]), Math.max(n[0], n[2]), Math.max(n[1], n[3])];
   }
 
   pageInfo(node, attrs) {
-    const media = this.box(attrs.MediaBox) ?? A4_BOX;
+    let media = this.box(attrs.MediaBox);
+    if (!media || media[2] - media[0] <= 0 || media[3] - media[1] <= 0) media = A4_BOX;
     let crop = this.box(attrs.CropBox);
     if (crop) crop = [Math.max(crop[0], media[0]), Math.max(crop[1], media[1]), Math.min(crop[2], media[2]), Math.min(crop[3], media[3])];
     if (!crop || crop[2] - crop[0] <= 0 || crop[3] - crop[1] <= 0) crop = media;
-    const rotate = ((Math.round((this.resolve(attrs.Rotate) ?? 0) / 90) * 90) % 360 + 360) % 360;
+    const turn = this.resolve(attrs.Rotate);
+    const rotate = typeof turn === 'number' && Number.isFinite(turn) ? ((Math.round(turn / 90) % 4 + 4) % 4) * 90 : 0;
     const width = crop[2] - crop[0];
     const height = crop[3] - crop[1];
     const sideways = rotate % 180 !== 0;
@@ -584,7 +602,8 @@ class PdfDocument {
     if (!(form instanceof PdfDict)) return false;
     if ((this.resolve(form.get('SigFlags')) ?? 0) & 1) return true;
     const seen = new Set();
-    const stack = [...(this.resolve(form.get('Fields')) ?? [])];
+    const fields = this.resolve(form.get('Fields'));
+    const stack = Array.isArray(fields) ? [...fields] : [];
     while (stack.length && seen.size < 10000) {
       const ref = stack.pop();
       if (ref instanceof PdfRef) {
@@ -666,10 +685,17 @@ export function keptEntries(dict, names = false) {
   return [...dict].filter(([key]) => names || !DROPPED_KEYS.has(key));
 }
 
-function formatNumber(n) {
+// Número em PDF não tem notação exponencial ("1e+21"), Infinity nem NaN. Acima do inteiro de 32 bits dos leitores,
+// vai como real ("1000000000000000000000.0").
+export function formatNumber(n) {
+  if (!Number.isFinite(n)) return '0';
+  if (Math.abs(n) >= 2 ** 31) return `${BigInt(Math.round(n))}.0`;
   if (Number.isInteger(n)) return String(n);
   return String(Number(n.toFixed(6)));
 }
+
+// /UserUnit (tamanho da unidade, em 1/72 pol.): só um número positivo de tamanho razoável vai para a cópia.
+const validUserUnit = (value) => (typeof value === 'number' && value > 0 && value <= 75000 ? value : null);
 
 function formatName(name) {
   let out = '/';
@@ -781,7 +807,12 @@ export function copyPages(doc, indices, { replace } = {}) {
     // /Resources que não é dicionário (aponta para um stream ou para um objeto que não existe) vira um vazio.
     let resources = doc.resolve(page.attrs.Resources) instanceof PdfDict ? page.attrs.Resources : new PdfDict();
     const own = doc.layers?.contents.get(index); // conteúdo refeito sem as camadas ocultas
-    let contents = own ? write(own, []) : page.node.has('Contents') ? write(page.node.get('Contents'), []) : null;
+    // /Contents é um stream, uma lista deles ou uma referência a uma lista. Só streams vão para a cópia: qualquer
+    // outra coisa na lista (um dicionário, uma referência quebrada) deixaria o PDF gerado inválido.
+    const original = doc.resolve(page.node.get('Contents'));
+    const parts = own ? [own] : (Array.isArray(original) ? original : [page.node.get('Contents')])
+      .filter((item) => doc.resolve(item) instanceof PdfStream);
+    let contents = null;
 
     if (appearances.length) {
       // Recursos: cópia só desta página, com as aparências como XObjects /Annot0, /Annot1…
@@ -796,13 +827,13 @@ q ${matrix.map(formatNumber).join(' ')} cm /Annot${i} Do Q`;
       copy.set('XObject', xobjects);
       resources = copy;
       // O conteúdo original fica entre q e Q: o que ele mudar no estado gráfico não afeta as aparências.
-      const original = doc.resolve(page.node.get('Contents'));
-      const list = own ? [own] : Array.isArray(original) ? page.node.get('Contents') : contents ? [page.node.get('Contents')] : [];
       const before = add(new PdfStream(new PdfDict(), new TextEncoder().encode('q')));
       const after = add(new PdfStream(new PdfDict(), new TextEncoder().encode(ops)));
       contents = ['[', before];
-      for (const item of Array.isArray(list) ? list : []) contents.push(' ', ...write(item, []));
+      for (const item of parts) contents.push(' ', ...write(item, []));
       contents.push(' ', after, ']');
+    } else if (parts.length) {
+      contents = write(parts.length === 1 ? parts[0] : parts, []);
     }
 
     pages.set(index, {
@@ -812,7 +843,7 @@ q ${matrix.map(formatNumber).join(' ')} cm /Annot${i} Do Q`;
       resources: write(resources, []),
       contents,
       group: group ? write(group, []) : null,
-      userUnit: doc.resolve(page.node.get('UserUnit')) ?? null,
+      userUnit: validUserUnit(doc.resolve(page.node.get('UserUnit'))),
     });
   }
   while (queue.length) {

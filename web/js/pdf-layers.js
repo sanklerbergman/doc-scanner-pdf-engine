@@ -7,7 +7,7 @@
 // mesmo lugar. Quando não dá para garantir isso, o PDF é recusado, em vez de mostrar o que estava oculto.
 //
 // Importa do pdf-reader.js, que importa este arquivo de volta: os dois só se usam dentro das funções.
-import { Parser, Keyword, PdfDict, PdfName, PdfRef, PdfStream, PdfError, isName } from './pdf-reader.js';
+import { Parser, Keyword, PdfDict, PdfName, PdfRef, PdfStream, PdfError, isName, formatNumber } from './pdf-reader.js';
 
 const MAX_DEPTH = 32;
 const MAX_STREAMS = 20000;
@@ -115,7 +115,7 @@ function inlineImageEnd(data, from) {
   return -1;
 }
 
-const formatNumber = (n) => (typeof n === 'number' ? String(Number(n.toFixed(6))) : '0');
+const number = (n) => (typeof n === 'number' ? formatNumber(n) : '0');
 
 const NEWLINE = Uint8Array.of(10);
 
@@ -224,7 +224,7 @@ function rewrite(doc, data, resources, visible, drawn) {
       // Texto que recorta (Tr 4 a 7) muda o que aparece depois: não dá para tirar sem mudar a página.
       if (textMode.at(-1) >= 4) throw new PdfError(`${REFUSED} (texto oculto usado como recorte).`);
       if (op === "'") replace('T*');
-      else if (op === '"') replace(`${formatNumber(operands[0])} Tw ${formatNumber(operands[1])} Tc T*`);
+      else if (op === '"') replace(`${number(operands[0])} Tw ${number(operands[1])} Tc T*`);
       else drop();
       lost = true;
     } else if (op === 'sh') {
@@ -348,7 +348,8 @@ export async function prepareLayers(doc) {
     }
     visit(resources);
     // Aparências das anotações, que o copyPages desenha na página.
-    for (const ref of doc.resolve(page.node.get('Annots')) ?? []) {
+    const annots = doc.resolve(page.node.get('Annots'));
+    for (const ref of Array.isArray(annots) ? annots : []) {
       const annot = doc.resolve(ref);
       if (!(annot instanceof PdfDict) || layers.isHidden(annot.get('OC'))) continue;
       let appearance = doc.resolve(doc.resolve(annot.get('AP'))?.get?.('N'));

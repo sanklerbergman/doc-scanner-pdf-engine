@@ -135,6 +135,100 @@ test('xref em stream quebrada: a reconstrução usa o dicionário dela como trai
   assert.match(contentOf(doc, 0), /\(XrefStream\) Tj/);
 });
 
+// Troca um trecho por outro do mesmo tamanho (completado com espaços), para os offsets da xref continuarem certos.
+function patch(bytes, from, to) {
+  const text = latin1(bytes);
+  const start = text.indexOf(from);
+  assert.ok(start >= 0 && to.length <= from.length, from);
+  return Uint8Array.from(text.slice(0, start) + to.padEnd(from.length) + text.slice(start + from.length), (c) => c.charCodeAt(0));
+}
+
+test('xref com contagem absurda não trava o leitor (achado do fuzzing)', async () => {
+  // A tabela fica depois dos objetos: mudar o tamanho dela não muda nenhum offset.
+  for (const count of ['4294967296', '1e308', '99999999999999999999']) {
+    for (const header of ['0 1', '3 1']) {
+      const text = latin1(simple('Contagem')).replace(`\n${header}\n`, `\n${header.split(' ')[0]} ${count}\n`);
+      const doc = await openPdf(Uint8Array.from(text, (c) => c.charCodeAt(0)));
+      assert.match(contentOf(doc, 0), /\(Contagem\) Tj/, `${header} → ${count}`);
+    }
+  }
+  // Xref em stream com /W [0 0 0]: cada linha teria tamanho zero, e /Index pede um número enorme delas.
+  const stream = simple('Larguras', 'stream', [1, 2, 3, 5]);
+  const index = latin1(stream).match(/\/Index \[[^\]]*\]/)[0];
+  const doc = await openPdf(patch(patch(stream, '/W [1 4 2]', '/W [0 0 0]'), index, '/Index [0 1000000000000000]'));
+  assert.match(contentOf(doc, 0), /\(Larguras\) Tj/, 'a xref inválida é descartada e o PDF é reconstruído');
+});
+
+test('/First negativo num object stream não trava o leitor (achado do fuzzing)', async () => {
+  for (const first of ['-2147483649', '-1', '2.5', '99999999999']) {
+    const text = latin1(simple('x', 'stream', [1, 2, 3, 5]))
+      .replace(/(\/Type \/ObjStm \/N \d+ \/First )\d+/, `$1${first}`)
+      .replace(/startxref\n\d+/, 'startxref\n999999'); // reconstrução: os offsets mudaram
+    await assert.rejects(openPdf(Uint8Array.from(text, (c) => c.charCodeAt(0))), PdfError, first);
+  }
+});
+
+test('/Annots e /Fields que não são listas não quebram a leitura (achado do fuzzing)', async () => {
+  for (const value of ['7', '<< /A 1 >>', '(texto)']) {
+    const doc = await openPdf(makeRawPdf({
+      1: `<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields ${value} >> /OCProperties << /OCGs [9 0 R] /D << /OFF [9 0 R] >> >> >>`,
+      2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      ...textPageObjects('x', { extra: ` /Annots ${value}` }),
+      9: '<< /Type /OCG /Name (Oculta) >>',
+    }).bytes);
+    assert.equal(doc.isSigned(), false, value);
+    assert.equal(doc.hasAnnotations(), false, value);
+  }
+});
+
+test('/Filter que não é nome nem lista: recusa com PdfError, sem erro inesperado (achado do fuzzing)', async () => {
+  const stream = simple('x', 'stream', [1, 2, 3, 5]);
+  const dict = latin1(stream).match(/\/Type \/ObjStm [^>]*\/Filter \/FlateDecode/)[0];
+  const bytes = patch(stream, dict, dict.replace('/Filter /FlateDecode', '/Filter 7'));
+  await assert.rejects(openPdf(bytes), (err) => err instanceof PdfError && /Filtro/.test(err.message));
+});
+
+test('/Contents: só streams vão para a cópia, e uma lista indireta não some com as anotações', async () => {
+  const doc = await openPdf(makeRawPdf({
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R 6 0 R 8 0 R] /Count 3 /Resources << /Font << /F1 5 0 R >> >> >>',
+    3: '<< /Type /Page /Parent 2 0 R /Contents [4 0 R 9 0 R 99 0 R 7] >>', // dicionário, referência quebrada, número
+    4: { data: 'BT /F1 12 Tf (um) Tj ET' },
+    5: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    6: '<< /Type /Page /Parent 2 0 R /Contents 9 0 R >>', // nem stream nem lista
+    7: { data: 'BT /F1 12 Tf (tres) Tj ET' },
+    8: '<< /Type /Page /Parent 2 0 R /Contents 10 0 R /Annots [11 0 R] >>',
+    9: '<< /Tipo (nao sou stream) >>',
+    10: '[4 0 R 7 0 R]', // lista indireta
+    11: '<< /Type /Annot /Subtype /Stamp /F 4 /Rect [0 0 20 20] /AP << /N 12 0 R >> >>',
+    12: { dict: '/BBox [0 0 20 20]', data: '0 0 20 20 re f' },
+  }).bytes);
+  const { doc: copy } = await merge([[doc, 0], [doc, 1], [doc, 2]]);
+  assert.match(contentOf(copy, 0), /\(um\) Tj/);
+  assert.equal(copy.pages[1].node.has('Contents'), false, 'página sem conteúdo válido fica em branco');
+  assert.match(contentOf(copy, 2), /^q\n[\s\S]*\(um\) Tj[\s\S]*\(tres\) Tj[\s\S]*\/Annot0 Do Q$/);
+});
+
+test('números absurdos não estragam o PDF gerado (achado do fuzzing)', async () => {
+  const big = '9'.repeat(25); // 1e25: em JS vira "1e+25", que não é número em PDF
+  const infinite = '9'.repeat(400); // passa do maior número do JS: Infinity
+  const doc = await openPdf(makeRawPdf({
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R 6 0 R 7 0 R] /Count 3 >>',
+    3: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 ${big}] /Rotate /Noventa /UserUnit /Grande /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>`,
+    4: { data: 'BT /F1 12 Tf (x) Tj ET' },
+    5: `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Widths [${big} ${infinite} -${big} 0.5 2147483648] >>`,
+    6: `<< /Type /Page /Parent 2 0 R /MediaBox [${infinite} 0 10 10] /Rotate 450 /Contents 4 0 R >>`,
+    7: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 0 0] /UserUnit 0 /Contents 4 0 R >>',
+  }).bytes);
+  assert.deepEqual(doc.pages.map((p) => [p.width, p.height, p.rotate]), [[595.28, 841.89, 0], [841.89, 595.28, 90], [595.28, 841.89, 0]]);
+  const { bytes, doc: copy } = await merge([[doc, 0], [doc, 1], [doc, 2]]); // e o qpdf confere o PDF gerado
+  const text = latin1(bytes);
+  assert.ok(!/e\+|Infinity|NaN|UserUnit/.test(text), 'só números válidos em PDF');
+  const widths = copy.resolve(copy.resolve(copy.resolve(copy.pages[0].attrs.Resources).get('Font')).get('F1')).get('Widths');
+  assert.deepEqual(widths, [1e25, 0, -1e25, 0.5, 2147483648]);
+});
+
 test('/Resources que não é dicionário vira um dicionário vazio na cópia', async () => {
   const doc = await openPdf(makeRawPdf({
     1: '<< /Type /Catalog /Pages 2 0 R >>',
