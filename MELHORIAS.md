@@ -377,7 +377,7 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 - **A chave não volta para o JS:** ela é importada como não extraível e só serve para `sign`. Os bytes decifrados são zerados logo depois da importação, e as referências à chave são soltas ao terminar. Limite conhecido: a senha é uma string do JS, que não dá para apagar da memória; ela some quando a aba é fechada.
 - **Campo de senha:** fica fora de formulário (o `form-action 'none'` já impede envio), com `autocomplete="off"`, e é limpo logo depois do uso. Nunca vai para a URL nem para o console. O navegador pode oferecer guardar a senha, mas o app não pede isso.
 - **Sem logs:** nada do certificado (nome, CPF, número de série) vai para o console ou para mensagens de erro.
-- **O que vai no PDF é avisado antes:** a assinatura leva o certificado da pessoa, com nome e CPF (ou CNPJ). É assim que quem recebe confere quem assinou, e não tem como assinar sem isso. Fora o certificado, nada: sem `/Name`, `/Reason`, `/Location`, `/ContactInfo`, `/Info` ou XMP.
+- **O que vai no PDF é avisado antes:** a assinatura leva o certificado da pessoa, com nome e CPF (ou CNPJ). É assim que quem recebe confere quem assinou, e não tem como assinar sem isso. Fora o certificado, nada: sem `/Name`, `/Reason`, `/Location`, `/ContactInfo`, `/Info` ou XMP. A exceção é o XMP de identificação do padrão, quando a pessoa liga o PDF/A (ver a seção PDF/A).
 - **A assinatura cobre o que a pessoa viu:** ela é feita sobre os bytes finais, e a prévia mostra esse arquivo. Nada muda depois.
 - **Assinatura conferida antes de sair** (passo 6): um erro na montagem nunca vira um PDF "assinado" que não valida.
 - **Certificado vencido ou que não serve para assinar:** o app recusa e diz o motivo.
@@ -392,7 +392,7 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 - [ ] `.pfx` com AES (padrão do OpenSSL 3), com 3DES e RC2 (opção `-legacy`, como sai do Windows), com senha errada, corrompido, vencido e sem cadeia
 - [ ] 3DES e RC2 com os vetores oficiais (NIST e RFC 2268), e o KDF do PKCS#12 conferido contra o OpenSSL
 - [ ] `/ByteRange` cobre o arquivo todo, menos o `/Contents`; o `messageDigest` bate; e a assinatura é verificada com o `node:crypto`
-- [ ] Saída sem `/Name`, `/Reason`, `/Location`, `/Info` nem XMP
+- [ ] Saída sem `/Name`, `/Reason`, `/Location`, `/Info` nem XMP (com PDF/A, só o XMP de identificação)
 - [ ] PDF sem assinatura continua idêntico byte a byte
 - [ ] Coassinatura: a primeira assinatura continua válida depois da segunda
 - [ ] Manual, com o certificado de teste: painel de assinaturas do Acrobat Reader. Ele avisa que a identidade é desconhecida (o certificado não é da ICP-Brasil), mas tem que dizer que o documento não foi alterado depois de assinado. Conferir também com `openssl cms -verify` e, se der, com o `pdfsig` (Poppler)
@@ -410,3 +410,91 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 
 - O validador do ITI aceita como aprovada uma assinatura PAdES sem o identificador da política AD-RB, ou a política é obrigatória na ICP-Brasil (DOC-ICP-15)? Só um A1 válido responde, e hoje não há nenhum para teste. Até lá, a fase 1 é conferida com o certificado de teste (Acrobat, OpenSSL), e a fase 3 espera. Caminhos possíveis: alguém da comunidade com A1 testar no próprio aparelho e contar o resultado (sem mandar o arquivo nem o certificado para o projeto), ou um A1 comprado quando chegar a hora de publicar.
 - Assinar vários arquivos de uma vez (dividir): é preciso um limite?
+
+## PDF/A (arquivamento e tribunais)
+
+**Objetivo:** uma opção para gerar o PDF no padrão **PDF/A-2b** (ISO 19005-2), o formato de arquivamento de longo prazo que alguns tribunais pedem no processo eletrônico. Na tela, o PDF continua igual. O que muda é o que vai dentro do arquivo, para ele não depender de nada de fora: fontes e perfil de cor embutidos e a identificação do padrão.
+
+**Por que importa:** alguns sistemas de processo eletrônico pedem PDF/A. A Justiça do Trabalho, por exemplo, pede na petição inicial do PJe, segundo aviso de um TRT. Hoje o app não gera PDF/A, e quem precisa costuma recorrer a sites de conversão, que recebem o documento.
+
+**Fora do escopo:**
+
+- **Converter qualquer PDF em PDF/A:** as páginas copiadas de outro PDF vêm como estão, com fontes não embutidas, cores sem perfil, transparências e formulários. Consertar isso é trabalho de um conversor completo (Ghostscript, Acrobat). Se a lista tiver página de outro PDF, a opção fica indisponível e o app diz o motivo.
+- **Validar o PDF/A de outros arquivos:** para isso existe o veraPDF.
+- **PDF/A-1 e PDF/A-3:** o 1 é mais restritivo sem ganho aqui, e o 3 só acrescenta arquivos anexos, que o app não usa.
+
+### Abordagem
+
+O que falta no PDF de hoje para ele ser PDF/A-2b:
+
+1. **Identificação do padrão (XMP):** um fluxo `/Metadata` no catálogo, sem compressão, só com `pdfaid:part` (2) e `pdfaid:conformance` (B). O padrão não exige autor, título, datas nem nome do programa, então nada disso entra e a regra de PDF limpo continua valendo.
+2. **Identificador do arquivo:** `/ID` no trailer, derivado de um hash do próprio conteúdo. Não é aleatório: o mesmo documento gera o mesmo `/ID`, e ele não identifica o aparelho nem a sessão.
+3. **Perfil de cor:** um `/OutputIntents` com um perfil ICC sRGB embutido. As fotos (JPEG em `DeviceRGB` e `DeviceGray`) passam a valer por ele. O perfil é montado pelo próprio código (`web/js/icc.js`: cabeçalho, ponto branco, matriz e curva do sRGB, uns 500 bytes), sem arquivo de terceiros.
+4. **Fontes embutidas nas páginas de Word:** hoje o texto usa Helvetica, Times e Courier sem embutir, e o PDF/A exige a fonte dentro do arquivo.
+   - As fontes vêm da família **Liberation** (SIL OFL 1.1), que tem as mesmas larguras de Arial/Helvetica, Times New Roman e Courier New. Ficam em `web/vendor/liberation/` e só carregam quando a pessoa liga o PDF/A e há página de Word.
+   - Vai só o **subconjunto** das letras usadas (`web/js/ttf.js`: tabelas `glyf`, `loca`, `hmtx` e `cmap` reduzidas). Sem isso, cada fonte acrescentaria centenas de KB ao PDF.
+   - A fonte entra como TrueType simples, com `WinAnsiEncoding` e `ToUnicode`, para o texto continuar selecionável e pesquisável. Caracteres fora da codificação continuam virando "?", como hoje.
+   - Com o PDF/A ligado, a distribuição do texto (`layout.js`) passa a usar as larguras da fonte embutida, para o texto desenhado bater com o calculado.
+5. **O que o app já cumpre:** cabeçalho com marca de arquivo binário, sem criptografia, sem JavaScript, sem LZW, sem `/Info` e sem transparência nas páginas de foto.
+
+**Com o OCR e a assinatura (v3.0.0):**
+
+- **OCR:** no PDF/A-2, a fonte usada só em texto invisível (`3 Tr`) não precisa ser embutida. A camada do OCR continua com a Helvetica sem embutir, o que precisa ser conferido no veraPDF.
+- **Assinatura:** PAdES e PDF/A-2b combinam. O widget invisível precisa da flag de impressão (`/F 4`). Com o PDF/A ligado, o arquivo assinado leva o XMP de identificação; fora isso, valem as regras da seção da assinatura.
+
+### Fases
+
+#### Fase 1: fotos
+
+- [ ] `icc.js`: perfil sRGB (ICC v2, matriz e curva)
+- [ ] `pdf.js`: opção `pdfa` em `buildPdf`, com XMP mínimo, `/ID` e `/OutputIntents`
+- [ ] Interface:
+  - [ ] opção "PDF/A (tribunais e arquivamento)", desligada por padrão
+  - [ ] indisponível, com o motivo, quando a lista tem página de PDF ou de Word (Word entra na fase 2)
+  - [ ] o resumo do PDF pronto mostra "PDF/A-2b"
+- [ ] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`
+
+#### Fase 2: documentos do Word
+
+- [ ] Copiar as fontes Liberation (normal, negrito, itálico e negrito itálico das três famílias) para `web/vendor/liberation/`, com um `README.md` (versão, origem, SHA-256 e licença)
+- [ ] `ttf.js`: ler larguras e `cmap` e gerar o subconjunto
+- [ ] `layout.js` e `fonts.js`: larguras da fonte embutida quando o PDF/A está ligado
+- [ ] `pdf.js`: fonte TrueType com `FontFile2` (subconjunto), `WinAnsiEncoding` e `ToUnicode`
+- [ ] Medir quanto cada fonte acrescenta ao PDF
+
+#### Fase 3: junto com a v3.0.0
+
+- [ ] PDF/A com a camada do OCR
+- [ ] PDF/A com a assinatura (widget com `/F 4`), conferindo que o arquivo continua PDF/A depois de assinado
+
+### Segurança e privacidade
+
+- **Tudo no aparelho:** nenhum serviço de conversão, e a CSP continua a mesma.
+- **Metadado novo, só com a opção ligada:** o XMP leva apenas a identificação do padrão. Sem autor, título, datas ou programa.
+- **`/ID` sem rastreio:** sai do conteúdo, não de um número aleatório nem de dados do aparelho.
+- **Arquivos de terceiros:** só as fontes, em `web/vendor/`, com SHA-256 e carregadas sob demanda. O perfil de cor é gerado pelo código.
+- **A fonte é dado, não código:** o leitor de TrueType só copia tabelas e confere tamanhos e deslocamentos, para um arquivo malformado não travar o app.
+
+### Testes
+
+- [ ] PDF sem a opção continua idêntico byte a byte
+- [ ] Com a opção: catálogo com `/Metadata` e `/OutputIntents`, trailer com `/ID`, e XMP só com `pdfaid`
+- [ ] `/ID` igual para o mesmo conteúdo e diferente quando o conteúdo muda
+- [ ] Perfil ICC: tamanho no cabeçalho, assinatura `acsp` e tags obrigatórias
+- [ ] Subconjunto TrueType: as letras usadas estão lá, as larguras batem com as da fonte original, e o arquivo abre no fontTools (`ttx`)
+- [ ] **veraPDF** (validador de referência, código aberto, roda em Java), perfil PDF/A-2B, em todos os PDFs de teste. Para começar, manual, com o comando anotado; depois avaliar rodar no CI
+- [ ] Manual: o Acrobat mostra a faixa de "arquivo em conformidade com PDF/A"
+- [ ] Teste real no iPhone, no site publicado: gerar com a opção ligada e abrir no visualizador do iPhone, no Chrome e no Acrobat
+
+### Decisões
+
+- **PDF/A-2b:** é o nível mais aceito e o que o app consegue garantir para fotos e Word.
+- **Desligado por padrão:** a maioria não precisa, e no Word as fontes aumentam o arquivo.
+- **Liberation em vez de outra família livre:** é a que tem as larguras das fontes que o app já usa, então o documento quebra as linhas do mesmo jeito. As fontes entram em `web/vendor/`, o que pela regra 4 do CONTRIBUTING precisa de conversa antes; este plano é essa conversa, e o pedido veio do dono do projeto.
+- **Versão:** a decidir.
+
+### Perguntas em aberto
+
+- Quais sistemas de processo eletrônico conferem de fato o PDF/A no envio, e quais só recomendam?
+- Vale mirar o PDF/A-2u (todo texto com Unicode)? O texto do Word já sai com `ToUnicode`; falta ver se a camada do OCR com `WinAnsiEncoding` passa no veraPDF.
+- Aceitar páginas de PDFs que já são PDF/A (o original declara `pdfaid`)? Seria preciso conferir as fontes e as cores de cada página copiada.
