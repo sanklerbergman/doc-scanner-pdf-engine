@@ -358,7 +358,7 @@ A parte que importa, que é **assinar com a chave privada, é feita pelo própri
 
 #### Fase 2: carimbo visível e coassinatura
 
-- [ ] Carimbo visível opcional ("Assinado digitalmente por NOME em dd/mm/aaaa hh:mm"), na página e na posição escolhidas, com prévia. Mostra só o nome: no e-CPF, o CPF vem depois do ":" no nome do certificado e fica de fora do carimbo
+- [ ] Carimbo visível opcional, desligado por padrão ("Assinado digitalmente por NOME em dd/mm/aaaa hh:mm"), na página e na posição escolhidas, com prévia. Mostra só o nome: no e-CPF, o CPF vem depois do ":" no nome do certificado e fica de fora do carimbo
 - [ ] **Assinar um PDF que já existe sem reescrever o arquivo** (atualização incremental): o original fica intacto, e a assinatura nova vai no fim. É o que permite que duas pessoas assinem o mesmo contrato, uma depois da outra, sem invalidar a primeira assinatura
 - [ ] Respeitar o `/DocMDP`: se o PDF foi certificado sem permitir alterações, recusar e explicar o motivo
 
@@ -403,10 +403,10 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 
 - **Só A1 e só PAdES básico (B-B):** é o que dá para fazer sem rede e sem programa instalado.
 - **Sem biblioteca nova:** o leitor de PKCS#12 e a montagem do CMS são próprios, e quem assina é o Web Crypto. A alternativa seria copiar o node-forge ou o PKI.js para `web/vendor/`, que são maiores e trazem muito mais do que o necessário.
+- **Carimbo visível desligado por padrão:** a assinatura vale do mesmo jeito sem ele, e o nome da pessoa só aparece desenhado na página se ela escolher.
 - **Versão:** sai na v3.0.0, junto com o OCR.
 
 ### Perguntas em aberto
 
 - O validador do ITI aceita como aprovada uma assinatura PAdES sem o identificador da política AD-RB, ou a política é obrigatória na ICP-Brasil (DOC-ICP-15)? Só um A1 válido responde, e hoje não há nenhum para teste. Até lá, a fase 1 é conferida com o certificado de teste (Acrobat, OpenSSL), e a fase 3 espera. Caminhos possíveis: alguém da comunidade com A1 testar no próprio aparelho e contar o resultado (sem mandar o arquivo nem o certificado para o projeto), ou um A1 comprado quando chegar a hora de publicar.
-- O carimbo visível vem ligado ou desligado por padrão?
 - Assinar vários arquivos de uma vez (dividir): é preciso um limite?
