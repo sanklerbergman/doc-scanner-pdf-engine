@@ -2,6 +2,17 @@
 
 Planejamento de funcionalidades maiores. Ideias menores ficam em [CONTRIBUTING.md](CONTRIBUTING.md#ideias-de-próximos-passos).
 
+## O que vale para toda melhoria
+
+Toda funcionalidade nova precisa cumprir estes pontos antes de qualquer outra coisa. São as [regras do CONTRIBUTING](CONTRIBUTING.md#regras-que-não-negociamos) aplicadas ao planejamento:
+
+- **Nenhum dado da pessoa chega ao projeto.** Isso vale para arquivos, texto, certificado, senha, estatística de uso e relatório de erro. Não existe servidor para receber nada disso.
+- **Tudo roda no aparelho**, com a CSP como está (`connect-src 'none'`). Se uma ideia só funciona com rede, ela fica fora do escopo, e o plano diz isso.
+- **Nada fica guardado.** Não se usa `localStorage`, IndexedDB nem opção de "lembrar". Segredos (senha e chave) ficam na memória só durante a operação e são descartados depois.
+- **O PDF leva só o que a pessoa vê e escolhe**, sem metadados escondidos. Quando algo pessoal precisa entrar no arquivo (o certificado, numa assinatura), o app avisa antes.
+- **Biblioteca nova** entra só em `web/vendor/`, com versão, origem e SHA-256, e carrega só quando precisa. O Worker dela nasce de um blob para herdar a CSP.
+- **Funções pesadas são opcionais** e vêm desligadas: quem não usa não baixa nada a mais.
+
 ## Abrir arquivos .docx (Word)
 
 **Objetivo:** escolher um `.docx` e sair com um PDF, do mesmo jeito que acontece com fotos. Tudo no navegador, sem biblioteca nova e sem afrouxar a CSP.
@@ -190,3 +201,212 @@ Tarefas:
 ### Perguntas em aberto
 
 - Dividir em vários arquivos: limite de arquivos por vez, por causa da memória no celular?
+
+## Reconhecer texto (OCR)
+
+**Objetivo:** transformar fotos e PDFs escaneados em **PDF pesquisável**. A imagem continua igual, e embaixo dela vai uma camada de texto invisível, que dá para selecionar, copiar e buscar (Ctrl+F). Tudo no navegador, como o resto do app.
+
+**Por que importa:** hoje um documento escaneado vira um PDF só de imagem. Não dá para buscar um nome num contrato de 20 páginas nem copiar um número de protocolo.
+
+**Fora do escopo:**
+
+- **Letra de mão:** o reconhecimento é para texto impresso, e o app avisa.
+- **OCR na nuvem** (Google, Azure ou qualquer "IA" online): mandaria a imagem para fora do aparelho. Descartado.
+- **API do próprio navegador** (`TextDetector`): é experimental e não existe no Safari do iPhone. Pode virar um atalho no futuro, se virar padrão.
+- **Transformar o escaneado em documento editável (Word):** é outro problema. O objetivo aqui é a camada pesquisável.
+
+### Abordagem
+
+**Motor:** o [Tesseract.js](https://github.com/naptha/tesseract.js) (Apache-2.0), que é o Tesseract compilado para WebAssembly. É o único motor maduro que roda offline no navegador e tem modelo de português. Os arquivos ficam em `web/vendor/tesseract/` e só carregam quando a pessoa liga o OCR:
+
+| Arquivo | Origem | Tamanho |
+| --- | --- | --- |
+| `tesseract.esm.min.js` e `worker.min.js` | `tesseract.js@7.0.0` | ~0,17 MB |
+| `tesseract-core-*-lstm.wasm.js` (três variantes: o aparelho baixa só a que ele suporta, com ou sem SIMD) | `tesseract.js-core@7.0.0` | ~3,9 MB cada |
+| Modelo de português (`4.0.0_best_int/por.traineddata.gz`) | `@tesseract.js-data/por@1.0.0` | ~1,4 MB |
+
+Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do service worker, como acontece com o PDF.js.
+
+**Como funciona sem rede (e sem afrouxar a CSP):**
+
+- O Worker do Tesseract nasce de um blob, então herda o `connect-src 'none'`, como os Workers dos filtros e do PDF.js.
+- O núcleo vem nos arquivos `.wasm.js`, que têm o WebAssembly embutido e são carregados por `importScripts`. Isso já é coberto pelo `script-src 'self' 'wasm-unsafe-eval'` atual.
+- O Tesseract.js baixa o modelo com `fetch`, e a CSP bloqueia isso. Em vez de abrir uma exceção, o modelo vira um módulo JS (`por.traineddata.js`, com o `.gz` em base64, ~1,9 MB), gerado por um script em `scripts/`. Os bytes são passados direto: `createWorker([{ code: 'por', data }])`.
+- `cacheMethod: 'none'`: por padrão, o Tesseract.js guarda o modelo no IndexedDB. Isso fica desligado, porque a CSP não bloqueia o IndexedDB e a regra é não guardar nada.
+
+**A camada de texto no PDF:**
+
+- Cada palavra reconhecida entra na posição (caixa) que o Tesseract devolve, convertida para a posição da imagem na página (margem, tamanho do papel e rotação).
+- O texto é invisível (`3 Tr`) e usa a Helvetica com `WinAnsiEncoding`, a mesma do .docx. O tamanho da letra sai da altura da linha, e a largura é ajustada com `Tz`, para a seleção cair em cima da palavra.
+- O texto entra como string hexadecimal, nunca colado cru no content stream. Assim, um `)` ou um `\` reconhecido na imagem não consegue quebrar o PDF.
+- Caracteres fora da fonte padrão viram "?", como no .docx.
+
+**Onde roda:**
+
+- **Páginas de foto:** na imagem que vai para o PDF, depois do recorte, do filtro e da rotação. O filtro "Documento" ajuda no resultado.
+- **Páginas de PDF:** o PDF.js, que já está no app, desenha a página. O Tesseract lê o desenho, e o app acrescenta à página copiada um content stream com o texto invisível. Páginas que já têm texto (`getTextContent`) são puladas.
+- **Páginas de documento (.docx):** já têm texto de verdade, então são puladas.
+
+### Fases
+
+#### Fase 1: fotos
+
+- [ ] Copiar o Tesseract.js, o núcleo e o modelo para `web/vendor/tesseract/`, com um `README.md` (versão, origem, SHA-256 do `.tgz` e de cada arquivo, licenças)
+- [ ] Script em `scripts/` que gera o `por.traineddata.js` a partir do `.gz` e confere o SHA-256
+- [ ] `web/js/ocr.js`:
+  - [ ] carregar só quando o OCR for ligado
+  - [ ] Worker de blob, com `cacheMethod: 'none'` e sem `logger`
+  - [ ] um Worker por vez, encerrado (`terminate`) no fim, para liberar a memória
+- [ ] Reduzir a imagem antes do OCR (lado maior entre 2000 e 3500 px, a medir no iPhone)
+- [ ] `pdf.js`: páginas de imagem aceitam uma camada de texto invisível
+- [ ] Interface:
+  - [ ] opção "Texto pesquisável (OCR)", desligada por padrão
+  - [ ] progresso por página ("Reconhecendo o texto: página 2 de 5") e botão de cancelar
+- [ ] Resultado guardado na memória, por página, e descartado se a pessoa mudar o recorte, o filtro ou a rotação
+- [ ] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`. O vendor fica fora do `APP_FILES` e entra no cache quando é usado, como o PDF.js
+
+#### Fase 2: PDFs escaneados
+
+- [ ] Desenhar a página com o PDF.js na resolução do OCR
+- [ ] Pular páginas que já têm texto
+- [ ] Acrescentar o content stream e a fonte à página copiada, sem mexer no que já existe. Recursos compartilhados entre páginas são copiados antes de mudar
+- [ ] Respeitar `/Rotate`, `MediaBox` e `CropBox`
+
+#### Fase 3: acabamento
+
+- [ ] "Copiar texto" na tela cheia da página (área de transferência, local)
+- [ ] Aviso quando a confiança for baixa (o Tesseract dá uma nota para cada palavra): "parte do texto pode ter saído errada"
+- [ ] Inglês como segundo idioma, se houver pedido (mais um modelo para baixar)
+
+### Segurança e privacidade
+
+- **A imagem e o texto não saem do aparelho.** O Worker não tem rede (herda a CSP) e nada é enviado. Se algum caminho do Tesseract tentar baixar alguma coisa, a CSP bloqueia e o OCR falha com uma mensagem, em vez de vazar.
+- **Nada guardado:** sem IndexedDB (`cacheMethod: 'none'`). O texto reconhecido só existe na memória e some ao limpar a lista ou fechar a aba. Nada vai para o console.
+- **Texto escondido continua sendo texto.** O PDF com OCR leva, invisível, tudo o que estava escrito (CPF, endereço, valores), e o app avisa isso na própria opção. Também avisa sobre tarjas: uma tarja desenhada depois por cima da imagem, em outro programa, não apaga o texto invisível que está embaixo. Quem precisa tarjar deve fazer isso antes do OCR, ou não usar o OCR nesse documento.
+- **O texto reconhecido é dado, nunca código:** no PDF ele entra como string hexadecimal, e na tela só por `textContent`.
+- **Limites:** número de páginas por vez, tamanho da imagem e tempo por página. Acima disso, o app avisa.
+- **PDF assinado:** acrescentar texto altera a página, e a assinatura deixa de valer. O aviso que já aparece ao abrir cobre esse caso.
+
+### Testes
+
+- [ ] Camada de texto montada a partir de um resultado de OCR simulado (palavras e caixas fixas): texto com `3 Tr`, posições dentro da página e rotação
+- [ ] `(`, `)`, `\` e acentos não quebram o content stream
+- [ ] PDF sem OCR continua idêntico byte a byte
+- [ ] PDF escaneado: a página com texto é pulada, a página sem texto ganha a camada e a xref continua válida
+- [ ] No navegador: nenhuma requisição na aba Rede e nada no IndexedDB durante o OCR
+- [ ] Teste real no iPhone, no site publicado: tempo por página, memória e seleção do texto no visualizador do iPhone, no Chrome e no Acrobat
+
+### Decisões
+
+- **Dependência nova:** o Tesseract.js é a quarta biblioteca em `web/vendor/`. Pela regra 4 do CONTRIBUTING, isso precisa de conversa antes; este plano é essa conversa, e o pedido veio do dono do projeto.
+- **Desligado por padrão:** pesa ~5,5 MB e leva alguns segundos por página no celular.
+- **Modelo `best_int`:** é o que o Tesseract.js usa com o motor LSTM e o menor (~1,4 MB). O modelo maior (~6,8 MB) só acrescenta o motor antigo, que não será usado.
+- **Versão:** sai na v3.0.0, junto com a assinatura digital.
+
+### Perguntas em aberto
+
+- Quanto tempo e memória o iPhone 16e gasta com 10 páginas ou mais? Vale limitar as páginas por vez?
+
+## Assinatura com certificado digital (ICP-Brasil)
+
+**Objetivo:** assinar o PDF com o certificado digital da pessoa (e-CPF ou e-CNPJ), no padrão PAdES, que o Adobe Acrobat e o [validador do ITI](https://validar.iti.gov.br) reconhecem. O certificado, a senha e o documento não saem do aparelho.
+
+**Que certificado dá para usar:** só o **A1**, que é um arquivo (`.pfx` ou `.p12`) protegido por senha. Quem tem o A1 instalado no Windows pode exportar pelo Gerenciador de Certificados, marcando "exportar a chave privada".
+
+**Fora do escopo, e por quê:**
+
+- **A3 (token USB ou cartão):** o navegador não conversa com o token sem um programa instalado no computador, e as extensões que fazem isso são de terceiros e de código fechado. No celular, esse caminho nem existe. O app explica e indica o programa do próprio token.
+- **Certificado em nuvem** (BirdID, VIDaaS, SafeID, NeoID e outros): a assinatura acontece no servidor da certificadora, então o app precisaria conversar com ele. Isso quebra o `connect-src 'none'`.
+- **Assinatura gov.br:** é feita no site do gov.br, com o envio do arquivo para lá.
+- **Carimbo do tempo** (servidor de data e hora) e **dados de revogação** (OCSP/CRL) para validação de longo prazo: exigem rede. A assinatura sai no nível básico (PAdES B-B), com a data e a hora do relógio do aparelho.
+- **Validar assinaturas de outras pessoas:** a validação completa precisa consultar a revogação online. Para isso existem o validador do ITI e o Acrobat.
+
+### Abordagem
+
+A parte que importa, que é **assinar com a chave privada, é feita pelo próprio navegador**, com o Web Crypto (`RSASSA-PKCS1-v1_5` com SHA-256). O código do app só lê o arquivo do certificado e monta as estruturas, então não é preciso biblioteca nova.
+
+1. **Ler o `.pfx`** (PKCS#12, em `web/js/pkcs12.js`), com um leitor ASN.1/DER próprio (`web/js/asn1.js`):
+   - conferir a senha pelo MAC do arquivo (KDF do PKCS#12, com SHA-1 ou SHA-256);
+   - decifrar a chave e os certificados. Os arquivos novos usam PBES2 (PBKDF2 com AES), que o Web Crypto já faz. Os exportados pelo Windows e por certificadoras mais antigas costumam usar **3DES** e **RC2-40**, que o Web Crypto não tem. Esses dois entram em JS, só para decifrar (`web/js/legacy-ciphers.js`);
+   - importar a chave com `importKey('pkcs8', …)`, não extraível e só para `sign`, e zerar os bytes decifrados logo em seguida.
+2. **Escolher o certificado** do titular (o que tem a mesma chave pública) e montar a cadeia. Conferir no aparelho a validade (contra o relógio), o uso da chave (`digitalSignature` ou `nonRepudiation`) e o tamanho da chave RSA (2048 bits ou mais).
+3. **Mostrar para confirmar:** titular, emissor e validade.
+4. **Montar o PDF com um espaço reservado** para a assinatura:
+   - campo de assinatura (`/AcroForm` com `/SigFlags 3` e widget invisível, `/Rect [0 0 0 0]`, na fase 1);
+   - dicionário `/Type /Sig` com `/Filter /Adobe.PPKLite`, `/SubFilter /ETSI.CAdES.detached`, `/ByteRange` e `/Contents` preenchido com zeros;
+   - sem `/Name`, `/Reason`, `/Location` nem `/ContactInfo`. A única data é o `/M` (hora da assinatura), que faz parte do padrão. É a única exceção à regra de PDF sem datas, e só existe quando a pessoa assina.
+5. **Assinar:** calcular o SHA-256 dos bytes fora do `/Contents` e montar um CMS `SignedData` destacado (`web/js/cms.js`) com os atributos assinados `contentType`, `messageDigest` e `signingCertificateV2` (exigido pelo PAdES). O Web Crypto assina, e o DER vai, em hexadecimal, para o espaço reservado. O tamanho do CMS é conhecido antes de assinar (a assinatura RSA tem o tamanho da chave), então a reserva é exata, com uma folga pequena.
+6. **Conferir antes de entregar:** o app refaz o hash, confere o `messageDigest` e verifica a assinatura com a chave pública (`crypto.subtle.verify`). Se algo não bater, o arquivo não é entregue.
+
+**Assinar é sempre o último passo.** Qualquer mudança depois (OCR, compressão, girar uma página) invalida a assinatura. Por isso a ordem ao gerar é: montar as páginas, reconhecer o texto, comprimir e, por fim, assinar. O arquivo assinado é exatamente o que a prévia mostrou.
+
+### Fases
+
+#### Fase 1: assinar o PDF que o app gera
+
+- [ ] `asn1.js`: leitor e escritor DER (inteiros, OIDs, sequências, sets ordenados e datas)
+- [ ] `pkcs12.js`: MAC, PBES2, 3DES e RC2-40, com mensagem clara para senha errada e arquivo corrompido
+- [ ] `cms.js`: `SignedData` destacado com os atributos do PAdES
+- [ ] `pdf.js`: campo de assinatura, espaço reservado, `/ByteRange` e preenchimento
+- [ ] Autoconferência da assinatura antes de entregar
+- [ ] Interface:
+  - [ ] "Assinar com certificado digital (A1)", junto de "Gerar PDF"
+  - [ ] escolher o `.pfx`, digitar a senha, ver titular e validade e confirmar
+  - [ ] aviso de que o certificado vai junto no PDF (ver Segurança)
+- [ ] Vários arquivos de saída (dividir): a senha é pedida uma vez para todos, e a chave é descartada no fim
+- [ ] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`
+
+#### Fase 2: carimbo visível e coassinatura
+
+- [ ] Carimbo visível opcional ("Assinado digitalmente por NOME em dd/mm/aaaa hh:mm"), na página e na posição escolhidas, com prévia. Mostra só o nome: no e-CPF, o CPF vem depois do ":" no nome do certificado e fica de fora do carimbo
+- [ ] **Assinar um PDF que já existe sem reescrever o arquivo** (atualização incremental): o original fica intacto, e a assinatura nova vai no fim. É o que permite que duas pessoas assinem o mesmo contrato, uma depois da outra, sem invalidar a primeira assinatura
+- [ ] Respeitar o `/DocMDP`: se o PDF foi certificado sem permitir alterações, recusar e explicar o motivo
+
+#### Fase 3: política da ICP-Brasil e cadeia
+
+- [ ] Identificador da política de assinatura da ICP-Brasil (AD-RB), se o validador do ITI exigir isso para mostrar a assinatura como conforme (ver perguntas)
+- [ ] Certificados raiz da ICP-Brasil embutidos (são públicos), para avisar quando o certificado não é da ICP-Brasil ou a cadeia está incompleta. A revogação continua sem consulta
+- [ ] ECDSA, se aparecer certificado A1 com curva elíptica
+
+### Segurança e privacidade
+
+Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa assina **em nome do titular**. Por isso:
+
+- **Nada sai do aparelho:** o arquivo, a senha e a chave só existem na memória da aba. O `connect-src 'none'` vale para a página e para os Workers, então não há rede por onde vazar.
+- **Nada fica guardado:** não existe "lembrar certificado" nem "lembrar senha", nem `localStorage` ou IndexedDB. Cada assinatura pede o arquivo e a senha de novo.
+- **A chave não volta para o JS:** ela é importada como não extraível e só serve para `sign`. Os bytes decifrados são zerados logo depois da importação, e as referências à chave são soltas ao terminar. Limite conhecido: a senha é uma string do JS, que não dá para apagar da memória; ela some quando a aba é fechada.
+- **Campo de senha:** fica fora de formulário (o `form-action 'none'` já impede envio), com `autocomplete="off"`, e é limpo logo depois do uso. Nunca vai para a URL nem para o console. O navegador pode oferecer guardar a senha, mas o app não pede isso.
+- **Sem logs:** nada do certificado (nome, CPF, número de série) vai para o console ou para mensagens de erro.
+- **O que vai no PDF é avisado antes:** a assinatura leva o certificado da pessoa, com nome e CPF (ou CNPJ). É assim que quem recebe confere quem assinou, e não tem como assinar sem isso. Fora o certificado, nada: sem `/Name`, `/Reason`, `/Location`, `/ContactInfo`, `/Info` ou XMP.
+- **A assinatura cobre o que a pessoa viu:** ela é feita sobre os bytes finais, e a prévia mostra esse arquivo. Nada muda depois.
+- **Assinatura conferida antes de sair** (passo 6): um erro na montagem nunca vira um PDF "assinado" que não valida.
+- **Certificado vencido ou que não serve para assinar:** o app recusa e diz o motivo.
+- **Cópia falsa do site:** quem hospeda uma cópia modificada pode roubar o `.pfx` e a senha. A tela de assinatura pede para conferir se a barra de endereço mostra o endereço oficial, e o README reforça isso.
+- **Código de criptografia próprio:** o 3DES e o RC2 só **decifram** o arquivo da própria pessoa, no aparelho. A operação com a chave (assinar) é do navegador. Os algoritmos próprios são testados com os vetores oficiais.
+- **Coassinatura (fase 2):** no modo incremental o original não é reescrito, então os metadados e o que mais ele tiver continuam lá. O app avisa: "o PDF segue como veio; só a assinatura nova é acrescentada".
+- **SECURITY.md:** acrescentar "certificado ou senha saindo do aparelho, ou ficando guardados" na lista do que conta como falha.
+
+### Testes
+
+- [ ] Certificados **de teste**, com dados fictícios (titular "PESSOA DE TESTE", CPF fictício), gerados com o OpenSSL e guardados em `test/fixtures/` com os comandos anotados. **Nunca** usar certificado real no repositório nem nos testes
+- [ ] `.pfx` com AES (padrão do OpenSSL 3), com 3DES e RC2 (opção `-legacy`, como sai do Windows), com senha errada, corrompido, vencido e sem cadeia
+- [ ] 3DES e RC2 com os vetores oficiais (NIST e RFC 2268), e o KDF do PKCS#12 conferido contra o OpenSSL
+- [ ] `/ByteRange` cobre o arquivo todo, menos o `/Contents`; o `messageDigest` bate; e a assinatura é verificada com o `node:crypto`
+- [ ] Saída sem `/Name`, `/Reason`, `/Location`, `/Info` nem XMP
+- [ ] PDF sem assinatura continua idêntico byte a byte
+- [ ] Coassinatura: a primeira assinatura continua válida depois da segunda
+- [ ] Manual, com o certificado de teste: painel de assinaturas do Acrobat Reader. Ele avisa que a identidade é desconhecida (o certificado não é da ICP-Brasil), mas tem que dizer que o documento não foi alterado depois de assinado. Conferir também com `openssl cms -verify` e, se der, com o `pdfsig` (Poppler)
+- [ ] Manual, com um A1 de verdade: `validar.iti.gov.br`, num documento sem nada sensível. Esse envio ao ITI é uma escolha de quem testa, fora do app. Ainda não há um A1 válido para isso (ver perguntas)
+- [ ] Teste real no iPhone, no site publicado: escolher o `.pfx` no app Arquivos e assinar
+
+### Decisões
+
+- **Só A1 e só PAdES básico (B-B):** é o que dá para fazer sem rede e sem programa instalado.
+- **Sem biblioteca nova:** o leitor de PKCS#12 e a montagem do CMS são próprios, e quem assina é o Web Crypto. A alternativa seria copiar o node-forge ou o PKI.js para `web/vendor/`, que são maiores e trazem muito mais do que o necessário.
+- **Versão:** sai na v3.0.0, junto com o OCR.
+
+### Perguntas em aberto
+
+- O validador do ITI aceita como aprovada uma assinatura PAdES sem o identificador da política AD-RB, ou a política é obrigatória na ICP-Brasil (DOC-ICP-15)? Só um A1 válido responde, e hoje não há nenhum para teste. Até lá, a fase 1 é conferida com o certificado de teste (Acrobat, OpenSSL), e a fase 3 espera. Caminhos possíveis: alguém da comunidade com A1 testar no próprio aparelho e contar o resultado (sem mandar o arquivo nem o certificado para o projeto), ou um A1 comprado quando chegar a hora de publicar.
+- O carimbo visível vem ligado ou desligado por padrão?
+- Assinar vários arquivos de uma vez (dividir): é preciso um limite?
