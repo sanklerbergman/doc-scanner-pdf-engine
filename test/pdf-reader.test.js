@@ -107,6 +107,47 @@ test('recusa PDF criptografado, arquivo que não é PDF e PDF sem páginas', asy
   await assert.rejects(openPdf(makeRawPdf({ 1: '<< /Type /Catalog /Pages 2 0 R >>', 2: '<< /Type /Pages /Kids [] /Count 0 >>' }).bytes), /nenhuma página/);
 });
 
+test('PDF com senha e object streams: avisa da senha, e não que o arquivo está corrompido', async () => {
+  // Com senha, os streams são cifrados: o object stream (onde estão o catálogo e as páginas) não descompacta.
+  const encrypted = () => {
+    const { bytes } = makeRawPdf({
+      1: '<< /Type /Catalog /Pages 2 0 R >>', 2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', ...textPageObjects('x'),
+      9: '<< /Filter /Standard /V 4 /R 4 /Length 128 /P -4 >>',
+    }, { xref: 'stream', packed: [1, 2, 3, 5], trailer: '/Root 1 0 R /Encrypt 9 0 R' });
+    const start = latin1(bytes).indexOf('stream\n', latin1(bytes).indexOf('/Type /ObjStm')) + 7;
+    for (let i = start; i < start + 16; i++) bytes[i] ^= 0x5a;
+    return bytes;
+  };
+  await assert.rejects(openPdf(encrypted()), /senha/);
+  // Com a xref quebrada também: a reconstrução acha o /Encrypt no dicionário da xref em stream.
+  const broken = Uint8Array.from(latin1(encrypted()).replace(/startxref\n\d+/, 'startxref\n999999'), (c) => c.charCodeAt(0));
+  await assert.rejects(openPdf(broken), /senha/);
+});
+
+test('xref em stream quebrada: a reconstrução usa o dicionário dela como trailer', async () => {
+  const { bytes } = makeRawPdf({
+    1: '<< /Pages 2 0 R >>', // catálogo sem /Type: só o /Root do trailer diz qual é
+    2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    ...textPageObjects('XrefStream'),
+  }, { xref: 'stream', packed: [2, 3, 5] });
+  const text = latin1(bytes).replace(/startxref\n\d+/, 'startxref\n999999');
+  const doc = await openPdf(Uint8Array.from(text, (c) => c.charCodeAt(0)));
+  assert.match(contentOf(doc, 0), /\(XrefStream\) Tj/);
+});
+
+test('/Resources que não é dicionário vira um dicionário vazio na cópia', async () => {
+  const doc = await openPdf(makeRawPdf({
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>',
+    3: '<< /Type /Page /Parent 2 0 R /Resources 4 0 R /Contents 4 0 R >>', // aponta para o stream do conteúdo
+    4: { data: '0.5 w 0 0 m 10 10 l S' },
+    6: '<< /Type /Page /Parent 2 0 R /Resources 99 0 R /Contents 4 0 R >>', // objeto que não existe
+  }).bytes);
+  const { bytes, doc: copy } = await merge([[doc, 0], [doc, 1]]);
+  assert.ok(copy.pages.every((page) => copy.resolve(page.attrs.Resources) instanceof Map));
+  assert.equal(latin1(bytes).match(/\/Resources <<>>/g).length, 2);
+});
+
 test('limites: páginas demais e bomba de compressão num object stream', async () => {
   await assert.rejects(openPdf(simple('x'), { maxPages: 0 }), /passa de 0 páginas/);
   const bomb = makeRawPdf({

@@ -258,15 +258,17 @@ class PdfDocument {
     const head = latin1(bytes, 0, Math.min(bytes.length, 1024));
     if (!head.includes('%PDF-')) throw new PdfError('Não parece um arquivo PDF.');
 
+    // PDF com senha: os streams são cifrados, e os object streams não descompactariam. Sem o /Encrypt no trailer,
+    // ele cairia na reconstrução e seria recusado como corrompido, em vez de com o aviso da senha.
     let ok = false;
     try {
       ok = await this.readXref();
-      if (ok) await this.preloadObjectStreams(); // daqui em diante, a leitura dos objetos é síncrona
+      if (ok && !this.trailer.has('Encrypt')) await this.preloadObjectStreams(); // daqui em diante, a leitura dos objetos é síncrona
     } catch (err) {
       if (err instanceof InflateError && err.reason === 'too-big') throw err;
       ok = false;
     }
-    if (!ok || !this.catalog()) {
+    if (!this.trailer.has('Encrypt') && (!ok || !this.catalog())) {
       this.entries.clear();
       this.cache.clear();
       this.objectStreams.clear();
@@ -380,22 +382,29 @@ class PdfDocument {
       const offset = m.index + m[0].indexOf(m[1]);
       this.addEntry(Number(m[1]), { type: 1, offset });
     }
-    // Objetos dentro de object streams
+    // Trailer: o último do arquivo com /Root, seja um "trailer << >>" ou o dicionário de uma xref em stream.
+    const trailers = [...text.matchAll(/trailer\s*<</g)]
+      .map((m) => ({ offset: m.index, read: () => new Parser(this.bytes, m.index + 7).value() }));
+    const objectStreams = [];
     for (const [num, entry] of [...this.entries]) {
       const value = this.parseObjectAt(entry.offset)?.value;
-      if (value instanceof PdfStream && isName(value.dict.get('Type'), 'ObjStm')) {
-        const objects = await this.loadObjectStream(num, value);
-        for (const inner of objects.keys()) if (!this.entries.has(inner)) this.addEntry(inner, { type: 2, stream: num });
-      }
+      if (!(value instanceof PdfStream)) continue;
+      if (isName(value.dict.get('Type'), 'ObjStm')) objectStreams.push([num, value]);
+      else if (isName(value.dict.get('Type'), 'XRef')) trailers.push({ offset: entry.offset, read: () => value.dict });
     }
-    // Trailer: o último "trailer" do arquivo, ou o catálogo achado na varredura.
-    const trailers = [...text.matchAll(/trailer\s*<</g)];
-    for (const m of trailers.reverse()) {
+    for (const { read } of trailers.sort((a, b) => b.offset - a.offset)) {
       try {
-        const dict = new Parser(this.bytes, m.index + 7).value();
+        const dict = read();
         if (dict instanceof PdfDict && dict.get('Root') instanceof PdfRef) { this.trailer = dict; break; }
       } catch { /* tenta o anterior */ }
     }
+    if (this.trailer.has('Encrypt')) return; // com senha: os object streams são cifrados, e o load recusa
+    // Objetos dentro de object streams
+    for (const [num, value] of objectStreams) {
+      const objects = await this.loadObjectStream(num, value);
+      for (const inner of objects.keys()) if (!this.entries.has(inner)) this.addEntry(inner, { type: 2, stream: num });
+    }
+    // Sem trailer: o catálogo achado na varredura.
     if (!this.catalog()) {
       for (const num of this.entries.keys()) {
         const value = this.object(num);
@@ -769,13 +778,14 @@ export function copyPages(doc, indices, { replace } = {}) {
     const page = doc.pages[index];
     const group = page.node.get('Group');
     const appearances = flattenAnnotations(doc, page);
-    let resources = page.attrs.Resources ?? new PdfDict();
+    // /Resources que não é dicionário (aponta para um stream ou para um objeto que não existe) vira um vazio.
+    let resources = doc.resolve(page.attrs.Resources) instanceof PdfDict ? page.attrs.Resources : new PdfDict();
     const own = doc.layers?.contents.get(index); // conteúdo refeito sem as camadas ocultas
     let contents = own ? write(own, []) : page.node.has('Contents') ? write(page.node.get('Contents'), []) : null;
 
     if (appearances.length) {
       // Recursos: cópia só desta página, com as aparências como XObjects /Annot0, /Annot1…
-      const copy = new PdfDict(doc.resolve(resources) instanceof PdfDict ? doc.resolve(resources) : []);
+      const copy = new PdfDict(doc.resolve(resources));
       const xobjects = new PdfDict(doc.resolve(copy.get('XObject')) instanceof PdfDict ? doc.resolve(copy.get('XObject')) : []);
       let ops = 'Q';
       appearances.forEach(({ stream, matrix }, i) => {
