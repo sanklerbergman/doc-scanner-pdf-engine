@@ -64,6 +64,8 @@ const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 const NS = `xmlns:w="${W}" xmlns:r="${R}" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"` +
+  ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"' +
+  ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"' +
   ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"' +
   ' xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml"';
 
@@ -76,9 +78,10 @@ const relationships = (list) =>
 /**
  * Arquivos de um .docx mínimo. Os trechos são o miolo de cada XML (sem o elemento raiz).
  * @param {{body?: string, styles?: string, numbering?: string, settings?: string, theme?: {major: string, minor: string},
- *          headers?: Record<string, string>, extra?: Record<string, string>, documentXml?: string}} parts
+ *          headers?: Record<string, string>, extra?: Record<string, string | Uint8Array>, documentXml?: string,
+ *          rels?: Array<[string, string, string]>}} parts rels: relações extras do document.xml (id, tipo, alvo)
  */
-export function docxFiles({ body = '', styles, numbering, settings, theme, headers = {}, extra = {}, documentXml } = {}) {
+export function docxFiles({ body = '', styles, numbering, settings, theme, headers = {}, extra = {}, documentXml, rels = [] } = {}) {
   const docRels = [];
   const files = {
     '[Content_Types].xml': `${XML}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
@@ -106,9 +109,11 @@ export function docxFiles({ body = '', styles, numbering, settings, theme, heade
     docRels.push(['rId13', 'theme', 'theme/theme1.xml']);
   }
   for (const [id, content] of Object.entries(headers)) {
-    files[`word/${id}.xml`] = `${XML}<w:hdr ${NS}>${content}</w:hdr>`;
-    docRels.push([id, 'header', `${id}.xml`]);
+    const footer = id.startsWith('ftr');
+    files[`word/${id}.xml`] = `${XML}<w:${footer ? 'ftr' : 'hdr'} ${NS}>${content}</w:${footer ? 'ftr' : 'hdr'}>`;
+    docRels.push([id, footer ? 'footer' : 'header', `${id}.xml`]);
   }
+  docRels.push(...rels);
   docRels.push(['rId99', 'image', 'https://exemplo.invalid/foto.png', true]); // link externo: deve ser ignorado
   files['word/_rels/document.xml.rels'] = relationships(docRels);
   return { ...files, ...extra };
@@ -119,3 +124,12 @@ export const makeDocx = (parts) => makeZip(docxFiles(parts));
 // Parágrafo simples: texto com formatação opcional.
 export const p = (text, { pPr = '', rPr = '' } = {}) =>
   `<w:p>${pPr ? `<w:pPr>${pPr}</w:pPr>` : ''}<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ''}<w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+
+// Imagem do Word: na linha do texto (inline) ou flutuante (anchor), em pontos.
+export function drawing(rId, width, height, { anchor = null } = {}) {
+  const extent = `<wp:extent cx="${Math.round(width * 12700)}" cy="${Math.round(height * 12700)}"/>`;
+  const graphic = '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    `<pic:pic><pic:blipFill><a:blip r:embed="${rId}"/></pic:blipFill></pic:pic></a:graphicData></a:graphic>`;
+  if (!anchor) return `<w:r><w:drawing><wp:inline>${extent}${graphic}</wp:inline></w:drawing></w:r>`;
+  return `<w:r><w:drawing><wp:anchor behindDoc="1">${anchor}${extent}${graphic}</wp:anchor></w:drawing></w:r>`;
+}

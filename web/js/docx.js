@@ -3,9 +3,11 @@
 // em word/numbering.xml. Daqui sai um modelo simples (seções com parágrafos e trechos de texto formatado)
 // que o layout.js distribui em páginas.
 //
-// O que ainda não é desenhado (imagens, gráficos, formas, equações, notas, cabeçalho e rodapé) é contado
-// em `notes` para o app avisar. Tabelas viram texto corrido. Nada do arquivo é executado, nenhum link
-// externo é seguido e os metadados (docProps: autor, empresa, datas) nem são lidos.
+// Também entram tabelas (colunas, bordas, fundo, células mescladas), imagens (na linha do texto ou
+// flutuantes) e cabeçalho e rodapé (com número de página). O que ainda não é desenhado (gráficos, formas,
+// equações, notas de rodapé, imagens em formatos como EMF) é contado em `notes` para o app avisar.
+// Nada do arquivo é executado, nenhum link externo é seguido (imagem só se estiver dentro do arquivo) e os
+// metadados (docProps: autor, empresa, datas) nem são lidos.
 import { openZip, ZipError } from './zip.js';
 import { parseXml, elements, element, XmlError } from './xml.js';
 
@@ -18,6 +20,7 @@ const NAMESPACES = {
   m: ['http://schemas.openxmlformats.org/officeDocument/2006/math', 'http://purl.oclc.org/ooxml/officeDocument/math'],
   mc: 'http://schemas.openxmlformats.org/markup-compatibility/2006',
   v: 'urn:schemas-microsoft-com:vml',
+  wp: 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
   rel: 'http://schemas.openxmlformats.org/package/2006/relationships',
 };
 
@@ -39,13 +42,14 @@ function twips(value, divisor = 20) {
   return match[2] ? Number(match[1]) * UNITS[match[2]] : Number(match[1]) / divisor;
 }
 
-// Cor "RRGGBB". Cor clara demais vira preto: sem o fundo (sombreamento) que o Word desenharia,
-// texto branco sumiria no papel.
-function color(value) {
+// Cor "RRGGBB" → [r, g, b] de 0 a 1; "auto" ou inválida → null (preto no texto, nenhuma no fundo).
+function rawColor(value) {
   if (!/^[0-9a-f]{6}$/i.test(value ?? '')) return null;
-  const rgb = [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16) / 255);
-  return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] > 0.85 ? null : rgb;
+  return [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16) / 255);
 }
+
+// Texto claro demais: sem um fundo escuro desenhado (o Word teria sombreamento), sumiria no papel.
+const isLight = (rgb) => !!rgb && 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] > 0.85;
 
 // Família da fonte pelo nome: as fontes padrão do PDF são uma sem serifa, uma serifada e uma monoespaçada.
 export function fontFamily(name) {
@@ -84,7 +88,7 @@ function runProps(rPr, theme) {
   const size = twips(val(element(rPr, 'w:sz')), 2); // meios-pontos
   if (size > 0) props.size = size;
   const colorNode = element(rPr, 'w:color');
-  if (colorNode) props.color = color(val(colorNode));
+  if (colorNode) props.color = rawColor(val(colorNode));
   const fonts = element(rPr, 'w:rFonts');
   if (fonts) {
     const themed = fonts.attrs['w:asciiTheme'] ?? fonts.attrs['w:hAnsiTheme'];
@@ -179,6 +183,7 @@ function finishRun(props) {
 function readStyles(root, theme) {
   const styles = new Map();
   let defaultParagraph;
+  let defaultTable;
   const defaults = root && element(root, 'w:docDefaults');
   for (const style of elements(root, 'w:style')) {
     const id = style.attrs['w:styleId'];
@@ -186,19 +191,22 @@ function readStyles(root, theme) {
       basedOn: val(element(style, 'w:basedOn')),
       p: paragraphProps(element(style, 'w:pPr')),
       r: runProps(element(style, 'w:rPr'), theme),
+      t: tableProps(element(style, 'w:tblPr')),
     });
-    if (style.attrs['w:type'] === 'paragraph' && style.attrs['w:default'] && isOn(style.attrs['w:default'])) defaultParagraph = id;
+    const isDefault = style.attrs['w:default'] && isOn(style.attrs['w:default']);
+    if (style.attrs['w:type'] === 'paragraph' && isDefault) defaultParagraph = id;
+    if (style.attrs['w:type'] === 'table' && isDefault) defaultTable = id;
   }
 
   const resolved = new Map();
   // Estilo com tudo o que herda (basedOn), do mais geral para o mais específico.
   function resolve(id, seen = new Set()) {
-    if (!id || !styles.has(id) || seen.has(id)) return { p: {}, r: {} };
+    if (!id || !styles.has(id) || seen.has(id)) return { p: {}, r: {}, t: {} };
     if (resolved.has(id)) return resolved.get(id);
     seen.add(id);
     const style = styles.get(id);
     const base = resolve(style.basedOn, seen);
-    const result = { p: mergeParagraph(base.p, style.p), r: { ...base.r, ...style.r } };
+    const result = { p: mergeParagraph(base.p, style.p), r: { ...base.r, ...style.r }, t: mergeTable(base.t, style.t) };
     resolved.set(id, result);
     return result;
   }
@@ -209,6 +217,7 @@ function readStyles(root, theme) {
       r: runProps(element(element(defaults, 'w:rPrDefault'), 'w:rPr'), theme),
     },
     defaultParagraph,
+    defaultTable,
     resolve,
   };
 }
@@ -365,22 +374,106 @@ async function readTheme(zip, path) {
   };
 }
 
-// Cabeçalho ou rodapé com algo visível (texto ou desenho).
-function hasVisibleContent(node) {
-  for (const child of elements(node)) {
-    if (child.name === 'w:t' && child.children.some((text) => typeof text === 'string' && text.trim())) return true;
-    if (child.name === 'w:drawing' || child.name === 'w:pict') return true;
-    if (hasVisibleContent(child)) return true;
-  }
-  return false;
+// ---------- Tabelas ----------
+
+const BORDER_SIDES = { top: 'top', bottom: 'bottom', left: 'left', start: 'left', right: 'right', end: 'right', insideH: 'insideH', insideV: 'insideV' };
+
+// Borda: null = sem borda; {width, color}. A espessura vem em oitavos de ponto.
+function border(node) {
+  const kind = node.attrs['w:val'];
+  if (!kind || kind === 'none' || kind === 'nil') return null;
+  const size = Number(node.attrs['w:sz']);
+  return { width: Math.max(0.25, (Number.isFinite(size) && size > 0 ? size : 4) / 8), color: rawColor(node.attrs['w:color']) };
 }
+
+// Só os lados que o elemento define (undefined = herda; null = sem borda).
+function readBorders(node) {
+  const out = {};
+  for (const child of elements(node)) {
+    const side = BORDER_SIDES[child.name.slice(2)];
+    if (side && child.name.startsWith('w:')) out[side] = border(child);
+  }
+  return out;
+}
+
+function readCellMargins(node) {
+  const out = {};
+  for (const child of elements(node)) {
+    const side = BORDER_SIDES[child.name.slice(2)];
+    const width = twips(child.attrs['w:w']);
+    if (side && width !== undefined && child.attrs['w:type'] !== 'pct') out[side] = width;
+  }
+  return out;
+}
+
+function tableProps(tblPr) {
+  if (!tblPr) return {};
+  const props = { borders: readBorders(element(tblPr, 'w:tblBorders')), margins: readCellMargins(element(tblPr, 'w:tblCellMar')) };
+  const style = val(element(tblPr, 'w:tblStyle'));
+  if (style) props.style = style;
+  const indent = element(tblPr, 'w:tblInd');
+  if (indent && indent.attrs['w:type'] !== 'pct') props.indent = twips(indent.attrs['w:w']) ?? 0;
+  const jc = val(element(tblPr, 'w:jc'));
+  if (jc) props.align = jc === 'center' ? 'center' : jc === 'right' || jc === 'end' ? 'right' : 'left';
+  return props;
+}
+
+function mergeTable(base = {}, top = {}) {
+  return {
+    ...base,
+    ...top,
+    borders: { ...base.borders, ...top.borders },
+    margins: { ...base.margins, ...top.margins },
+  };
+}
+
+// ---------- Imagens ----------
+
+const EMU = 12700; // unidades de desenho do Office por ponto
+const emu = (value) => Number(value) / EMU;
+
+function imageType(bytes) {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg';
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e) return 'image/png';
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif';
+  if (bytes[0] === 0x42 && bytes[1] === 0x4d) return 'image/bmp';
+  if (String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP') return 'image/webp';
+  return null; // EMF, WMF, TIFF, SVG…: o navegador não desenha num canvas
+}
+
+// Posição de imagem flutuante (wp:anchor): em relação à página, à margem ou ao parágrafo ("near").
+function anchorPosition(node) {
+  const from = node?.attrs.relativeFrom ?? '';
+  const relative = from === 'page' ? 'page' : /margin/i.test(from) ? 'margin' : 'near';
+  const offset = element(node, 'wp:posOffset');
+  const align = element(node, 'wp:align');
+  return {
+    relative,
+    offset: offset ? emu(offset.children.join('')) : 0,
+    align: align ? align.children.join('').trim() : null,
+  };
+}
+
+// Largura e altura do estilo de uma forma VML antiga ("width:120pt;height:40pt").
+function vmlSize(style = '') {
+  const read = (name) => {
+    const match = new RegExp(`${name}\\s*:\\s*([\\d.]+)\\s*(pt|in|px|cm|mm)?`, 'i').exec(style);
+    if (!match) return undefined;
+    const factor = { pt: 1, in: 72, px: 0.75, cm: 72 / 2.54, mm: 72 / 25.4 }[(match[2] ?? 'px').toLowerCase()];
+    return Number(match[1]) * factor;
+  };
+  return { width: read('width'), height: read('height') };
+}
+
+const SPECIAL_FIELDS = /^\s*(PAGE|NUMPAGES|SECTIONPAGES)\b/i;
 
 // ---------- Documento ----------
 
 /**
  * Lê um .docx.
  * @param {Uint8Array} bytes
- * @returns {Promise<{sections: Array, defaultTab: number, notes: object}>}
+ * @returns {Promise<{sections: Array, defaultTab: number, evenAndOdd: boolean, notes: object,
+ *   images: Map<string, {bytes: Uint8Array, type: string}>}>}
  */
 export async function readDocx(bytes, limits) {
   // .doc (Word 97-2003) e .docx com senha são arquivos OLE, não ZIP.
@@ -402,20 +495,54 @@ async function read(bytes, limits) {
   if (!main || !zip.has(main)) throw new DocxError('Não parece um documento do Word (.docx).');
 
   const relations = await readRelations(zip, main);
+  const relsOf = (list) => new Map(list.map((rel) => [rel.id, rel.target]));
   const theme = await readTheme(zip, byType(relations, 'theme'));
   const styles = readStyles(await readPart(zip, byType(relations, 'styles')), theme);
   const nextLabel = readNumbering(await readPart(zip, byType(relations, 'numbering')), theme, styles);
   const settings = await readPart(zip, byType(relations, 'settings'));
   const defaultTab = twips(val(element(settings, 'w:defaultTabStop'))) || 36;
+  const evenAndOdd = flag(element(settings, 'w:evenAndOddHeaders')) ?? false;
 
   const root = parseXml(await zip.readText(main), NAMESPACES);
   const body = element(root, 'w:body');
   if (!body) throw new DocxError('Não parece um documento do Word (.docx).');
 
-  const notes = { images: 0, charts: 0, shapes: 0, equations: 0, footnotes: 0, tables: 0, embedded: 0, columns: false, headerFooter: false };
+  // Cabeçalhos e rodapés: as partes são lidas antes (é assíncrono), cada uma com as relações dela (imagens).
+  const parts = new Map();
+  const sectPrs = [];
+  (function collect(node) {
+    for (const child of elements(node)) {
+      if (child.name === 'w:sectPr') sectPrs.push(child);
+      else collect(child);
+    }
+  }(body));
+  const mainRels = relsOf(relations);
+  for (const sectPr of sectPrs) {
+    for (const ref of [...elements(sectPr, 'w:headerReference'), ...elements(sectPr, 'w:footerReference')]) {
+      const target = mainRels.get(ref.attrs['r:id']);
+      if (target && !parts.has(target) && zip.has(target)) {
+        parts.set(target, { root: await readPart(zip, target), rels: relsOf(await readRelations(zip, target)) });
+      }
+    }
+  }
+
+  const notes = { images: 0, charts: 0, shapes: 0, equations: 0, footnotes: 0, embedded: 0, columns: false };
+  const imagePaths = new Set();
   const sections = [];
-  const headerIds = new Set();
-  let blocks = [];
+  let previousHeaders = { header: {}, footer: {} };
+
+  // ctx: rels (relações da parte), target (lista onde vão os blocos), field (campos abertos),
+  // table (estilo da tabela, dentro de célula), fill (fundo da célula), body (é o corpo do documento).
+  const blocksOfPart = new Map();
+  function partBlocks(target) {
+    if (!blocksOfPart.has(target)) {
+      const part = parts.get(target);
+      const ctx = { rels: part?.rels ?? new Map(), target: [], field: [] };
+      if (part?.root) readBlocks(part.root, ctx);
+      blocksOfPart.set(target, ctx.target);
+    }
+    return blocksOfPart.get(target);
+  }
 
   function sectionOf(sectPr) {
     const size = element(sectPr, 'w:pgSz')?.attrs ?? {};
@@ -430,33 +557,75 @@ async function read(bytes, limits) {
       width,
       height,
       margin: { top: margin('w:top'), right: margin('w:right'), bottom: margin('w:bottom'), left: margin('w:left') + Math.abs(twips(margins['w:gutter']) ?? 0) },
+      headerDistance: Math.abs(twips(margins['w:header']) ?? 35.4),
+      footerDistance: Math.abs(twips(margins['w:footer']) ?? 35.4),
     };
     // Margens que não deixam espaço para o texto: volta para o padrão (ou o que couber).
     if (page.margin.left + page.margin.right > width - 72) page.margin.left = page.margin.right = Math.min(DEFAULT_MARGIN, (width - 72) / 2);
     if (page.margin.top + page.margin.bottom > height - 72) page.margin.top = page.margin.bottom = Math.min(DEFAULT_MARGIN, (height - 72) / 2);
-
     if (Number(element(sectPr, 'w:cols')?.attrs['w:num']) > 1) notes.columns = true;
-    for (const ref of [...elements(sectPr, 'w:headerReference'), ...elements(sectPr, 'w:footerReference')]) headerIds.add(ref.attrs['r:id']);
-    return { page, start: val(element(sectPr, 'w:type')) === 'continuous' ? 'continuous' : 'nextPage' };
-  }
 
-  function closeSection(sectPr) {
-    sections.push({ ...sectionOf(sectPr), blocks });
-    blocks = [];
-  }
-
-  function countDrawing(node) {
-    const uri = find(node, 'a:graphicData')?.attrs.uri ?? '';
-    if (uri.endsWith('/picture')) notes.images++;
-    else if (/chart|diagram/.test(uri)) notes.charts++;
-    else notes.shapes++;
+    // Cabeçalho e rodapé: o tipo que a seção não define vem da seção anterior, como no Word.
+    const own = (name) => {
+      const set = {};
+      for (const ref of elements(sectPr, `w:${name}Reference`)) {
+        const target = mainRels.get(ref.attrs['r:id']);
+        if (target) set[ref.attrs['w:type'] ?? 'default'] = partBlocks(target);
+      }
+      return { ...previousHeaders[name], ...set };
+    };
+    const header = own('header');
+    const footer = own('footer');
+    previousHeaders = { header, footer };
+    return {
+      page,
+      start: val(element(sectPr, 'w:type')) === 'continuous' ? 'continuous' : 'nextPage',
+      header,
+      footer,
+      titlePg: flag(element(sectPr, 'w:titlePg')) ?? false,
+    };
   }
 
   const alternative = (node) => element(node, 'mc:Choice') ?? element(node, 'mc:Fallback');
 
-  // Conteúdo de um w:r: texto, tabulação, quebras, desenhos.
-  function readRunContent(node, props, out) {
-    const text = (value) => out.push({ ...props, text: props.caps ? value.toLocaleUpperCase('pt-BR') : value });
+  function readDrawing(node, props, ctx, out) {
+    const uri = find(node, 'a:graphicData')?.attrs.uri ?? '';
+    if (!uri.endsWith('/picture')) {
+      if (/chart|diagram/.test(uri)) notes.charts++;
+      else notes.shapes++;
+      return;
+    }
+    const container = element(node, 'wp:inline') ?? element(node, 'wp:anchor');
+    const extent = element(container, 'wp:extent');
+    const width = emu(extent?.attrs.cx);
+    const height = emu(extent?.attrs.cy);
+    const target = ctx.rels.get(find(node, 'a:blip')?.attrs['r:embed']); // r:link (imagem externa) nunca é seguido
+    if (!target || !(width > 0) || !(height > 0)) {
+      notes.images++;
+      return;
+    }
+    imagePaths.add(target);
+    if (container?.name === 'wp:anchor') {
+      out.push({ ...props, float: { image: target, width, height, h: anchorPosition(element(container, 'wp:positionH')), v: anchorPosition(element(container, 'wp:positionV')) } });
+    } else {
+      out.push({ ...props, image: target, width, height });
+    }
+  }
+
+  // Dentro do resultado de um campo de página (PAGE, NUMPAGES): o texto guardado no arquivo é trocado
+  // pelo número de verdade na hora de montar cada página.
+  const inPageField = (ctx) => ctx.field.some((field) => field.special && field.result);
+
+  // Conteúdo de um w:r: texto, tabulação, quebras, imagens, campos.
+  function readRunContent(node, props, ctx, out) {
+    const text = (value) => {
+      if (inPageField(ctx)) {
+        const run = [...out].reverse().find((item) => item.field);
+        if (run) run.text += value;
+        return;
+      }
+      out.push({ ...props, text: props.caps ? value.toLocaleUpperCase('pt-BR') : value });
+    };
     for (const child of elements(node)) {
       switch (child.name) {
         case 'w:t': text(child.children.filter((c) => typeof c === 'string').join('').replace(/[\t\r\n]/g, ' ')); break;
@@ -470,28 +639,63 @@ async function read(bytes, limits) {
           if (code > 0) text(String.fromCodePoint(code < 0x100 ? code + 0xf000 : code)); // símbolo de fonte (Symbol, Wingdings)
           break;
         }
-        case 'w:drawing': countDrawing(child); break;
+        case 'w:fldChar': {
+          const kind = child.attrs['w:fldCharType'];
+          if (kind === 'begin') ctx.field.push({ instr: '', result: false, special: null });
+          else if (kind === 'separate' && ctx.field.length) {
+            const field = ctx.field[ctx.field.length - 1];
+            field.result = true;
+            field.special = SPECIAL_FIELDS.exec(field.instr)?.[1].toUpperCase() ?? null;
+            if (field.special) out.push({ ...props, field: field.special, text: '' });
+          } else if (kind === 'end') ctx.field.pop();
+          break;
+        }
+        case 'w:instrText':
+          if (ctx.field.length) ctx.field[ctx.field.length - 1].instr += child.children.join('');
+          break;
+        case 'w:drawing': readDrawing(child, props, ctx, out); break;
         case 'w:pict':
-        case 'w:object':
-          if (find(child, 'v:imagedata')) notes.images++;
+        case 'w:object': {
+          const data = find(child, 'v:imagedata');
+          const target = data && ctx.rels.get(data.attrs['r:id']);
+          const { width, height } = vmlSize(find(child, 'v:shape')?.attrs.style);
+          if (target && width > 0 && height > 0) {
+            imagePaths.add(target);
+            out.push({ ...props, image: target, width, height });
+          } else if (data) notes.images++;
           else notes.shapes++;
           break;
-        case 'mc:AlternateContent': readRunContent(alternative(child), props, out); break;
+        }
+        case 'mc:AlternateContent': readRunContent(alternative(child), props, ctx, out); break;
         case 'w:footnoteReference':
         case 'w:endnoteReference': notes.footnotes++; break;
-        // w:instrText (código de campo), w:delText (texto apagado), w:fldChar e marcas de revisão: ficam de fora.
+        // w:delText (texto apagado) e marcas de revisão: ficam de fora.
       }
     }
   }
 
-  function readInline(node, base, out) {
+  // Cor clara de texto vira preto, a não ser que a célula tenha fundo escuro (que é desenhado).
+  const darkFill = (fill) => fill && 0.2126 * fill[0] + 0.7152 * fill[1] + 0.0722 * fill[2] < 0.6;
+
+  function readInline(node, base, ctx, out) {
     for (const child of elements(node)) {
       switch (child.name) {
         case 'w:r': {
           const direct = runProps(element(child, 'w:rPr'), theme);
           const props = { ...base, ...(direct.style ? styles.resolve(direct.style).r : {}), ...direct };
           if (props.hidden) break; // texto oculto não sai na impressão
-          readRunContent(child, { ...finishRun(props), caps: !!props.caps }, out);
+          const run = finishRun(props);
+          if (isLight(run.color) && !darkFill(ctx.fill)) run.color = null;
+          readRunContent(child, { ...run, caps: !!props.caps }, ctx, out);
+          break;
+        }
+        case 'w:fldSimple': {
+          const special = SPECIAL_FIELDS.exec(child.attrs['w:instr'] ?? '')?.[1].toUpperCase();
+          if (!special) { readInline(child, base, ctx, out); break; }
+          const inner = [];
+          readInline(child, base, ctx, inner);
+          const first = inner.find((run) => run.text !== undefined) ?? finishRun(base);
+          out.push({ ...first, field: special, text: inner.map((run) => run.text ?? '').join('') });
           break;
         }
         case 'w:hyperlink':
@@ -499,13 +703,12 @@ async function read(bytes, limits) {
         case 'w:customXml':
         case 'w:ins':
         case 'w:moveTo':
-        case 'w:fldSimple':
         case 'w:dir':
         case 'w:bdo':
-          readInline(child, base, out);
+          readInline(child, base, ctx, out);
           break;
-        case 'w:sdt': readInline(element(child, 'w:sdtContent'), base, out); break;
-        case 'mc:AlternateContent': readInline(alternative(child), base, out); break;
+        case 'w:sdt': readInline(element(child, 'w:sdtContent'), base, ctx, out); break;
+        case 'mc:AlternateContent': readInline(alternative(child), base, ctx, out); break;
         case 'm:oMath':
         case 'm:oMathPara': notes.equations++; break;
         // w:del e w:moveFrom (revisões apagadas), comentários e indicadores: ficam de fora.
@@ -513,22 +716,23 @@ async function read(bytes, limits) {
     }
   }
 
-  function readParagraph(p) {
+  function readParagraph(p, ctx) {
     const pPr = element(p, 'w:pPr');
     const direct = paragraphProps(pPr);
     const styleId = direct.style ?? styles.defaultParagraph;
     const style = styles.resolve(styleId);
-    let props = mergeParagraph(styles.defaults.p, style.p);
+    // Ordem do Word: padrão do documento < estilo da tabela < estilo do parágrafo < lista < formatação direta.
+    let props = mergeParagraph(mergeParagraph(styles.defaults.p, ctx.table?.p ?? {}), style.p);
 
     const numId = direct.numId ?? props.numId;
     const list = numId && numId !== '0' ? nextLabel(numId, direct.ilvl ?? props.ilvl ?? 0) : null;
     if (list) props = mergeParagraph(props, list.level.p);
     props = mergeParagraph(props, direct);
 
-    const base = { ...styles.defaults.r, ...style.r };
+    const base = { ...styles.defaults.r, ...(ctx.table?.r ?? {}), ...style.r };
     const mark = { ...base, ...runProps(element(pPr, 'w:rPr'), theme) };
     const runs = [];
-    readInline(p, base, runs);
+    readInline(p, base, ctx, runs);
 
     let label = null;
     if (list && list.text) {
@@ -536,7 +740,7 @@ async function read(bytes, limits) {
       label = { ...finishRun({ ...mark, ...levelRun }), text: list.text, suffix: list.level.suffix };
     }
 
-    blocks.push({
+    ctx.target.push({
       type: 'paragraph',
       styleId: styleId ?? '',
       runs,
@@ -554,32 +758,88 @@ async function read(bytes, limits) {
     });
 
     const sectPr = element(pPr, 'w:sectPr');
-    if (sectPr) closeSection(sectPr);
+    if (sectPr && ctx.body) {
+      sections.push({ ...sectionOf(sectPr), blocks: ctx.target });
+      ctx.target = [];
+    }
   }
 
-  function readBlocks(container) {
+  // Linhas e células podem vir dentro de controles de conteúdo (w:sdt) ou de XML personalizado.
+  function unwrap(node, name) {
+    const out = [];
+    for (const child of elements(node)) {
+      if (child.name === name) out.push(child);
+      else if (child.name === 'w:sdt') out.push(...unwrap(element(child, 'w:sdtContent'), name));
+      else if (child.name === 'w:customXml') out.push(...unwrap(child, name));
+    }
+    return out;
+  }
+
+  function readTable(tbl, ctx) {
+    const direct = tableProps(element(tbl, 'w:tblPr'));
+    const style = styles.resolve(direct.style ?? styles.defaultTable);
+    const props = mergeTable(style.t, direct);
+    const margins = { top: 0, bottom: 0, left: 5.4, right: 5.4, ...props.margins };
+    const grid = elements(element(tbl, 'w:tblGrid'), 'w:gridCol').map((col) => twips(col.attrs['w:w']) ?? 0);
+    const rows = unwrap(tbl, 'w:tr').map((tr) => {
+      const trPr = element(tr, 'w:trPr');
+      const height = element(trPr, 'w:trHeight');
+      return {
+        minHeight: twips(height?.attrs['w:val']) ?? 0,
+        exact: height?.attrs['w:hRule'] === 'exact',
+        header: flag(element(trPr, 'w:tblHeader')) ?? false,
+        skip: Number(val(element(trPr, 'w:gridBefore'))) || 0,
+        cells: unwrap(tr, 'w:tc').map((tc) => {
+          const tcPr = element(tc, 'w:tcPr');
+          const merge = element(tcPr, 'w:vMerge');
+          const fill = rawColor(element(tcPr, 'w:shd')?.attrs['w:fill']);
+          const cell = { ...ctx, target: [], table: style, fill, body: false };
+          readBlocks(tc, cell);
+          return {
+            span: Math.max(1, Number(val(element(tcPr, 'w:gridSpan'))) || 1),
+            vMerge: merge ? (merge.attrs['w:val'] === 'restart' ? 'restart' : 'continue') : null,
+            fill,
+            borders: readBorders(element(tcPr, 'w:tcBorders')),
+            vAlign: val(element(tcPr, 'w:vAlign')) ?? 'top',
+            blocks: cell.target,
+          };
+        }),
+      };
+    }).filter((row) => row.cells.length);
+    return {
+      type: 'table', grid, rows, margins,
+      borders: { top: null, bottom: null, left: null, right: null, insideH: null, insideV: null, ...props.borders },
+      indent: props.indent ?? 0,
+      align: props.align ?? 'left',
+    };
+  }
+
+  function readBlocks(container, ctx) {
     for (const child of elements(container)) {
       switch (child.name) {
-        case 'w:p': readParagraph(child); break;
-        case 'w:tbl': // por enquanto, o texto de cada célula vira parágrafos comuns
-          notes.tables++;
-          for (const row of elements(child, 'w:tr')) for (const cell of elements(row, 'w:tc')) readBlocks(cell);
-          break;
-        case 'w:sdt': readBlocks(element(child, 'w:sdtContent')); break;
-        case 'w:customXml': readBlocks(child); break;
-        case 'mc:AlternateContent': readBlocks(alternative(child)); break;
+        case 'w:p': readParagraph(child, ctx); break;
+        case 'w:tbl': ctx.target.push(readTable(child, ctx)); break;
+        case 'w:sdt': readBlocks(element(child, 'w:sdtContent'), ctx); break;
+        case 'w:customXml': readBlocks(child, ctx); break;
+        case 'mc:AlternateContent': readBlocks(alternative(child), ctx); break;
         case 'w:altChunk': notes.embedded++; break;
       }
     }
   }
 
-  readBlocks(body);
-  if (blocks.length || !sections.length) closeSection(element(body, 'w:sectPr'));
+  const bodyCtx = { rels: mainRels, target: [], field: [], body: true };
+  readBlocks(body, bodyCtx);
+  if (bodyCtx.target.length || !sections.length) sections.push({ ...sectionOf(element(body, 'w:sectPr')), blocks: bodyCtx.target });
 
-  for (const rel of relations) {
-    if (!headerIds.has(rel.id) || notes.headerFooter) continue;
-    if (hasVisibleContent(await readPart(zip, rel.target))) notes.headerFooter = true;
+  // Imagens: só as usadas, e só nos formatos que o navegador desenha.
+  const images = new Map();
+  for (const path of imagePaths) {
+    if (!zip.has(path)) { notes.images++; continue; }
+    const data = await zip.read(path);
+    const type = imageType(data);
+    if (type) images.set(path, { bytes: data, type });
+    else notes.images++;
   }
 
-  return { sections, defaultTab, notes };
+  return { sections, defaultTab, evenAndOdd, notes, images };
 }

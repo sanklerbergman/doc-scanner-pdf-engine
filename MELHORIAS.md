@@ -56,9 +56,9 @@ O caminho das fotos não muda. O PDF gerado a partir de imagens deve continuar i
 
 #### Fase 2: imagens e tabelas
 
-- [ ] Imagens embutidas: JPEG entra direto (DCTDecode) e PNG ou outros formatos viram JPEG via canvas
-- [ ] Tabelas simples: colunas com largura fixa e bordas
-- [ ] Cabeçalho e rodapé do documento
+- [x] Imagens embutidas: JPEG entra direto (DCTDecode) e PNG ou outros formatos viram JPEG via canvas. Imagens na linha do texto e flutuantes (posicionadas pela âncora, sem contorno do texto)
+- [x] Tabelas: colunas do documento (encolhem para caber), bordas do estilo e da célula, fundo, células mescladas, alinhamento vertical e linha de cabeçalho repetida em cada página. Uma linha não é dividida entre páginas
+- [x] Cabeçalho e rodapé do documento: primeira página diferente, páginas pares, herança entre seções e "Página X de Y" (campos PAGE e NUMPAGES)
 
 #### Fase 3: acabamento
 
@@ -89,7 +89,7 @@ O caminho das fotos não muda. O PDF gerado a partir de imagens deve continuar i
 ### Decisões
 
 - **Tamanho da página e margem:** seguem o documento (`w:pgSz` e `w:pgMar`; A4 e 2,5 cm quando faltam). A paginação acontece ao abrir o arquivo, e as opções do app (A4/Carta, margem, filtro, qualidade) valem só para fotos.
-- **Recurso não suportado:** o PDF é gerado mesmo assim, e o app avisa o que ficou de fora (imagens, gráficos, formas, equações, notas, cabeçalho e rodapé). Tabelas aparecem como texto corrido até a fase 2.
+- **Recurso não suportado:** o PDF é gerado mesmo assim, e o app avisa o que ficou de fora (gráficos, formas e caixas de texto, equações, notas de rodapé e imagens em formatos que o navegador não desenha, como EMF e WMF).
 - **Caracteres fora das fontes padrão** (grego, emoji, setas): viram "?", com aviso. Bullets das fontes Symbol e Wingdings viram "•".
 
 ## Ferramentas de PDF: juntar, dividir e comprimir

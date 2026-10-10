@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readDocx, formatNumber, fontFamily, DocxError } from '../web/js/docx.js';
-import { makeDocx, makeZip, docxFiles, p } from './helpers/docx.js';
+import { makeDocx, makeZip, docxFiles, p, drawing } from './helpers/docx.js';
 
 const paragraphs = (doc) => doc.sections.flatMap((section) => section.blocks);
 const textOf = (block) => block.runs.map((run) => run.text ?? (run.tab ? '\t' : run.break ? '\n' : '')).join('');
@@ -143,7 +143,9 @@ test('tamanho da página e margens do documento; A4 e 2,5 cm quando faltam', asy
   const letter = await readDocx(makeDocx({
     body: p('x') + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1080" w:bottom="1440" w:left="1080" w:gutter="360"/></w:sectPr>',
   }));
-  assert.deepEqual(letter.sections[0].page, { width: 612, height: 792, margin: { top: 72, right: 54, bottom: 72, left: 72 } });
+  assert.deepEqual(letter.sections[0].page, {
+    width: 612, height: 792, margin: { top: 72, right: 54, bottom: 72, left: 72 }, headerDistance: 35.4, footerDistance: 35.4,
+  });
 
   const bare = await readDocx(makeDocx({ body: p('x') }));
   assert.equal(bare.sections[0].page.width, 595.28);
@@ -171,19 +173,125 @@ test('seções: quebra de seção no parágrafo, página deitada e seção cont�
   assert.equal(doc.notes.columns, true);
 });
 
-test('tabelas viram texto corrido e o que não é desenhado é contado', async () => {
-  const drawing = (uri) => `<w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><a:graphic><a:graphicData uri="${uri}"/></a:graphic></wp:inline></w:drawing></w:r>`;
+test('o que não é desenhado é contado: imagem sem arquivo, gráfico, forma, nota e equação', async () => {
+  const graphic = (uri) => `<w:r><w:drawing><wp:inline><a:graphic><a:graphicData uri="${uri}"/></a:graphic></wp:inline></w:drawing></w:r>`;
   const doc = await readDocx(makeDocx({
     body: `
-      <w:tbl><w:tr><w:tc><w:p><w:r><w:t>célula A1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
-      <w:p>${drawing('http://schemas.openxmlformats.org/drawingml/2006/picture')}${drawing('http://schemas.openxmlformats.org/drawingml/2006/chart')}
-        <w:r><mc:AlternateContent><mc:Choice Requires="wps">${drawing('http://schemas.microsoft.com/office/word/2010/wordprocessingShape').slice(5, -6)}</mc:Choice>
+      <w:p>${graphic('http://schemas.openxmlformats.org/drawingml/2006/picture')}${graphic('http://schemas.openxmlformats.org/drawingml/2006/chart')}
+        <w:r><mc:AlternateContent><mc:Choice Requires="wps">${graphic('http://schemas.microsoft.com/office/word/2010/wordprocessingShape').slice(5, -6)}</mc:Choice>
         <mc:Fallback><w:pict><v:shape/></w:pict></mc:Fallback></mc:AlternateContent></w:r>
         <w:r><w:t>texto</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></w:p>`,
   }));
-  assert.deepEqual(paragraphs(doc).map(textOf), ['célula A1', 'B1', 'texto']);
+  assert.deepEqual(paragraphs(doc).map(textOf), ['texto']);
   const { notes } = doc;
-  assert.deepEqual([notes.tables, notes.images, notes.charts, notes.shapes, notes.footnotes, notes.equations], [1, 1, 1, 1, 1, 1]);
+  assert.deepEqual([notes.images, notes.charts, notes.shapes, notes.footnotes, notes.equations], [1, 1, 1, 1, 1]);
+});
+
+const TABLE_STYLES = `
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal"/>
+  <w:style w:type="table" w:default="1" w:styleId="TabelaNormal"><w:tblPr><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>
+  <w:style w:type="table" w:styleId="Tabelacomgrade"><w:basedOn w:val="TabelaNormal"/>
+    <w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>
+    <w:tblPr><w:tblBorders>
+      <w:top w:val="single" w:sz="4" w:color="auto"/><w:left w:val="single" w:sz="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:color="auto"/>
+      <w:right w:val="single" w:sz="4" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:color="auto"/><w:insideV w:val="single" w:sz="8" w:color="FF0000"/>
+    </w:tblBorders></w:tblPr></w:style>`;
+
+const cell = (text, tcPr = '') => `<w:tc>${tcPr ? `<w:tcPr>${tcPr}</w:tcPr>` : ''}${p(text)}</w:tc>`;
+
+test('tabelas: colunas, bordas do estilo, célula mesclada, fundo e espaçamento do estilo da tabela', async () => {
+  const doc = await readDocx(makeDocx({
+    styles: TABLE_STYLES,
+    body: `<w:tbl><w:tblPr><w:tblStyle w:val="Tabelacomgrade"/><w:jc w:val="center"/></w:tblPr>
+      <w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="3000"/><w:gridCol w:w="1000"/></w:tblGrid>
+      <w:tr><w:trPr><w:tblHeader/></w:trPr>${cell('Nome', '<w:gridSpan w:val="2"/><w:shd w:val="clear" w:fill="1F3864"/>')}${cell('Valor', '<w:vMerge w:val="restart"/><w:vAlign w:val="center"/>')}</w:tr>
+      <w:tr><w:trPr><w:trHeight w:val="600" w:hRule="exact"/></w:trPr>${cell('A')}${cell('B', '<w:tcBorders><w:bottom w:val="nil"/></w:tcBorders>')}${cell('', '<w:vMerge/>')}</w:tr>
+    </w:tbl>${p('depois')}`,
+  }));
+  const [table, after] = doc.sections[0].blocks;
+  assert.equal(table.type, 'table');
+  assert.deepEqual(table.grid, [100, 150, 50]);
+  assert.equal(table.align, 'center');
+  assert.deepEqual(table.margins, { top: 0, bottom: 0, left: 5.4, right: 5.4 });
+  assert.deepEqual(table.borders.insideV, { width: 1, color: [1, 0, 0] });
+  assert.deepEqual(table.borders.top, { width: 0.5, color: null });
+
+  const [head, body] = table.rows;
+  assert.equal(head.header, true);
+  assert.deepEqual(head.cells.map((c) => [c.span, c.vMerge]), [[2, null], [1, 'restart']]);
+  assert.equal(head.cells[1].vAlign, 'center');
+  assert.deepEqual(body.cells.map((c) => c.vMerge), [null, null, 'continue']);
+  assert.deepEqual([body.minHeight, body.exact], [30, true]);
+  assert.equal(body.cells[1].borders.bottom, null);
+
+  const [name] = head.cells[0].blocks;
+  assert.equal(textOf(name), 'Nome');
+  assert.equal(name.spacing.after, 0, 'o espaçamento vem do estilo da tabela');
+  assert.deepEqual(head.cells[0].fill.map((c) => Math.round(c * 255)), [0x1f, 0x38, 0x64]);
+  assert.equal(textOf(after), 'depois');
+});
+
+test('texto branco: some sem fundo, fica com fundo escuro de célula', async () => {
+  const white = (text) => p(text, { rPr: '<w:color w:val="FFFFFF"/>' });
+  const doc = await readDocx(makeDocx({
+    body: `${white('solto')}<w:tbl><w:tr><w:tc><w:tcPr><w:shd w:fill="000000"/></w:tcPr>${white('no escuro')}</w:tc><w:tc>${white('no claro')}</w:tc></w:tr></w:tbl>`,
+  }));
+  const [loose, table] = doc.sections[0].blocks;
+  assert.equal(loose.runs[0].color, null);
+  assert.deepEqual(table.rows[0].cells[0].blocks[0].runs[0].color, [1, 1, 1]);
+  assert.equal(table.rows[0].cells[1].blocks[0].runs[0].color, null);
+});
+
+const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+const EMF = Uint8Array.from([1, 0, 0, 0, 0x6c, 0, 0, 0]);
+
+test('imagens: na linha do texto, flutuante, formato que não dá para desenhar e link externo', async () => {
+  const anchor = '<wp:positionH relativeFrom="page"><wp:posOffset>127000</wp:posOffset></wp:positionH>' +
+    '<wp:positionV relativeFrom="paragraph"><wp:align>top</wp:align></wp:positionV>';
+  const doc = await readDocx(makeDocx({
+    rels: [['rIdImg', 'image', 'media/logo.png'], ['rIdEmf', 'image', 'media/grafico.emf']],
+    extra: { 'word/media/logo.png': PNG, 'word/media/grafico.emf': EMF, 'word/media/nao-usada.png': PNG },
+    body: `<w:p><w:r><w:t xml:space="preserve">Logo: </w:t></w:r>${drawing('rIdImg', 144, 72)}</w:p>
+      <w:p>${drawing('rIdImg', 50, 20, { anchor })}</w:p>
+      <w:p>${drawing('rIdEmf', 100, 100)}${drawing('rId99', 10, 10)}</w:p>`,
+  }));
+  const [inline, floating] = paragraphs(doc);
+  const image = inline.runs[1];
+  assert.deepEqual([image.image, image.width, image.height], ['word/media/logo.png', 144, 72]);
+  const { float } = floating.runs[0];
+  assert.deepEqual(float.h, { relative: 'page', offset: 10, align: null });
+  assert.deepEqual(float.v, { relative: 'near', offset: 0, align: 'top' });
+
+  assert.deepEqual([...doc.images.keys()], ['word/media/logo.png'], 'só imagens usadas e desenháveis');
+  assert.equal(doc.images.get('word/media/logo.png').type, 'image/png');
+  assert.equal(doc.notes.images, 2, 'o EMF e a imagem externa (rId99) ficam de fora');
+});
+
+test('cabeçalho e rodapé: blocos por tipo, campo de página, primeira página e herança entre seções', async () => {
+  const pageField = '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+  const doc = await readDocx(makeDocx({
+    rels: [['rIdImg', 'image', 'media/logo.png']],
+    extra: { 'word/media/logo.png': PNG, 'word/_rels/rId20.xml.rels': '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdH" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/></Relationships>' },
+    headers: {
+      rId20: `<w:p>${drawing('rIdH', 80, 30)}<w:r><w:t>Empresa</w:t></w:r></w:p>`,
+      rId21: p('Capa'),
+      ftr30: `<w:p><w:r><w:t xml:space="preserve">Página </w:t></w:r>${pageField}<w:r><w:t xml:space="preserve"> de </w:t></w:r><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>9</w:t></w:r></w:fldSimple></w:p>`,
+    },
+    body: `${p('um')}<w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rId20"/><w:headerReference w:type="first" r:id="rId21"/>
+      <w:footerReference w:type="default" r:id="ftr30"/><w:titlePg/><w:pgMar w:top="1440" w:bottom="1440" w:left="1440" w:right="1440" w:header="567" w:footer="567"/></w:sectPr></w:pPr></w:p>
+      ${p('dois')}<w:sectPr><w:footerReference w:type="first" r:id="ftr30"/></w:sectPr>`,
+  }));
+  const [first, second] = doc.sections;
+  assert.equal(first.titlePg, true);
+  assert.ok(Math.abs(first.page.headerDistance - 28.35) < 1e-9);
+  assert.equal(textOf(first.header.first[0]), 'Capa');
+  const [headerParagraph] = first.header.default;
+  assert.equal(headerParagraph.runs[0].image, 'word/media/logo.png', 'imagem do cabeçalho pelas relações do próprio cabeçalho');
+  const footerRuns = first.footer.default[0].runs;
+  assert.deepEqual(footerRuns.filter((run) => run.field).map((run) => [run.field, run.text]), [['PAGE', '1'], ['NUMPAGES', '9']]);
+  assert.equal(second.header.default, first.header.default, 'a segunda seção herda o cabeçalho');
+  assert.ok(second.footer.first && second.footer.default);
 });
 
 test('texto oculto, revisões apagadas e código de campo ficam de fora; link, inserção e controle de conteúdo entram', async () => {
@@ -204,14 +312,6 @@ test('texto oculto, revisões apagadas e código de campo ficam de fora; link, i
   const [block] = paragraphs(doc);
   assert.equal(textOf(block), 'A inserido link 7 campo MAIÚSCULAS2');
   assert.equal(block.runs[block.runs.length - 1].vertAlign, 'superscript');
-});
-
-test('cabeçalho com texto é avisado; vazio, não', async () => {
-  const sect = (id) => `<w:sectPr><w:headerReference w:type="default" r:id="${id}"/></w:sectPr>`;
-  const withText = await readDocx(makeDocx({ body: p('x') + sect('rId20'), headers: { rId20: p('Empresa') } }));
-  assert.equal(withText.notes.headerFooter, true);
-  const empty = await readDocx(makeDocx({ body: p('x') + sect('rId20'), headers: { rId20: '<w:p/>' } }));
-  assert.equal(empty.notes.headerFooter, false);
 });
 
 test('aceita o formato Strict (outro namespace) e prefixos diferentes de "w"', async () => {

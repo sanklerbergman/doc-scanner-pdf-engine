@@ -32,6 +32,19 @@ export function readJpegInfo(bytes) {
 
 const COLOR_SPACES = { 1: '/DeviceGray', 3: '/DeviceRGB' };
 
+// Objeto de imagem JPEG (o arquivo entra inteiro, sem recompressão), em partes para object().
+function imageObject(jpeg) {
+  const info = readJpegInfo(jpeg);
+  const colorSpace = COLOR_SPACES[info.components];
+  if (!colorSpace) throw new Error(`JPEG com ${info.components} componentes não é suportado`);
+  return [
+    `<< /Type /XObject /Subtype /Image /Width ${info.width} /Height ${info.height}` +
+    ` /ColorSpace ${colorSpace} /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`,
+    jpeg,
+    '\nendstream',
+  ];
+}
+
 // Números em PDF não aceitam notação exponencial; duas casas bastam.
 const num = (v) => String(Math.round(v * 100) / 100);
 
@@ -74,8 +87,17 @@ const rgb = (color) => (color ?? [0, 0, 0]).map(num).join(' ');
 
 // Conteúdo de uma página de texto. Os itens vêm com a origem no canto superior esquerdo;
 // no PDF ela fica no inferior, por isso y vira height - y.
-function textContent(page, fontNames) {
-  const ops = ['BT'];
+function textContent(page, fontNames, imageNames) {
+  // Fundos e imagens primeiro (ficam por baixo do texto), cada um entre q e Q para não mexer na cor do texto.
+  const ops = [];
+  for (const item of page.items) {
+    if (item.type === 'rect') {
+      ops.push(`q ${rgb(item.color)} rg ${num(item.x)} ${num(page.height - item.y - item.h)} ${num(item.w)} ${num(item.h)} re f Q`);
+    } else if (item.type === 'image') {
+      ops.push(`q ${num(item.w)} 0 0 ${num(item.h)} ${num(item.x)} ${num(page.height - item.y - item.h)} cm ${imageNames.get(item.jpeg)} Do Q`);
+    }
+  }
+  ops.push('BT');
   let font = '';
   let fill = '0 0 0';
   let wordSpacing = 0;
@@ -94,8 +116,9 @@ function textContent(page, fontNames) {
   for (const item of page.items) {
     if (item.type !== 'line') continue;
     if (rgb(item.color) !== stroke) ops.push(`${(stroke = rgb(item.color))} RG`);
-    const y = num(page.height - item.y);
-    ops.push(`${num(item.width)} w ${num(item.x1)} ${y} m ${num(item.x2)} ${y} l S`);
+    const y1 = num(page.height - (item.y1 ?? item.y));
+    const y2 = num(page.height - (item.y2 ?? item.y));
+    ops.push(`${num(item.width)} w ${num(item.x1)} ${y1} m ${num(item.x2)} ${y2} l S`);
   }
   return ops.join('\n');
 }
@@ -105,8 +128,10 @@ function textContent(page, fontNames) {
  * - foto: {jpeg: Uint8Array, width, height, box: {x, y, w, h}}, com a imagem posicionada em box
  *   (origem no canto inferior esquerdo);
  * - texto: {width, height, items, rotation?}, com items vindos de layout.js: {type: 'text', x, y, text, font,
- *   size, color?, wordSpacing?, rise?} e {type: 'line', x1, x2, y, width, color?}, origem no canto superior
- *   esquerdo e y na linha de base do texto. rotation (0, 90, 180 ou 270) vira /Rotate.
+ *   size, color?, wordSpacing?, rise?}, {type: 'line', x1, x2, y (ou y1 e y2), width, color?}, {type: 'rect', x, y,
+ *   w, h, color} e {type: 'image', jpeg, x, y, w, h}, origem no canto superior esquerdo e y do texto na linha
+ *   de base. A mesma imagem (o mesmo Uint8Array) usada em várias páginas é gravada uma vez só.
+ *   rotation (0, 90, 180 ou 270) vira /Rotate.
  * - copiada: {copy: {source, page}, rotation?}, com source = {objects} e page = descritor de copyPages
  *   (pdf-reader.js). Páginas do mesmo source compartilham os objetos (fontes, imagens), gravados uma vez só.
  * Medidas em pontos (1/72 pol.).
@@ -149,6 +174,17 @@ export function buildPdf(pages) {
       fontNames.set(item.font, `/F${fontIds.size}`);
     }
   }
+  // Imagens das páginas de texto (documentos do Word), depois das fontes.
+  const imageIds = new Map();
+  const imageNames = new Map();
+  for (const page of pages) {
+    if (page.jpeg || page.copy) continue;
+    for (const item of page.items) {
+      if (item.type !== 'image' || imageIds.has(item.jpeg)) continue;
+      imageIds.set(item.jpeg, nextId++);
+      imageNames.set(item.jpeg, `/Im${imageIds.size}`);
+    }
+  }
 
   // Objetos das páginas copiadas: cada PDF de origem ganha uma faixa de números, depois das fontes.
   const sources = new Map();
@@ -189,18 +225,16 @@ export function buildPdf(pages) {
     if (!page.jpeg) {
       const used = new Set(page.items.filter((item) => item.type === 'text').map((item) => item.font));
       const fonts = [...used].map((font) => ` ${fontNames.get(font)} ${fontIds.get(font)} 0 R`).join('');
+      const pictures = [...new Set(page.items.filter((item) => item.type === 'image').map((item) => item.jpeg))]
+        .map((jpeg) => ` ${imageNames.get(jpeg)} ${imageIds.get(jpeg)} 0 R`).join('');
       const rotate = page.rotation ? ` /Rotate ${page.rotation}` : '';
-      const content = textContent(page, fontNames); // só ASCII: o tamanho em caracteres é o tamanho em bytes
+      const content = textContent(page, fontNames, imageNames); // só ASCII: o tamanho em caracteres é o tamanho em bytes
       object(id,
         `<< /Type /Page /Parent 2 0 R ${mediaBox}${rotate}` +
-        ` /Resources <<${fonts ? ` /Font <<${fonts} >>` : ''} >> /Contents ${id + 1} 0 R >>`);
+        ` /Resources <<${fonts ? ` /Font <<${fonts} >>` : ''}${pictures ? ` /XObject <<${pictures} >>` : ''} >> /Contents ${id + 1} 0 R >>`);
       object(id + 1, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
       return;
     }
-
-    const info = readJpegInfo(page.jpeg);
-    const colorSpace = COLOR_SPACES[info.components];
-    if (!colorSpace) throw new Error(`JPEG com ${info.components} componentes não é suportado`);
 
     const { x, y, w, h } = page.box;
     const content = `q ${num(w)} 0 0 ${num(h)} ${num(x)} ${num(y)} cm /Im0 Do Q`;
@@ -209,16 +243,13 @@ export function buildPdf(pages) {
       `<< /Type /Page /Parent 2 0 R ${mediaBox}` +
       ` /Resources << /XObject << /Im0 ${id + 2} 0 R >> >> /Contents ${id + 1} 0 R >>`);
     object(id + 1, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
-    object(id + 2,
-      `<< /Type /XObject /Subtype /Image /Width ${info.width} /Height ${info.height}` +
-      ` /ColorSpace ${colorSpace} /BitsPerComponent 8 /Filter /DCTDecode /Length ${page.jpeg.length} >>\nstream\n`,
-      page.jpeg,
-      '\nendstream');
+    object(id + 2, ...imageObject(page.jpeg));
   });
 
   for (const [font, id] of fontIds) {
     object(id, `<< /Type /Font /Subtype /Type1 /BaseFont /${font} /Encoding /WinAnsiEncoding >>`);
   }
+  for (const [jpeg, id] of imageIds) object(id, ...imageObject(jpeg));
   for (const [source, base] of sources) {
     source.objects.forEach((list, i) => object(base + i, ...parts(list, base)));
   }
