@@ -3,6 +3,6 @@
   "private": true,
   "description": "Publicação no Cloudflare. Só o workflow usa esta pasta; o app em web/ continua sem dependências.",
   "devDependencies": {
-    "wrangler": "4.139.0"
+    "wrangler": "4.141.0"
   }
 }
