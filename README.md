@@ -3,7 +3,7 @@
 Foto, Word ou PDF: tudo vira PDF, **100% no navegador**. Sem upload, sem cadastro, sem rastreio.
 Feito pela comunidade, para a comunidade.
 
-**Usar agora: https://sanklerbergman.github.io/doc-scanner-pdf-engine/**
+**Usar agora: https://scanner.sankler.com.br/**
 
 ## O que faz
 
@@ -35,7 +35,7 @@ Dá para conferir: F12 → aba **Rede** enquanto gera um PDF. As únicas requisi
 
 - A política vale para a página e para o Worker dos filtros. O service worker (`sw.js`, cache offline) não é coberto por ela, porque o GitHub Pages não permite enviar cabeçalhos; ele não recebe imagens, só os arquivos do próprio app.
 - Nenhuma política de navegador impede o próprio site de ser alterado. A proteção contra isso é o código ser aberto, com o histórico de mudanças público.
-- Quem hospeda uma cópia modificada pode trocar qualquer coisa, inclusive a chave Pix. O endereço oficial é https://sanklerbergman.github.io/doc-scanner-pdf-engine/.
+- Quem hospeda uma cópia modificada pode trocar qualquer coisa, inclusive a chave Pix. O endereço oficial é https://scanner.sankler.com.br/.
 
 Achou uma falha de segurança? Veja [SECURITY.md](SECURITY.md).
 
