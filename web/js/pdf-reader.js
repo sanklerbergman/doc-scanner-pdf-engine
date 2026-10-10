@@ -5,9 +5,11 @@
 //
 // Segurança: nada do PDF é executado. Da página só são copiados o conteúdo e os recursos dele; ficam de fora
 // anotações (links, comentários, campos de formulário), ações (/AA, /OpenAction, JavaScript), metadados
-// (/Info, XMP) e a árvore de estrutura. Limites de objetos, páginas e tamanho descompactado evitam que um
-// arquivo malicioso trave o navegador. PDF criptografado (com senha) é recusado.
+// (/Info, XMP) e a árvore de estrutura. O conteúdo de camadas ocultas sai das páginas (pdf-layers.js).
+// Limites de objetos, páginas e tamanho descompactado evitam que um arquivo malicioso trave o navegador.
+// PDF criptografado (com senha) é recusado.
 import { inflate, InflateError } from './inflate.js';
+import { prepareLayers } from './pdf-layers.js';
 
 export class PdfError extends Error {}
 
@@ -34,11 +36,12 @@ export class PdfStream {
 }
 // Dicionário: Map com os nomes das chaves (sem a barra).
 export class PdfDict extends Map {}
-class Keyword {
+// Palavra solta: operador de conteúdo (Tj, BDC…), true/false/null ou um delimitador perdido.
+export class Keyword {
   constructor(value) { this.value = value; }
 }
 
-const isName = (value, name) => value instanceof PdfName && (name === undefined || value.value === name);
+export const isName = (value, name) => value instanceof PdfName && (name === undefined || value.value === name);
 
 // ---------- Análise léxica ----------
 
@@ -51,7 +54,7 @@ const latin1 = (bytes, start, end) => {
   return out;
 };
 
-class Parser {
+export class Parser {
   constructor(bytes, pos = 0) {
     this.bytes = bytes;
     this.pos = pos;
@@ -231,6 +234,7 @@ export async function openPdf(bytes, limits = {}) {
   const doc = new PdfDocument(bytes, { ...PDF_LIMITS, ...limits });
   try {
     await doc.load();
+    await prepareLayers(doc);
   } catch (err) {
     if (err instanceof InflateError) throw new PdfError(err.reason === 'too-big' ? err.message : 'O PDF está corrompido.');
     throw err;
@@ -610,12 +614,14 @@ function flattenAnnotations(doc, page) {
     const flags = doc.resolve(annot.get('F')) ?? 0;
     const subtype = doc.resolve(annot.get('Subtype'));
     if (flags & (2 | 32) || isName(subtype, 'Popup') || isName(subtype, 'Link')) continue; // oculta, sem exibição, ou só clique
+    if (doc.layers?.isHidden(annot.get('OC'))) continue; // numa camada oculta
     let appearance = doc.resolve(doc.resolve(annot.get('AP'))?.get?.('N'));
     if (appearance instanceof PdfDict) { // um estado por valor (caixa de seleção marcada ou não)
       const state = doc.resolve(annot.get('AS'));
       appearance = state instanceof PdfName ? doc.resolve(appearance.get(state.value)) : null;
     }
     if (!(appearance instanceof PdfStream)) continue;
+    appearance = doc.layers?.streams.get(appearance) ?? appearance; // sem o que estiver em camadas ocultas
     const rect = doc.box(annot.get('Rect'));
     const bbox = doc.box(appearance.dict.get('BBox'));
     if (!rect || !bbox) continue;
@@ -639,7 +645,8 @@ function flattenAnnotations(doc, page) {
 }
 
 // Chaves que não vão para o PDF novo, em qualquer objeto copiado: metadados, ações e estrutura.
-export const DROPPED_KEYS = new Set(['Metadata', 'PieceInfo', 'AA', 'OpenAction', 'JS', 'JavaScript', 'StructParent', 'StructParents', 'Parent', 'Annots', 'Thumb', 'OCProperties']);
+// /OC (a camada de uma imagem ou formulário) também sai: sem a tabela de camadas, ela não tem mais efeito.
+export const DROPPED_KEYS = new Set(['Metadata', 'PieceInfo', 'AA', 'OpenAction', 'JS', 'JavaScript', 'StructParent', 'StructParents', 'Parent', 'Annots', 'Thumb', 'OCProperties', 'OC']);
 
 // Dicionários de recursos por nome (/Font << /F1 ... >>, /XObject << /Im0 ... >>): as chaves são nomes livres
 // escolhidos pelo programa que gerou o PDF, então nenhuma delas é descartada (uma imagem pode se chamar /JS).
@@ -705,9 +712,22 @@ export function copyPages(doc, indices, { replace } = {}) {
     return { ref: local.get(ref.num) };
   };
 
+  // Num PDF com camadas, saem dos recursos as camadas (/Properties) e as imagens e formulários que nenhum
+  // conteúdo visível desenha (/XObject), como uma imagem que só aparecia numa camada oculta (pdf-layers.js).
+  // As aparências das anotações, acrescentadas aqui como /Annot0, /Annot1…, são streams novos e ficam.
+  const layerEntry = (map, item) => {
+    if (!doc.layers) return false;
+    if (map === 'Properties') {
+      const value = doc.resolve(item);
+      return value instanceof PdfDict && ['OCG', 'OCMD'].includes(doc.resolve(value.get('Type'))?.value);
+    }
+    return map === 'XObject' && item instanceof PdfRef && !doc.layers.drawn.has(doc.resolve(item));
+  };
+
   // Valor → partes. Referência a objeto que não existe vira null. Stream só existe como objeto próprio:
   // um stream novo dentro de outro valor (top = false) vira um objeto à parte, e no lugar fica a referência.
-  function write(value, out, top = false, names = false) {
+  // names: nome do dicionário de recursos (/Font, /XObject…) quando o valor é um deles.
+  function write(value, out, top = false, names = null) {
     if (value instanceof PdfRef) {
       if (doc.resolve(value) === null) out.push('null');
       else out.push(refTo(value));
@@ -723,8 +743,9 @@ export function copyPages(doc, indices, { replace } = {}) {
     } else if (value instanceof PdfDict) {
       out.push('<<');
       for (const [key, item] of keptEntries(value, names)) {
+        if (layerEntry(names, item)) continue;
         out.push(formatName(key), ' ');
-        write(item, out, false, NAME_MAPS.has(key));
+        write(item, out, false, NAME_MAPS.has(key) ? key : null);
         out.push(' ');
       }
       out.push('>>');
@@ -749,23 +770,24 @@ export function copyPages(doc, indices, { replace } = {}) {
     const group = page.node.get('Group');
     const appearances = flattenAnnotations(doc, page);
     let resources = page.attrs.Resources ?? new PdfDict();
-    let contents = page.node.has('Contents') ? write(page.node.get('Contents'), []) : null;
+    const own = doc.layers?.contents.get(index); // conteúdo refeito sem as camadas ocultas
+    let contents = own ? write(own, []) : page.node.has('Contents') ? write(page.node.get('Contents'), []) : null;
 
     if (appearances.length) {
       // Recursos: cópia só desta página, com as aparências como XObjects /Annot0, /Annot1…
-      const own = new PdfDict(doc.resolve(resources) instanceof PdfDict ? doc.resolve(resources) : []);
-      const xobjects = new PdfDict(doc.resolve(own.get('XObject')) instanceof PdfDict ? doc.resolve(own.get('XObject')) : []);
+      const copy = new PdfDict(doc.resolve(resources) instanceof PdfDict ? doc.resolve(resources) : []);
+      const xobjects = new PdfDict(doc.resolve(copy.get('XObject')) instanceof PdfDict ? doc.resolve(copy.get('XObject')) : []);
       let ops = 'Q';
       appearances.forEach(({ stream, matrix }, i) => {
         xobjects.set(`Annot${i}`, stream);
         ops += `
 q ${matrix.map(formatNumber).join(' ')} cm /Annot${i} Do Q`;
       });
-      own.set('XObject', xobjects);
-      resources = own;
+      copy.set('XObject', xobjects);
+      resources = copy;
       // O conteúdo original fica entre q e Q: o que ele mudar no estado gráfico não afeta as aparências.
       const original = doc.resolve(page.node.get('Contents'));
-      const list = Array.isArray(original) ? page.node.get('Contents') : contents ? [page.node.get('Contents')] : [];
+      const list = own ? [own] : Array.isArray(original) ? page.node.get('Contents') : contents ? [page.node.get('Contents')] : [];
       const before = add(new PdfStream(new PdfDict(), new TextEncoder().encode('q')));
       const after = add(new PdfStream(new PdfDict(), new TextEncoder().encode(ops)));
       contents = ['[', before];
@@ -785,7 +807,9 @@ q ${matrix.map(formatNumber).join(' ')} cm /Annot${i} Do Q`;
   }
   while (queue.length) {
     const num = queue.shift();
-    objects[local.get(num)] = write(replace?.get(num) ?? doc.object(num), [], true);
+    // O conteúdo sem camadas ocultas vence a versão comprimida (que seria do conteúdo original).
+    const original = doc.object(num);
+    objects[local.get(num)] = write(doc.layers?.streams.get(original) ?? replace?.get(num) ?? original, [], true);
   }
   return { objects, pages };
 }

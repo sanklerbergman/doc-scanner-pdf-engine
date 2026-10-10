@@ -95,6 +95,9 @@ export async function openPdfFile(file) {
   if (doc.isSigned()) {
     notes.push('Este PDF tem assinatura digital: no PDF novo a assinatura deixa de valer (ela só vale no arquivo original).');
   }
+  if (doc.layers?.removed) {
+    notes.push('Este PDF tem camadas ocultas: o conteúdo delas não vai para o PDF novo, como já estava escondido na tela.');
+  }
   if (doc.hasAnnotations()) {
     notes.push('Links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.');
   }
