@@ -14,9 +14,12 @@ const files = (await readdir(WEB, { recursive: true, withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name !== '_headers')
   .map((entry) => relative(WEB, `${entry.parentPath}/${entry.name}`).replaceAll('\\', '/'));
 
+// A página (o /index.html redireciona para /) recebe a CSP do <meta> mais frame-ancestors; o service worker, a dele.
+// Cada política que chegar tem que ser exatamente a esperada: se o Cloudflare juntar outra, a conferência falha.
+const metaCsp = (await readFile(WEB + 'index.html', 'utf8')).match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1];
 const expectedCsp = {
-  '': /connect-src 'none'.*frame-ancestors 'none'$/, // a página (o /index.html redireciona para /)
-  'sw.js': /^default-src 'none'; connect-src 'self'$/,
+  '': `${metaCsp}; frame-ancestors 'none'`,
+  'sw.js': "default-src 'none'; connect-src 'self'",
 };
 
 async function check(file) {
@@ -25,9 +28,11 @@ async function check(file) {
   if (!response.ok) return `${path || '/'}: HTTP ${response.status}`;
   const live = Buffer.from(await response.arrayBuffer());
   if (!live.equals(await readFile(WEB + file))) return `${path || '/'}: conteúdo diferente do repositório`;
-  const csp = response.headers.get('content-security-policy') ?? '';
-  if (path in expectedCsp && !expectedCsp[path].test(csp)) return `${path || '/'}: CSP inesperada (${csp || 'nenhuma'})`;
-  if (!/default-src/.test(csp) || response.headers.get('x-content-type-options') !== 'nosniff') {
+  const csp = response.headers.get('content-security-policy');
+  if (path in expectedCsp && (!csp || csp.split(/,\s*/).some((policy) => policy !== expectedCsp[path]))) {
+    return `${path || '/'}: CSP inesperada (${csp ?? 'nenhuma'})`;
+  }
+  if (response.headers.get('x-content-type-options') !== 'nosniff' || !response.headers.get('strict-transport-security')) {
     return `${path || '/'}: faltam cabeçalhos de segurança`;
   }
   return null;
