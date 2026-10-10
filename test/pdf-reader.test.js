@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { inflateSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import { openPdf, copyPages, PdfError, PdfStream, PdfName } from '../web/js/pdf-reader.js';
-import { buildPdf, layoutPage } from '../web/js/pdf.js';
+import { layoutPage } from '../web/js/pdf.js';
 import { makeRawPdf, textPageObjects } from './helpers/pdf.js';
+import { buildPdf } from './helpers/qpdf.js';
 
 const latin1 = (bytes) => Buffer.from(bytes).toString('latin1');
 const fixture = (name) => new Uint8Array(readFileSync(new URL(`./fixtures/${name}`, import.meta.url)));

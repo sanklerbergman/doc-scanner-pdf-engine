@@ -4,8 +4,9 @@ import { readFileSync } from 'node:fs';
 import { deflateSync, inflateSync } from 'node:zlib';
 import { openPdf, copyPages, PdfStream } from '../web/js/pdf-reader.js';
 import { compressObjects, compressibleBytes, toRgba } from '../web/js/pdf-compress.js';
-import { buildPdf, readJpegInfo } from '../web/js/pdf.js';
+import { readJpegInfo } from '../web/js/pdf.js';
 import { makeRawPdf } from './helpers/pdf.js';
+import { buildPdf } from './helpers/qpdf.js';
 
 const fixture = (name) => new Uint8Array(readFileSync(new URL(`./fixtures/${name}`, import.meta.url)));
 const SMALL_JPEG = fixture('gray-16x24.jpg'); // 16 × 24, cinza, 335 bytes

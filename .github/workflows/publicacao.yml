@@ -28,6 +28,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+      # Conferência independente dos PDFs que os testes geram (test/helpers/qpdf.js): no CI o qpdf é obrigatório.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends qpdf && qpdf --version
       - run: npm test
 
   # Publica web/ no Cloudflare, com os cabeçalhos de web/_headers (configuração em deploy/wrangler.jsonc).

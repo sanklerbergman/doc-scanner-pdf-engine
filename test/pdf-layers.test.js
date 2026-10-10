@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openPdf, copyPages, PdfError, PdfStream } from '../web/js/pdf-reader.js';
-import { buildPdf } from '../web/js/pdf.js';
 import { makeRawPdf } from './helpers/pdf.js';
+import { buildPdf } from './helpers/qpdf.js';
 
 const latin1 = (bytes) => Buffer.from(bytes).toString('latin1');
 
