@@ -87,6 +87,22 @@ export function qpdfCheck(bytes, qpdf) {
   }
 }
 
+// Problemas que o qpdf achou num PDF gerado e não na entrada. O app copia o conteúdo byte a byte: um stream
+// corrompido na entrada continua corrompido no PDF gerado, e o qpdf avisa nos dois. Isso não é falha do app.
+// Numa entrada danificada, o qpdf às vezes nem chega aos streams dela (o leitor do app recupera mais do que
+// ele): aí, dado de stream ou conteúdo de página com defeito também conta como herdado.
+const CONTENT = /error decoding stream data|input stream is complete|\(content, offset|content stream/;
+
+export function newQpdfProblems(result) {
+  if (!result.qpdf) return [];
+  const kinds = (check) => new Set(check.text
+    .filter((line) => !/^qpdf: |re-processed without filtering/.test(line))
+    .map((line) => line.replace(/^(WARNING|ERROR): arquivo\.pdf[^:]*:\s*/, '$1: ').replace(/decode: .*$/, 'decode').replace(/\d+/g, 'N').trim()));
+  const input = kinds(result.qpdf.input);
+  const damaged = result.qpdf.input.status !== 0;
+  return result.qpdf.outputs.flatMap((out) => [...kinds(out)].filter((kind) => !input.has(kind) && !(damaged && CONTENT.test(kind))));
+}
+
 // Dentro do Worker: recebe {path} ou {bytes} e devolve o resultado. Com qpdf, confere o arquivo de entrada e os
 // PDFs gerados (fora do tempo medido).
 parentPort?.on('message', async ({ path, bytes, qpdf }) => {

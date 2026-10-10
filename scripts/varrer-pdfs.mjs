@@ -16,6 +16,7 @@ import { spawnSync } from 'node:child_process';
 import { readdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
+import { newQpdfProblems } from './lib/exercitar-pdf.mjs';
 import { DEFAULTS, runIsolated } from './lib/isolar.mjs';
 
 const { values, positionals } = parseArgs({
@@ -92,18 +93,9 @@ section('Avisos', [...warnings].sort((a, b) => b[1].length - a[1].length),
 
 let worse = [];
 if (qpdf) {
-  // O app copia o conteúdo byte a byte: um stream corrompido na entrada continua corrompido no PDF gerado, e o
-  // qpdf avisa nos dois. Falha do app é o PDF gerado com um tipo de problema que a entrada não tinha.
-  const kinds = (check) => new Set(check.text
-    .filter((line) => !/^qpdf: |re-processed without filtering/.test(line))
-    .map((line) => line.replace(/^(WARNING|ERROR): arquivo\.pdf[^:]*:\s*/, '$1: ').replace(/decode: .*$/, 'decode').replace(/\d+/g, 'N').trim()));
-  const newProblems = (r) => {
-    const input = kinds(r.qpdf.input);
-    return r.qpdf.outputs.map((out) => [...kinds(out)].filter((kind) => !input.has(kind))).find((list) => list.length);
-  };
-  worse = report.filter((r) => r.qpdf && newProblems(r));
+  worse = report.filter((r) => newQpdfProblems(r).length);
   section('PDF gerado com problema novo no qpdf (que a entrada não tinha)', worse,
-    (r) => `${r.file}: ${newProblems(r).slice(0, 3).join(' / ')}`);
+    (r) => `${r.file}: ${newQpdfProblems(r).slice(0, 3).join(' / ')}`);
   const readable = by('recusado').filter((r) => r.qpdf?.input.status === 0 && !/senha/.test(r.message));
   section('Recusados que o qpdf lê sem nenhum aviso', readable, (r) => `${r.file}: ${r.message}`);
 }

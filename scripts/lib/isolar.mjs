@@ -12,13 +12,15 @@ export const DEFAULTS = {
 };
 
 /**
- * @param {Array<{path?: string, bytes?: Uint8Array}>} jobs
+ * @param {object[]} jobs cada uma {path} ou {bytes}, ou o que o prepare transformar nisso
  * @param {{timeout?: number, memory?: number, concurrency?: number, qpdf?: string | null,
+ *   prepare?: (job: object) => {path?: string, bytes?: Uint8Array},
  *   onResult?: (result: object, job: object, index: number) => void}} [options]
+ *   prepare: monta a tarefa na hora de rodar (no fuzzing, a variação do PDF), sem guardar todas na memória
  * @returns {Promise<object[]>} um resultado por tarefa, na mesma ordem
  */
 export async function runIsolated(jobs, options = {}) {
-  const { timeout, memory, concurrency, qpdf = null, onResult } = { ...DEFAULTS, ...options };
+  const { timeout, memory, concurrency, qpdf = null, prepare = (job) => job, onResult } = { ...DEFAULTS, ...options };
   const results = new Array(jobs.length);
   let next = 0;
 
@@ -30,6 +32,7 @@ export async function runIsolated(jobs, options = {}) {
 
   // Uma tarefa num Worker. dead: o Worker não serve mais (tempo esgotado, memória, saída inesperada).
   const runOne = (worker, job) => new Promise((resolve) => {
+    const { path, bytes } = prepare(job);
     const onMessage = (result) => finish(result);
     const onError = (err) => finish(err.code === 'ERR_WORKER_OUT_OF_MEMORY'
       ? { status: 'memoria', message: `passou de ${memory} MB` }
@@ -42,7 +45,7 @@ export async function runIsolated(jobs, options = {}) {
       resolve({ result, dead });
     }
     worker.once('message', onMessage).once('error', onError).once('exit', onExit);
-    worker.postMessage({ ...job, qpdf });
+    worker.postMessage({ path, bytes, qpdf });
   });
 
   async function lane() {

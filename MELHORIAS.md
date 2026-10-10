@@ -654,10 +654,17 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 
 ### Fases
 
-- [ ] `qpdf --check` nos PDFs gerados pelos testes, no CI
-- [ ] Script de varredura e primeira rodada no conjunto do PDF.js, com as correções
-- [ ] Fuzzing
+- [x] `qpdf --check` nos PDFs gerados pelos testes, no CI (`test/helpers/qpdf.js`)
+- [x] Script de varredura e primeira rodada no conjunto do PDF.js, com as correções
+- [x] Fuzzing (`scripts/fuzz-pdf.mjs`, e uma rodada curta em todo `npm test`)
+
+### Resultado da primeira rodada
+
+- **Varredura** dos 989 PDFs do conjunto do PDF.js: nenhum travamento, erro inesperado ou estouro de memória; o mais lento levou 1,3 s. Achou PDFs com senha recusados como "corrompidos" (9 arquivos, com a xref em stream) e uma página com `/Resources` inválido copiada para o PDF gerado. Os 6 recusados como corrompidos não são recuperáveis nem pelo qpdf.
+- **Fuzzing:** achou travamentos (contagens absurdas na xref, `/First` negativo), erros inesperados (`/Filter`, `/Annots` e `/Fields` de tipo errado) e PDFs gerados inválidos (`/Contents` com o que não é stream, números como `1e+25`, `Infinity` e `NaN`). Achou também, por tabela, o conteúdo da página sumindo quando o `/Contents` é uma lista indireta e a página tem anotação visível. Depois das correções, centenas de milhares de variações passaram sem falha.
+- **O que fica como está:** dado corrompido dentro de um stream (imagem ou texto da página) é copiado byte a byte, como sempre foi; o PDF gerado mostra o que o original mostrava. O script só aponta como falha do app o problema que a entrada não tinha.
 
 ### Decisões
 
-- **Versão:** são melhorias internas; entram na próxima versão que sair.
+- **Versão:** são melhorias internas; entram na próxima versão que sair. As correções no leitor de PDF são patch.
+- **O fuzzing do `npm test`** usa 20 mil variações fixas (semente 1), em uns 5 segundos. Rodadas com outras sementes ou com PDFs reais como base ficam no script.
