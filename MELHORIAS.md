@@ -84,7 +84,7 @@ O caminho das fotos não muda. O PDF gerado a partir de imagens deve continuar i
 - [x] Layout: quebra de linha, paginação e palavra maior que a linha
 - [x] PDF: estrutura válida (xref) com páginas de texto e mistura de texto com foto
 - [x] PDF de fotos continua idêntico ao de antes
-- [ ] Teste real no iPhone, no site publicado
+- [x] Teste real no iPhone, no site publicado
 
 ### Decisões
 
