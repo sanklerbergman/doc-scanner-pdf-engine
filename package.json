@@ -1,6 +1,6 @@
 {
   "name": "doc-scanner-pdf-engine",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Foto, Word ou PDF: tudo vira PDF, 100% no navegador. Sem upload, sem rastreio.",
   "private": true,
   "type": "module",
