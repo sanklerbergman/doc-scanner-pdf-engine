@@ -1,6 +1,6 @@
 # Scanner Doc
 
-Foto de documento vira PDF, **100% no navegador**. Sem upload, sem cadastro, sem rastreio.
+Foto, Word ou PDF: tudo vira PDF, **100% no navegador**. Sem upload, sem cadastro, sem rastreio.
 Feito pela comunidade, para a comunidade.
 
 **Usar agora: https://sanklerbergman.github.io/doc-scanner-pdf-engine/**
