@@ -176,7 +176,7 @@ Tarefas:
 - [x] Comprimir: tamanho menor em PDF de fotos e original mantido quando não diminui
 - [x] Saída sem `/Info`, XMP nem JavaScript
 - [x] Detecção de assinatura digital
-- [ ] Abrir os PDFs gerados no Acrobat, no Chrome e no visualizador do iPhone
+- [x] Abrir os PDFs gerados no Acrobat, no Chrome e no visualizador do iPhone
 
 ### Decisões
 
