@@ -1,0 +1,55 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+// Lê o web/_headers (formato do Cloudflare): linha sem recuo = caminho; linha recuada = "Nome: valor" ou "! Nome".
+function readRules() {
+  const rules = new Map();
+  let current;
+  for (const line of readFileSync(new URL('../web/_headers', import.meta.url), 'utf8').split(/\r?\n/)) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    if (!/^\s/.test(line)) {
+      current = { headers: new Map(), detached: new Set() };
+      rules.set(line.trim(), current);
+    } else if (line.trim().startsWith('! ')) {
+      current.detached.add(line.trim().slice(2).toLowerCase());
+    } else {
+      const at = line.indexOf(':');
+      current.headers.set(line.slice(0, at).trim().toLowerCase(), line.slice(at + 1).trim());
+    }
+  }
+  return rules;
+}
+
+const rules = readRules();
+const metaCsp = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8')
+  .match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1];
+
+test('todo arquivo sai com os cabeçalhos de segurança e uma CSP que não libera nada', () => {
+  const all = rules.get('/*');
+  assert.ok(all, 'falta a regra /*');
+  assert.match(all.headers.get('strict-transport-security'), /^max-age=\d{8,}/);
+  assert.equal(all.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(all.headers.get('x-frame-options'), 'DENY');
+  assert.equal(all.headers.get('referrer-policy'), 'no-referrer');
+  assert.match(all.headers.get('permissions-policy'), /camera=\(self\)/);
+  assert.match(all.headers.get('content-security-policy'), /^default-src 'none';.*frame-ancestors 'none'/);
+});
+
+test('a página recebe a mesma CSP do <meta>, mais frame-ancestors', () => {
+  for (const path of ['/', '/index.html']) {
+    const rule = rules.get(path);
+    assert.ok(rule, `falta a regra ${path}`);
+    // Sem o "! Content-Security-Policy", a política de /* se somaria a esta e bloquearia a página inteira.
+    assert.ok(rule.detached.has('content-security-policy'), `${path} precisa desligar a CSP de /*`);
+    assert.equal(rule.headers.get('content-security-policy'), `${metaCsp}; frame-ancestors 'none'`);
+  }
+  assert.match(metaCsp, /connect-src 'none'/);
+});
+
+test('o service worker só consegue buscar arquivos do próprio site', () => {
+  const rule = rules.get('/sw.js');
+  assert.ok(rule, 'falta a regra /sw.js');
+  assert.ok(rule.detached.has('content-security-policy'));
+  assert.equal(rule.headers.get('content-security-policy'), "default-src 'none'; connect-src 'self'");
+});

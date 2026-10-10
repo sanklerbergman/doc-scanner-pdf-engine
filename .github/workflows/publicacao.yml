@@ -1,0 +1,59 @@
+name: Testes e publicação
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Só leitura em todos os jobs. Publicar depende do token do Cloudflare, que só o job de deploy recebe.
+permissions:
+  contents: read
+
+# PR tem grupo próprio (um PR novo só cancela o anterior do mesmo PR).
+# Na main, o grupo "producao" enfileira: um deploy em andamento nunca é cancelado.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'producao' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# As ações são fixadas pelo hash do commit (a tag pode ser movida por quem controla o repositório da ação).
+# O Dependabot abre PR quando sai versão nova.
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: npm test
+
+  # Publica web/ no Cloudflare, com os cabeçalhos de web/_headers (configuração em deploy/wrangler.jsonc).
+  # O token fica no ambiente "producao", que só libera segredos para a branch main.
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: producao
+      url: https://scanner.sankler.com.br/
+    defaults:
+      run:
+        working-directory: deploy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      # Versões e hashes fixados no package-lock.json; nenhum script de instalação roda.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      # O que está no ar tem que ser exatamente o que está aqui, com os cabeçalhos de segurança.
+      - run: node conferir.mjs

@@ -6,7 +6,7 @@ Valeu por querer ajudar! Issues, ideias, traduções e PRs são bem-vindos.
 
 1. **Nenhum dado do usuário sai do navegador.** Nada de upload, API externa ou "só um log".
 2. **Nada de rastreamento.** Sem analytics, cookies, pixels, fingerprinting ou armazenamento persistente de dados do usuário.
-3. **Nada de terceiros em runtime.** Sem CDN, fontes externas ou scripts de outros domínios. Não afrouxe a Content-Security-Policy do `index.html`.
+3. **Nada de terceiros em runtime.** Sem CDN, fontes externas ou scripts de outros domínios. Não afrouxe a Content-Security-Policy do `index.html` nem os cabeçalhos de `web/_headers`.
 4. **Sem dependências sem conversa prévia.** O app é JavaScript puro de propósito: fácil de auditar e de rodar. As exceções ficam em `web/vendor/` (decodificador de HEIC, renderizador de PDF e gerador de QR Code), copiadas para o repositório e carregadas sob demanda.
 
 ## Fluxo
@@ -20,6 +20,7 @@ npm test    # testes
 - Mantenha o estilo do código existente (ES modules, sem build).
 - Teste no celular (ou no modo responsivo do navegador) quando mexer na interface.
 - Mudou arquivo do app? Aumente a versão de `CACHE` em `web/sw.js`.
+- O `npm start` não envia os cabeçalhos de segurança. Para ver o site como ele fica no ar: `cd deploy && npm ci --ignore-scripts && npx wrangler dev`.
 - Nova release: a versão fica em `package.json` e no rodapé do `web/index.html` (o teste confere que batem); depois `gh release create vX.Y.Z --generate-notes`.
 - Regras de segurança (bibliotecas, política da página, workflow): veja [SECURITY.md](SECURITY.md).
 

@@ -1,9 +1,9 @@
 // Service worker: guarda só os arquivos do próprio app para funcionar offline.
 // Rede primeiro (pega atualizações), cache como reserva. Imagens do usuário nunca passam por aqui.
-const CACHE = 'scanner-doc-v21';
+// A política de segurança dele vem do cabeçalho (web/_headers): só consegue buscar arquivos do próprio site.
+const CACHE = 'scanner-doc-v22';
 const APP_FILES = [
   './',
-  './index.html',
   './css/style.css',
   './js/app.js',
   './js/pdf.js',

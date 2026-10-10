@@ -1,0 +1,29 @@
+# Cabeçalhos de segurança, enviados pelo Cloudflare junto com cada arquivo (este arquivo não é publicado).
+# Não afrouxe nenhuma política daqui (ver SECURITY.md). O teste test/headers.test.js confere as regras.
+
+# Todo arquivo: só HTTPS, sem adivinhar tipo, sem enviar endereço de origem, nunca dentro de iframe,
+# câmera só para o próprio site. A CSP padrão não libera nada; a página e o service worker têm a sua logo abaixo.
+/*
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  Permissions-Policy: camera=(self), microphone=(), geolocation=(), display-capture=(), payment=(), usb=()
+  Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+
+# A página: a mesma política do <meta> do index.html, mais frame-ancestors (que só vale por cabeçalho).
+# Os Workers nascem de blob e herdam esta política, inclusive o connect-src 'none'.
+/
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; connect-src 'none'; font-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'self' blob:; manifest-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+
+/index.html
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; connect-src 'none'; font-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'self' blob:; manifest-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'
+
+# O service worker (cache offline) só busca arquivos do próprio site. Não carrega script nem abre outra conexão.
+/sw.js
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; connect-src 'self'

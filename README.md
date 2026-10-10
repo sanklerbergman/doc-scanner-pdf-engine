@@ -24,8 +24,8 @@ Feito pela comunidade, para a comunidade.
 | Garantia | Como |
 | --- | --- |
 | Nenhum arquivo sai do aparelho | Todo o processamento é feito no navegador (`<canvas>` e um Web Worker). Não há backend. |
-| Nem dá para enviar | CSP com `connect-src 'none'`: o navegador bloqueia fetch/XHR/WebSocket/beacon na página e no Worker dos filtros, que são os únicos lugares por onde as imagens passam. |
-| Zero terceiros | Sem analytics, cookies, CDN ou fontes externas. As três bibliotecas (libheif, para HEIC, o PDF.js, para mostrar as páginas dos PDFs, e um gerador de QR Code) são servidas pelo próprio site e só carregam quando precisam. |
+| Nem dá para enviar | CSP com `connect-src 'none'`: o navegador bloqueia fetch/XHR/WebSocket/beacon na página e nos Workers, que são os únicos lugares por onde os arquivos passam. O service worker (cache offline) tem política própria: só busca arquivos do próprio site. |
+| Zero terceiros | Sem analytics, cookies, scripts de CDN ou fontes externas. As três bibliotecas (libheif, para HEIC, o PDF.js, para mostrar as páginas dos PDFs, e um gerador de QR Code) são servidas pelo próprio site e só carregam quando precisam. |
 | Nada guardado | Sem `localStorage`/IndexedDB. O service worker só faz cache dos arquivos do app. |
 | PDF limpo | A foto é redesenhada, o que descarta o EXIF (GPS, modelo do celular, data). Do .docx, os metadados (autor, empresa, datas) nem são lidos. O PDF não tem `/Info`, datas nem "Producer". |
 
@@ -33,9 +33,11 @@ Dá para conferir: F12 → aba **Rede** enquanto gera um PDF. As únicas requisi
 
 ### Limites dessa garantia
 
-- A política vale para a página e para o Worker dos filtros. O service worker (`sw.js`, cache offline) não é coberto por ela, porque o GitHub Pages não permite enviar cabeçalhos; ele não recebe imagens, só os arquivos do próprio app.
-- Nenhuma política de navegador impede o próprio site de ser alterado. A proteção contra isso é o código ser aberto, com o histórico de mudanças público.
-- Quem hospeda uma cópia modificada pode trocar qualquer coisa, inclusive a chave Pix. O endereço oficial é https://scanner.sankler.com.br/.
+- A política chega de dois jeitos. O `<meta>` do `index.html` vale para a página e para os Workers. Os cabeçalhos que o Cloudflare envia com cada arquivo (regras em [`web/_headers`](web/_headers)) repetem essa política e cobrem o que o `<meta>` não alcança: o service worker, que só consegue buscar arquivos do próprio site, e o bloqueio do site dentro de outro (iframe).
+- O Cloudflare, que hospeda o site, vê que alguém abriu a página, como em qualquer site, mas nunca vê os arquivos. Depois de cada publicação, o workflow confere que cada arquivo no ar é idêntico ao do repositório, sem nada injetado no caminho.
+- Nenhuma política de navegador impede o próprio site de ser alterado por quem controla o repositório ou a conta do Cloudflare. A proteção contra isso é o código ser aberto, com o histórico de mudanças público, e a publicação sair só da branch `main`, depois dos testes.
+- Extensões instaladas no navegador ficam fora de qualquer política da página: uma extensão com permissão para ler sites vê o que aparece na tela. Para documentos sensíveis, use um navegador sem extensões ou uma janela anônima, onde elas costumam vir desligadas.
+- Quem hospeda uma cópia modificada pode trocar qualquer coisa, inclusive a chave Pix, e pode não enviar os cabeçalhos. O endereço oficial é https://scanner.sankler.com.br/.
 
 Achou uma falha de segurança? Veja [SECURITY.md](SECURITY.md).
 

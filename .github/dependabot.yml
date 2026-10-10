@@ -1,7 +1,14 @@
-# Mantém as ações do workflow atualizadas (elas ficam fixadas pelo hash do commit).
+# Mantém as ações do workflow (fixadas pelo hash do commit) e o wrangler da publicação atualizados.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+  - package-ecosystem: npm
+    directory: /deploy
+    schedule:
+      interval: monthly
+    # Versão nova só depois de duas semanas publicada (dá tempo de pacote comprometido ser descoberto).
+    cooldown:
+      default-days: 14

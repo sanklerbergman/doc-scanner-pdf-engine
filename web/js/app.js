@@ -7,9 +7,9 @@ import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
 import { parseRanges } from './ranges.js';
 
-// O GitHub Pages não permite enviar o cabeçalho que proíbe embutir o site dentro de outro (frame-ancestors).
-// Então o próprio app se recusa a rodar dentro de um iframe: evita que outro site o exiba como se fosse dele
-// ou sobreponha botões falsos aos nossos (clickjacking).
+// O site oficial já proíbe ser embutido em outro pelo cabeçalho frame-ancestors (web/_headers). Esta checagem
+// fica como segunda camada, e protege cópias hospedadas onde não dá para enviar cabeçalhos: o app se recusa a
+// rodar dentro de um iframe, para outro site não exibi-lo como se fosse dele nem sobrepor botões falsos (clickjacking).
 if (window.top !== window.self) {
   const link = document.createElement('a');
   link.href = location.href;
