@@ -7,12 +7,29 @@
 import * as pdfjs from '../vendor/pdfjs/pdf.min.js';
 
 let started = false;
+let failed; // rejeita se o módulo do worker não carregar
 function startWorker() {
   if (started) return;
   started = true;
   const url = new URL('../vendor/pdfjs/pdf.worker.min.js', import.meta.url).href;
   const entry = new Blob([`import ${JSON.stringify(url)};`], { type: 'text/javascript' });
-  pdfjs.GlobalWorkerOptions.workerPort = new Worker(URL.createObjectURL(entry), { type: 'module' });
+  const worker = new Worker(URL.createObjectURL(entry), { type: 'module' });
+  // Se o módulo não carregar (sem rede e sem cache, por exemplo), o PDF.js esperaria o worker para sempre e a
+  // leitura do PDF não terminaria. Assim, as leituras pendentes falham (a página aparece como cartão) e a
+  // próxima tenta um worker novo. Depois da primeira mensagem, o worker carregou e o PDF.js cuida dos erros.
+  failed = new Promise((_, reject) => {
+    const onError = (event) => {
+      event.preventDefault();
+      worker.terminate();
+      started = false;
+      documents.clear();
+      reject(new Error('O worker do PDF.js não carregou.'));
+    };
+    worker.addEventListener('error', onError, { once: true });
+    worker.addEventListener('message', () => worker.removeEventListener('error', onError), { once: true });
+  });
+  failed.catch(() => {});
+  pdfjs.GlobalWorkerOptions.workerPort = worker;
 }
 
 const documents = new Map(); // chave (documento do pdf-reader) → promessa do documento do PDF.js
@@ -28,8 +45,12 @@ function load(key, bytes) {
       stopAtErrors: false,
       verbosity: pdfjs.VerbosityLevel.ERRORS,
     });
-    documents.set(key, task.promise);
-    task.promise.catch(() => documents.delete(key));
+    const promise = Promise.race([task.promise, failed]);
+    documents.set(key, promise);
+    promise.catch(() => {
+      documents.delete(key);
+      task.destroy().catch(() => {});
+    });
   }
   return documents.get(key);
 }

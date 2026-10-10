@@ -1,7 +1,7 @@
 // Service worker: guarda só os arquivos do próprio app para funcionar offline.
 // Rede primeiro (pega atualizações), cache como reserva. Imagens do usuário nunca passam por aqui.
 // A política de segurança dele vem do cabeçalho (web/_headers): só consegue buscar arquivos do próprio site.
-const CACHE = 'scanner-doc-v24';
+const CACHE = 'scanner-doc-v25';
 const APP_FILES = [
   './',
   './css/style.css',
@@ -49,8 +49,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
+  // Fora a navegação, busca pela URL. O WebKit confere a política deste arquivo pela finalidade do pedido original:
+  // o import feito de dentro de um Worker (o do PDF.js) cai em worker-src, que aqui é 'none', e a leitura do PDF
+  // travava. Pela URL vale o connect-src 'self', que é a regra deste arquivo: só arquivos do próprio site.
   event.respondWith(
-    fetch(request)
+    fetch(request.mode === 'navigate' ? request : request.url)
       .then((response) => {
         if (response.ok) {
           const copy = response.clone();
