@@ -20,7 +20,7 @@ npm test    # testes
 - Mantenha o estilo do código existente (ES modules, sem build).
 - Teste no celular (ou no modo responsivo do navegador) quando mexer na interface.
 - Mudou arquivo do app? Aumente a versão de `CACHE` em `web/sw.js`.
-- O `npm start` não envia os cabeçalhos de segurança. Para ver o site como ele fica no ar: `cd deploy && npm ci --ignore-scripts && npx wrangler dev`.
+- O `npm start` não envia os cabeçalhos de segurança. Para ver o site como ele fica no ar: `cd deploy && npm ci --ignore-scripts && npx wrangler telemetry disable && npx wrangler dev` (o `telemetry disable` impede o wrangler de enviar estatísticas de uso ao Cloudflare).
 - Nova release: a versão fica em `package.json` e no rodapé do `web/index.html` (o teste confere que batem); depois `gh release create vX.Y.Z --generate-notes`.
 - Regras de segurança (bibliotecas, política da página, workflow): veja [SECURITY.md](SECURITY.md).
 

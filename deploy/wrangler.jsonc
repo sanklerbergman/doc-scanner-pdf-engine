@@ -8,7 +8,8 @@
   // Só o endereço oficial: sem cópia em *.workers.dev e sem endereços de prévia.
   "workers_dev": false,
   "preview_urls": false,
-  // Sem registro de acessos no Cloudflare e sem estatísticas de uso do próprio wrangler.
+  // Sem registro de acessos no Cloudflare e sem estatísticas de uso do próprio wrangler
+  // (o send_metrics não cobre todos os eventos; o workflow também define WRANGLER_SEND_METRICS=false).
   "observability": { "enabled": false },
   "send_metrics": false,
   "dependencies_instrumentation": { "enabled": false }
