@@ -229,6 +229,22 @@ test('números absurdos não estragam o PDF gerado (achado do fuzzing)', async (
   assert.deepEqual(widths, [1e25, 0, -1e25, 0.5, 2147483648]);
 });
 
+test('objeto que é só uma referência: a cópia aponta direto para o objeto final (achado do fuzzing)', async () => {
+  const doc = await openPdf(makeRawPdf({
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    3: '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 9 0 R >> >> /Contents 4 0 R >>',
+    4: { data: 'BT /F1 12 Tf (x) Tj ET' },
+    5: '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    9: '10 0 R', // referência para referência
+    10: '5 0 R',
+  }).bytes);
+  const { bytes, doc: copy } = await merge([[doc, 0]]); // e o qpdf confere o PDF gerado
+  assert.doesNotMatch(latin1(bytes), /obj\n\d+ 0 R\nendobj/);
+  const font = copy.resolve(copy.resolve(copy.resolve(copy.pages[0].attrs.Resources).get('Font')).get('F1'));
+  assert.equal(font.get('BaseFont').value, 'Helvetica');
+});
+
 test('/Resources que não é dicionário vira um dicionário vazio na cópia', async () => {
   const doc = await openPdf(makeRawPdf({
     1: '<< /Type /Catalog /Pages 2 0 R >>',

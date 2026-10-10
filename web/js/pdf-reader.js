@@ -764,8 +764,12 @@ export function copyPages(doc, indices, { replace } = {}) {
   // names: nome do dicionário de recursos (/Font, /XObject…) quando o valor é um deles.
   function write(value, out, top = false, names = null) {
     if (value instanceof PdfRef) {
+      // Objeto cujo valor é só outra referência ("9 0 obj 10 0 R endobj") não é válido no PDF gerado:
+      // a cópia aponta direto para o objeto final da cadeia.
+      let target = value;
+      while (doc.object(target.num) instanceof PdfRef && doc.resolve(target) !== null) target = doc.object(target.num);
       if (doc.resolve(value) === null) out.push('null');
-      else out.push(refTo(value));
+      else out.push(refTo(target));
     } else if (value instanceof PdfName) out.push(formatName(value.value));
     else if (value instanceof PdfString) out.push(formatString(value.bytes));
     else if (typeof value === 'number') out.push(formatNumber(value));
