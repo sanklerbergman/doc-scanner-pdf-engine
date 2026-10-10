@@ -498,3 +498,166 @@ O que falta no PDF de hoje para ele ser PDF/A-2b:
 - Quais sistemas de processo eletrônico conferem de fato o PDF/A no envio, e quais só recomendam?
 - Vale mirar o PDF/A-2u (todo texto com Unicode)? O texto do Word já sai com `ToUnicode`; falta ver se a camada do OCR com `WinAnsiEncoding` passa no veraPDF.
 - Aceitar páginas de PDFs que já são PDF/A (o original declara `pdfaid`)? Seria preciso conferir as fontes e as cores de cada página copiada.
+
+## Ideias vindas do PdfCraft
+
+O [PdfCraft](https://github.com/storytold/pdfcraft) (Rust, licença MIT ou Apache-2.0) foi analisado em outubro de 2026. O código dele **não entra no app**:
+
+- é Rust compilado para WebAssembly, e exigiria uma etapa de build;
+- tem cerca de 750 arquivos, grande demais para auditar como as bibliotecas de `web/vendor/`;
+- está em fase alfa, e o próprio README diz que o fuzzing ainda encontra travamentos com arquivos maliciosos.
+
+Três ideias dele valem a pena e estão planejadas abaixo. A licença permite estudar o código e portar trechos, com crédito. A lista de "informações ocultas" dele também revelou uma falha no app: o conteúdo de camadas ocultas aparecia no PDF juntado. A correção saiu na v2.0.1 (`web/js/pdf-layers.js`).
+
+## Tarjar dados (de verdade)
+
+**Objetivo:** cobrir partes do documento (CPF, endereço, número de conta, assinatura) **apagando** o que está embaixo, e não só pintando por cima. Tudo no aparelho.
+
+**Por que importa:** a tarja feita com um retângulo preto no Word ou num editor de PDF deixa o texto embaixo, e dá para selecionar e copiar. É um vazamento comum em documentos enviados a processos e a órgãos públicos.
+
+**Fora do escopo:**
+
+- **Tarja que só desenha por cima:** é justamente o erro que esta função evita.
+- **Busca automática em foto sem OCR:** a busca só funciona onde há texto. Em foto, a tarja é manual até o OCR da v3.0.0.
+
+### Abordagem
+
+A referência é o módulo de tarja do PdfCraft, que segue três princípios: apagar o conteúdo sob a área, conferir o resultado relendo a página e falhar em vez de deixar algo para trás. O app segue os mesmos princípios, com um caminho mais simples para cada tipo de página:
+
+- **Foto:** a tarja pinta os pixels da imagem antes de ela ir para o PDF. O que estava embaixo deixa de existir.
+- **Word:** o próprio app distribui o texto, então os trechos sob a tarja não entram no PDF, e a caixa é desenhada no lugar.
+- **Página de outro PDF:** a página vira imagem (o PDF.js já desenha as páginas), a tarja pinta os pixels e a página entra no PDF como foto. Perde o texto selecionável dessa página, mas não sobra nada embaixo. Editar o conteúdo do PDF, como o PdfCraft faz, preserva o texto, mas é muito mais código e mais risco; fica para depois, se houver pedido.
+- **Conferência:** depois de montar, o app relê o PDF novo e confere que não há texto dentro de nenhuma área tarjada. Se houver, o PDF não é entregue.
+
+**Busca automática (opcional):** sugere tarjas para CPF e CNPJ (com dígito verificador), e-mail, telefone, CEP e número de cartão (com o dígito de Luhn). Os padrões do PdfCraft são americanos (SSN, telefone dos EUA), então os do app são próprios. A pessoa confirma cada sugestão.
+
+### Fases
+
+#### Fase 1: tarja manual em fotos e documentos do Word
+
+- [ ] Na tela cheia da página, "Tarjar": arrastar retângulos, ver a lista de tarjas da página e desfazer
+- [ ] Foto: pintar os pixels antes de gerar o JPEG
+- [ ] Word: tirar da distribuição do texto os trechos sob a tarja e desenhar a caixa
+- [ ] A miniatura mostra as tarjas
+
+#### Fase 2: páginas de PDF e conferência
+
+- [ ] Página de PDF com tarja vira imagem, na resolução da qualidade escolhida
+- [ ] Conferência do PDF novo: nenhum texto dentro das áreas tarjadas
+- [ ] Aviso de que a página tarjada perde o texto selecionável
+
+#### Fase 3: busca automática
+
+- [ ] Padrões brasileiros, com dígito verificador onde existe
+- [ ] Busca no texto do Word e no texto dos PDFs (PDF.js, `getTextContent`); nas fotos, depois do OCR
+- [ ] Cada sugestão confirmada pela pessoa
+
+### Segurança e privacidade
+
+- **Apagar de verdade:** nunca só desenhar por cima.
+- **Falha fechada:** se a conferência encontrar texto sob uma tarja, o PDF não sai.
+- **Os dados encontrados pela busca** só existem na memória e não vão para o console.
+- **Limites avisados:** a tarja não alcança cópias do documento que já existem, e PDF assinado perde a assinatura (o aviso atual já cobre isso).
+
+### Testes
+
+- [ ] Foto: os pixels sob a tarja têm só a cor da tarja
+- [ ] Word: o texto sob a tarja não está no PDF, nem depois de descompactar
+- [ ] PDF: a página tarjada é só imagem, e nenhum texto dela fica no arquivo
+- [ ] Conferência: um PDF montado de propósito com texto sob a tarja é recusado
+- [ ] Padrões: CPF e CNPJ válidos e inválidos, com e sem pontuação, e falsos positivos comuns (número de processo, datas)
+- [ ] Teste real no iPhone, no site publicado
+
+### Decisões
+
+- **Página de PDF vira imagem:** é o caminho sem chance de sobrar texto. O preço é perder o texto selecionável na página tarjada, e o app avisa.
+- **Sem biblioteca nova.**
+- **Versão:** a decidir.
+
+### Perguntas em aberto
+
+- A tarja leva algum texto, como "tarjado", ou fica só a caixa?
+- Vale, no futuro, tarjar editando o conteúdo do PDF, para preservar o texto da página?
+
+## Abrir PDF com senha
+
+**Objetivo:** abrir PDFs protegidos por senha para juntar, separar e comprimir, como os outros. É o caso de contracheques, extratos e faturas, que muitas vezes usam parte do CPF como senha. Opcional: gerar o PDF novo com senha.
+
+**Por que importa:** hoje o app recusa esses PDFs e pede que a pessoa salve uma cópia sem senha em outro programa.
+
+**Fora do escopo:**
+
+- **Descobrir ou quebrar senha:** o app só abre com a senha que a pessoa digita. Também não sugere senha (nem CPF).
+- **PDF cifrado com certificado digital** (em vez de senha): é outro mecanismo, raro, e fica de fora.
+
+### Abordagem
+
+- Implementa o mecanismo de senha padrão do PDF, revisões 2 a 6: RC4 de 40 e 128 bits, AES-128 e AES-256.
+- O navegador faz o AES (Web Crypto, AES-CBC) e os hashes SHA-256, SHA-384 e SHA-512. O app traz em JS só o que o Web Crypto não tem: o MD5 e o RC4, pequenos e testados com os vetores oficiais. Os dois são fracos e só servem para ler arquivos antigos, nunca para gerar.
+- A senha é normalizada com SASLprep (revisão 6), como manda a norma.
+- Primeiro tenta a senha vazia: muitos PDFs têm só restrições, sem senha para abrir.
+- Strings e streams são decifrados ao ler os objetos, e o PDF novo sai sem criptografia, com aviso.
+- A referência para conferir o resultado é o módulo `crypt` do PdfCraft e os testes dele. Se algum trecho for portado, ele leva o crédito e a licença.
+
+### Fases
+
+#### Fase 1: abrir
+
+- [ ] `pdf-crypt.js`: chave a partir da senha (revisões 2 a 6), RC4, MD5 e decifragem por objeto
+- [ ] `pdf-reader.js`: decifrar strings e streams; parar de recusar PDF com `/Encrypt`
+- [ ] Interface: pedir a senha quando a vazia não abre, com mensagem clara para senha errada
+- [ ] Aviso: "O PDF novo sai sem senha"
+
+#### Fase 2: proteger o PDF gerado
+
+- [ ] Opção "Proteger com senha" ao gerar: AES-256 (revisão 6), só com senha de abertura e sem senha de proprietário escondida
+
+### Segurança e privacidade
+
+- **A senha só existe na memória:** não fica guardada, não vai para o console nem para mensagens de erro. O campo fica fora de formulário, com `autocomplete="off"`, e é limpo depois do uso.
+- **Nada sai do aparelho:** a decifragem é local, como o resto.
+- **Aviso do PDF sem senha:** a pessoa pode estar contando com a proteção do original.
+- **Permissões do autor:** ver as perguntas em aberto.
+
+### Testes
+
+- [ ] PDFs de teste cifrados com o qpdf, em cada revisão, com os comandos anotados: senha de abertura, só senha de proprietário e senha com acentos
+- [ ] Senha errada, senha vazia e senha Unicode
+- [ ] MD5 (RFC 1321) e RC4 com os vetores oficiais
+- [ ] O conteúdo decifrado bate com o `qpdf --decrypt` do mesmo arquivo
+- [ ] Teste real no iPhone, no site publicado
+
+### Decisões
+
+- **AES pelo navegador e só MD5 e RC4 em JS:** menos código próprio de criptografia.
+- **Versão:** a decidir.
+
+### Perguntas em aberto
+
+- **Respeitar as permissões do autor?** Um PDF pode abrir sem senha e mesmo assim proibir alterações, incluindo juntar e separar páginas. O Acrobat e o PdfCraft respeitam isso e pedem a senha de proprietário. Respeitar é o correto com o autor do documento, mas pode impedir justamente o uso comum (juntar o contracheque com outros documentos). A recomendação é respeitar e explicar o motivo na mensagem.
+
+## Testes com PDFs maliciosos e conferência dos PDFs gerados
+
+**Objetivo:** garantir que nenhum PDF, quebrado ou feito para atacar, trave o app, estoure a memória ou gere um PDF inválido. O app abre arquivos de qualquer origem, então isso é segurança, não só qualidade.
+
+### Abordagem
+
+- **Conferência independente no CI:** os PDFs que os testes geram passam pelo `qpdf --check`, instalado pelo apt do Ubuntu, além do próprio leitor do app.
+- **Varredura de arquivos reais:** um script local (`scripts/varrer-pdfs.mjs`) abre, junta, divide e comprime cada PDF de uma pasta, com tempo limite por arquivo, e anota travamentos, erros inesperados e lentidão. A base é o conjunto de testes do PDF.js (cerca de mil arquivos, muitos quebrados de propósito), como o PdfCraft faz com o motor dele.
+- **Fuzzing simples:** variações dos PDFs de teste (bytes trocados, arquivo cortado, números absurdos), rodando o leitor com tempo limite.
+- Cada problema encontrado vira um teste de regressão.
+
+### Segurança
+
+- Os arquivos da varredura são de terceiros e tratados como não confiáveis: ficam numa pasta própria, fora do repositório (também por causa do tamanho e das licenças variadas), e o script só os lê.
+- Nada disso roda no navegador de quem usa o app; é só para quem desenvolve.
+
+### Fases
+
+- [ ] `qpdf --check` nos PDFs gerados pelos testes, no CI
+- [ ] Script de varredura e primeira rodada no conjunto do PDF.js, com as correções
+- [ ] Fuzzing
+
+### Decisões
+
+- **Versão:** são melhorias internas; entram na próxima versão que sair.

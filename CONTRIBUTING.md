@@ -31,4 +31,4 @@ npm test    # testes
 - Arrastar para reordenar páginas
 - Interface em outros idiomas
 
-Funcionalidades maiores (abrir .docx, juntar, dividir e comprimir PDF, reconhecer texto com OCR, assinar com certificado digital e gerar PDF/A) estão planejadas em [MELHORIAS.md](MELHORIAS.md).
+Funcionalidades maiores (abrir .docx, juntar, dividir e comprimir PDF, reconhecer texto com OCR, assinar com certificado digital, gerar PDF/A, tarjar dados e abrir PDF com senha) estão planejadas em [MELHORIAS.md](MELHORIAS.md).
