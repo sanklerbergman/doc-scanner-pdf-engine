@@ -9,6 +9,7 @@ import { parseRanges } from './ranges.js';
 import { paintRedactions, rotateRedactions, toUnrotated, toRotatedRects, redactLayout, filterWords, textUnderRedactions } from './redact.js';
 import { findInPieces, padRect, TYPE_LABELS } from './find-data.js';
 import { textWidth } from './fonts.js';
+import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex } from './stamp.js';
 
 // O site oficial já proíbe ser embutido em outro pelo cabeçalho frame-ancestors (web/_headers). Esta checagem
 // fica como segunda camada, e protege cópias hospedadas onde não dá para enviar cabeçalhos: o app se recusa a
@@ -62,6 +63,7 @@ const loadDocuments = lazy('./document.js'); // .docx: ZIP, XML, layout
 const loadPdfTools = lazy('./pdf-open.js'); // .pdf: leitor de PDF
 const loadOcr = lazy('./ocr.js'); // OCR: o motor (vendor/tesseract) só carrega quando o reconhecimento começa
 const loadSigning = lazy('./sign.js'); // assinatura: PKCS#12, certificado e CMS
+const loadAppend = lazy('./pdf-append.js'); // assinar um PDF que já existe sem reescrever o arquivo
 const loadCrypt = lazy('./pdf-crypt.js'); // proteger o PDF gerado com senha
 
 const $ = (selector) => document.querySelector(selector);
@@ -119,6 +121,14 @@ const els = {
   signIssuer: $('#sign-issuer'),
   signValid: $('#sign-valid'),
   signChain: $('#sign-chain'),
+  signMode: $('#sign-mode'),
+  stampField: $('#stamp-field'),
+  stamp: $('#stamp'),
+  stampBlocked: $('#stamp-blocked'),
+  stampOptions: $('#stamp-options'),
+  stampPage: $('#stamp-page'),
+  stampGrid: $('#stamp-grid'),
+  stampPreview: $('#stamp-preview'),
   signStatus: $('#sign-status'),
   signCancel: $('#sign-cancel'),
   signNext: $('#sign-next'),
@@ -311,9 +321,11 @@ async function addPdfFile(file) {
     }
     renderPages();
     const count = pages.length === 1 ? '1 página adicionada' : `${pages.length} páginas adicionadas`;
-    // PDF pesado por causa de imagens: já liga a compressão, a não ser que a pessoa tenha escolhido antes.
+    // PDF pesado por causa de imagens: já liga a compressão, a não ser que a pessoa tenha escolhido antes. PDF
+    // assinado fica como está: comprimir faria a assinatura dele deixar de valer (ela só se mantém se o PDF for
+    // assinado sem mudar nada).
     let compress = '';
-    if (heavy && !state.compressChosen) {
+    if (heavy && !state.compressChosen && !doc.isSigned()) {
       els.pdfCompress.value = 'light';
       compress = `É um PDF pesado (${formatBytes(file.size)}): deixei a compressão das imagens ligada, para o arquivo ficar bem menor.`;
       updateCompressTip();
@@ -842,9 +854,11 @@ class Cancelled extends Error {}
 
 /**
  * Gera os PDFs. Ordem de cada página: montar, reconhecer o texto (OCR), comprimir e, por último, assinar.
- * @param {{signer?: object}} [options] signer: certificado aberto em sign.js; descartado no fim, dê certo ou não
+ * @param {{signer?: object, stamp?: object | null, append?: object | null}} [options] signer: certificado aberto em
+ *   sign.js, descartado no fim, dê certo ou não; stamp: carimbo visível ({page, position}); append: o PDF da lista,
+ *   quando ele é assinado sem reescrever (unchangedPdf)
  */
-async function generate({ signer } = {}) {
+async function generate({ signer, stamp = null, append = null } = {}) {
   if (!state.pages.length || state.busy) {
     signer?.discard();
     return;
@@ -890,6 +904,20 @@ async function generate({ signer } = {}) {
 
   let ok = false;
   try {
+    // PDF assinado sem reescrever: o original vai inteiro, e a assinatura entra no fim (pdf-append.js).
+    if (signer && append) {
+      announce('Assinando o PDF…');
+      await nextFrame();
+      const bytes = await signer.signExisting(append, new Date(), { stamp });
+      const file = new File([bytes], `${baseFileName()}.pdf`, { type: 'application/pdf' });
+      state.output = [{ file, before: null, url: URL.createObjectURL(file) }];
+      showResult(groups, signer, false, false);
+      const kept = append.isSigned() ? ' As assinaturas que ele já tinha continuam valendo.' : '';
+      announce(`PDF assinado. Ele só existe aqui no seu aparelho até você baixar.${kept}`, 'success');
+      ok = true;
+      return;
+    }
+
     // Fotos e documentos são processados uma vez só, mesmo que a página entre em mais de um arquivo.
     const pages = [];
     for (const [i, page] of list.entries()) {
@@ -1016,7 +1044,7 @@ async function generate({ signer } = {}) {
       // cifrado antes de ser assinado (a assinatura cobre o arquivo cifrado).
       if (signer) {
         announce(groups.length === 1 ? 'Assinando o PDF…' : `Assinando o PDF ${g + 1} de ${groups.length}…`);
-        bytes = await signer.sign(chosen, new Date(), { password, pdfa });
+        bytes = await signer.sign(chosen, new Date(), { password, pdfa, stamp });
       } else if (password) {
         announce(groups.length === 1 ? 'Protegendo o PDF com a senha…' : `Protegendo o PDF ${g + 1} de ${groups.length} com a senha…`);
         bytes = (await crypt.protectPdf(bytes, password)).bytes;
@@ -1537,7 +1565,9 @@ els.findApply.addEventListener('click', async () => {
 // A senha sai do campo assim que é usada, o arquivo é zerado depois de lido, e a chave (já no Web Crypto,
 // sem como ser lida de volta) é descartada ao fechar a janela ou ao terminar a assinatura.
 
-const signing = { file: null, signer: null };
+// append: o PDF da lista, quando ele é assinado sem reescrever; locked: o motivo, quando o PDF foi certificado sem
+// permitir alterações (aí não dá para assinar).
+const signing = { file: null, signer: null, append: null, locked: '' };
 
 function signStatus(message, kind = 'info') {
   els.signStatus.textContent = message;
@@ -1548,6 +1578,8 @@ function resetSigning() {
   signing.signer?.discard();
   signing.signer = null;
   signing.file = null;
+  signing.append = null;
+  signing.locked = '';
   els.signFile.value = '';
   els.signPassword.value = '';
   els.signFileName.textContent = 'Nenhum arquivo escolhido';
@@ -1555,8 +1587,174 @@ function resetSigning() {
   els.signStepConfirm.hidden = true;
   els.signNext.textContent = 'Abrir o certificado';
   els.signNext.disabled = false;
+  els.signNext.hidden = false;
+  els.stamp.checked = false;
+  els.stampOptions.hidden = true;
   signStatus('');
 }
+
+// Assinar sem reescrever: a lista é um PDF só, inteiro e na ordem, e nada do que foi escolhido muda o arquivo (giro,
+// tarja, compressão, senha, dividir). Aí a assinatura entra no fim do arquivo, e as que ele já tinha continuam
+// valendo. O PDF/A não vale para páginas de PDF, e o OCR só lê fotos: nenhum dos dois mexe aqui.
+function unchangedPdf() {
+  const doc = state.pages[0]?.doc;
+  if (!doc || state.pages.length !== doc.pages.length) return null;
+  const same = state.pages.every((page, i) => page.kind === 'pdf' && page.doc === doc && page.index === i && !page.rotation && !page.redactions?.length);
+  if (!same || els.pdfCompress.value !== 'none' || els.protect.checked) return null;
+  let groups;
+  try {
+    groups = outputGroups(state.pages.length);
+  } catch {
+    return null;
+  }
+  return groups.length === 1 && groups[0].length === doc.pages.length && groups[0].every((n, i) => n === i) ? doc : null;
+}
+
+// Passo 2 da janela: como a assinatura entra (PDF novo ou o PDF como veio) e se o carimbo pode ser usado.
+async function prepareSignOptions() {
+  const doc = unchangedPdf();
+  let blocker = null;
+  let certified = false;
+  if (doc) {
+    const { appendBlocker, changePermission } = await loadAppend();
+    blocker = appendBlocker(doc);
+    certified = !blocker && changePermission(doc) !== null;
+  }
+  signing.append = doc && !blocker ? doc : null;
+  signing.locked = blocker?.kind === 'locked' ? blocker.message : '';
+  // PDF certificado sem permitir alterações: só o motivo (em sign-status, como erro) e o botão de cancelar.
+  els.stampField.hidden = !!signing.locked;
+  els.signNext.hidden = !!signing.locked;
+  const signedSources = new Set(state.pages.filter((page) => page.kind === 'pdf' && page.doc.isSigned()).map((page) => page.doc));
+  let mode = '';
+  if (signing.locked) mode = '';
+  else if (blocker) mode = blocker.message;
+  else if (signing.append) {
+    mode = doc.isSigned()
+      ? 'Este PDF já tem assinatura. A sua entra no fim do arquivo, e as que ele tem continuam valendo. O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos).'
+      : 'O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos): a sua assinatura entra no fim do arquivo, sem mudar nada nele.';
+  } else if (signedSources.size) {
+    mode = 'O PDF vai ser montado de novo, e as assinaturas que ele já tinha deixam de valer. Para manter, assine o PDF sozinho, sem mudar nada nele (sem juntar, girar, tarjar nem comprimir).';
+  }
+  els.signMode.hidden = !mode;
+  els.signMode.firstElementChild.textContent = mode;
+
+  const pdfa = els.pdfa.checked && !pdfaUnavailable();
+  const reason = signing.locked ? ''
+    : pdfa ? 'Indisponível com o PDF/A: o texto do carimbo precisaria de fonte embutida, que o app ainda não faz.'
+    : certified ? 'Indisponível neste PDF: ele foi certificado pelo autor, e um carimbo novo pode invalidar a certificação em alguns validadores. A assinatura entra sem carimbo.'
+    : '';
+  els.stamp.checked = false;
+  els.stamp.disabled = !!signing.locked || !!reason;
+  els.stampBlocked.hidden = !reason;
+  els.stampBlocked.textContent = reason;
+  els.stampOptions.hidden = true;
+  fillStampPages();
+}
+
+// Páginas do arquivo que recebe o carimbo (o primeiro, quando são vários) e se são vários arquivos.
+function stampTarget() {
+  if (signing.append) return { pages: state.pages, many: false };
+  const groups = outputGroups(state.pages.length);
+  return { pages: groups[0].map((i) => state.pages[i]), many: groups.length > 1 };
+}
+
+function fillStampPages() {
+  const { pages, many } = stampTarget();
+  const count = pages.length;
+  const options = count === 1
+    ? [['last', 'Página 1']]
+    : [['last', many ? 'Última página de cada arquivo' : 'Última página'], ['first', many ? 'Primeira página de cada arquivo' : 'Primeira página']];
+  if (!many) for (let n = 2; n < count && n <= 500; n++) options.push([String(n), `Página ${n}`]);
+  els.stampPage.replaceChildren(...options.map(([value, text]) => el('option', { value, textContent: text })));
+}
+
+// O que vai para sign.js: a página ('first', 'last' ou o número) e o lugar.
+function stampChoice() {
+  const page = els.stampPage.value;
+  const position = els.stampGrid.querySelector('input:checked')?.value ?? 'bottom-right';
+  return { page: /^\d+$/.test(page) ? Number(page) : page, position };
+}
+
+// Os seis lugares: três em cima e três embaixo, numa folha em miniatura. Embaixo, à direita, é o padrão.
+for (const [value, label] of Object.entries(STAMP_POSITIONS)) {
+  const input = el('input', { type: 'radio', name: 'stamp-position', value, checked: value === 'bottom-right' });
+  els.stampGrid.append(el('label', { className: 'stamp-spot', title: label }, [input, el('span', { className: 'sr-only', textContent: label })]));
+}
+
+const loadImage = (url) => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => resolve(image);
+  image.onerror = reject;
+  image.src = url;
+});
+
+// Tamanho da página como ela vai sair (em pontos) e onde a miniatura entra nela. A foto ganha a margem e o
+// formato de folha escolhidos (layoutPage); página de PDF e de Word já é a folha inteira.
+function pageGeometry(page, image) {
+  if (isPhoto(page)) {
+    const { width, height, box } = layoutPage(image.naturalWidth, image.naturalHeight, els.pageSize.value, MARGINS[els.margin.value]);
+    return { width, height, image: { x: box.x, y: height - box.y - box.h, w: box.w, h: box.h } };
+  }
+  const size = page.kind === 'pdf' ? page.size : page.layout;
+  const sideways = (page.rotation ?? 0) % 180 !== 0;
+  const width = sideways ? size.height : size.width;
+  const height = sideways ? size.width : size.height;
+  return { width, height, image: { x: 0, y: 0, w: width, h: height } };
+}
+
+// Prévia: a página escolhida com o carimbo no lugar e no tamanho em que ele vai sair (stamp.js).
+let previewToken = 0;
+async function drawStampPreview() {
+  const token = ++previewToken;
+  if (els.stampOptions.hidden || !signing.signer) return;
+  const { pages } = stampTarget();
+  const choice = stampChoice();
+  const page = pages[stampPageIndex(choice.page, pages.length)];
+  let image;
+  try {
+    image = await loadImage(page.thumbUrl);
+  } catch {
+    image = null;
+  }
+  if (token !== previewToken) return;
+  const geometry = image ? pageGeometry(page, image) : { width: 595.28, height: 841.89, image: null };
+  const layout = stampLayout(signing.signer.name, new Date(), geometry.width);
+  const { visible } = placeStamp({ box: [0, 0, geometry.width, geometry.height], rotate: 0 }, choice.position, layout);
+
+  // Até 130 px de largura: cabe ao lado da folha dos lugares no celular, mesmo com barra de rolagem.
+  const canvas = els.stampPreview;
+  const cssWidth = Math.min(130, (130 * geometry.width) / Math.max(geometry.width, geometry.height * 0.75));
+  const scale = cssWidth / geometry.width;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.style.width = `${Math.round(cssWidth)}px`;
+  canvas.style.height = `${Math.round(geometry.height * scale)}px`;
+  canvas.width = Math.round(cssWidth * ratio);
+  canvas.height = Math.round(geometry.height * scale * ratio);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(scale * ratio, 0, 0, scale * ratio, 0, 0);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, geometry.width, geometry.height);
+  if (image && geometry.image) ctx.drawImage(image, geometry.image.x, geometry.image.y, geometry.image.w, geometry.image.h);
+  ctx.strokeStyle = '#294a8c';
+  ctx.lineWidth = 0.75;
+  ctx.strokeRect(visible.x + 0.5, visible.y + 0.5, visible.w - 1, visible.h - 1);
+  ctx.fillStyle = '#000';
+  let top = visible.y + 6;
+  for (const line of layout.lines) {
+    ctx.font = `${line.font.endsWith('Bold') ? 'bold ' : ''}${line.size}px Helvetica, Arial, sans-serif`;
+    ctx.fillText(line.text, visible.x + 6, top + line.size * 0.95);
+    top += line.size * 1.25;
+  }
+  canvas.setAttribute('aria-label', `Prévia: carimbo ${STAMP_POSITIONS[choice.position].toLowerCase()}, na ${els.stampPage.selectedOptions[0]?.textContent.toLowerCase() ?? 'página'}`);
+}
+
+els.stamp.addEventListener('change', () => {
+  els.stampOptions.hidden = !els.stamp.checked;
+  drawStampPreview();
+});
+els.stampPage.addEventListener('change', drawStampPreview);
+els.stampGrid.addEventListener('change', drawStampPreview);
 
 els.sign.addEventListener('click', () => {
   if (!state.pages.length || state.busy) return;
@@ -1595,10 +1793,12 @@ els.signDialog.addEventListener('close', () => {
 els.signNext.addEventListener('click', async () => {
   if (signing.signer) {
     // Passo 2: confirmou. A chave vai para a geração, que a descarta no fim.
-    const { signer } = signing;
+    if (signing.locked) return;
+    const { signer, append } = signing;
+    const stamp = els.stamp.checked && !els.stamp.disabled ? stampChoice() : null;
     signing.signer = null;
     els.signDialog.close();
-    generate({ signer });
+    generate({ signer, stamp, append });
     return;
   }
   if (!signing.file) {
@@ -1626,19 +1826,20 @@ els.signNext.addEventListener('click', async () => {
     els.signIssuer.textContent = signer.issuer;
     els.signValid.textContent = signer.notAfter.toLocaleDateString('pt-BR');
     els.signChain.hidden = signer.chainComplete;
+    await prepareSignOptions();
     els.signStepOpen.hidden = true;
     els.signStepConfirm.hidden = false;
     const many = outputGroups(state.pages.length).length > 1;
-    els.signNext.textContent = many ? 'Assinar e gerar os PDFs' : 'Assinar e gerar o PDF';
-    signStatus('');
-    els.signNext.focus();
+    els.signNext.textContent = signing.append ? 'Assinar o PDF' : many ? 'Assinar e gerar os PDFs' : 'Assinar e gerar o PDF';
+    signStatus(signing.locked, signing.locked ? 'error' : 'info');
+    (signing.locked ? els.signCancel : els.signNext).focus();
   } catch (err) {
     // Sem console: a mensagem não leva nada do certificado, e o erro técnico também não precisa ir para lá.
     signStatus(module && err instanceof module.SignError ? err.message : 'Não deu para abrir o certificado.', 'error');
     els.signPassword.focus();
   } finally {
     bytes?.fill(0);
-    els.signNext.disabled = false;
+    els.signNext.disabled = !!signing.locked; // PDF certificado sem permitir alterações: não dá para assinar
   }
 });
 

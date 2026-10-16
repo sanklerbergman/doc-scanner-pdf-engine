@@ -10,6 +10,7 @@
 import { textWidth, winAnsiCode } from './fonts.js';
 import { srgbProfile } from './icc.js';
 import { md5 } from './md5.js';
+import { buildStamp, stampPageIndex } from './stamp.js';
 
 const encoder = new TextEncoder();
 
@@ -188,18 +189,30 @@ export function buildPdf(pages, options = {}) {
 }
 
 /**
- * Monta o PDF com o espaço da assinatura digital (PAdES): campo de assinatura invisível na primeira página,
- * dicionário /Sig com o /ByteRange já preenchido e o /Contents em zeros, para o cms.js preencher (fillSignature).
+ * Monta o PDF com o espaço da assinatura digital (PAdES): campo de assinatura, dicionário /Sig com o /ByteRange já
+ * preenchido e o /Contents em zeros, para o cms.js preencher (fillSignature). O campo é invisível, na primeira
+ * página, ou mostra o carimbo (stamp.js) na página e no lugar escolhidos.
  * Sem /Name, /Reason, /Location nem /ContactInfo: só a hora da assinatura (/M), que faz parte do padrão.
  * @param {object[]} pages as mesmas de buildPdf
- * @param {{reserve: number, time: Date, pdfa?: boolean}} signature reserve: bytes reservados para o CMS; pdfa: como
- *   em buildPdf
+ * @param {{reserve: number, time: Date, pdfa?: boolean, stamp?: {name: string, position: string,
+ *   page: 'first' | 'last' | number}}} signature reserve: bytes reservados para o CMS; pdfa: como em buildPdf
+ *   (não combina com o carimbo: o PDF/A exige fonte embutida no texto visível); stamp: carimbo visível
  * @returns {{bytes: Uint8Array, byteRange: number[], contents: {at: number, length: number}}} contents: posição
  *   e tamanho (em dígitos hexadecimais) do espaço da assinatura, entre o < e o >
  */
 export function buildPdfToSign(pages, signature) {
   if (!(signature?.reserve > 0) || !(signature.time instanceof Date)) throw new Error('Assinatura sem espaço ou sem hora');
+  if (signature.pdfa && signature.stamp) throw new Error('PDF/A com carimbo visível precisa de fonte embutida');
   return assemble(pages, signature, { pdfa: signature.pdfa });
+}
+
+// Área visível e giro de uma página de buildPdf, para posicionar o carimbo.
+function pageGeometry(page) {
+  if (page.copy) {
+    const { page: copied } = page.copy;
+    return { box: copied.cropBox ?? copied.mediaBox, rotate: (copied.rotate + (page.rotation ?? 0)) % 360 };
+  }
+  return { box: [0, 0, page.width, page.height], rotate: page.jpeg ? 0 : page.rotation ?? 0 };
 }
 
 // Identificação do PDF/A-2b (XMP): só a parte e o nível do padrão. Sem autor, título, datas nem programa.
@@ -301,6 +314,10 @@ function assemble(pages, signature, { pdfa = false } = {}) {
   const iccId = pdfa ? nextId++ : 0;
   const widgetId = signature ? nextId++ : 0;
   const sigId = signature ? nextId++ : 0;
+  // Carimbo visível: a aparência do campo, na página escolhida. Sem carimbo, o campo fica na primeira página.
+  const stampIndex = signature?.stamp ? stampPageIndex(signature.stamp.page, pages.length) : 0;
+  const stamp = signature?.stamp ? buildStamp({ ...signature.stamp, time: signature.time }, pageGeometry(pages[stampIndex])) : null;
+  const appearanceId = stamp ? nextId++ : 0;
 
   // Página copiada pode usar recursos de versões mais novas do formato (transparência, JPEG 2000…). A assinatura
   // no padrão PAdES (/ETSI.CAdES.detached) também é do PDF 1.7 em diante.
@@ -317,7 +334,7 @@ function assemble(pages, signature, { pdfa = false } = {}) {
   pages.forEach((page, i) => {
     const id = pageIds[i];
     const mediaBox = `/MediaBox [0 0 ${num(page.width)} ${num(page.height)}]`;
-    const annots = signature && i === 0 ? ` /Annots [${widgetId} 0 R]` : '';
+    const annots = signature && i === stampIndex ? ` /Annots [${widgetId} 0 R]` : '';
 
     if (page.copy) {
       const { source, page: copied } = page.copy;
@@ -377,11 +394,15 @@ function assemble(pages, signature, { pdfa = false } = {}) {
     object(iccId, `<< /N 3 /Length ${icc.length} >>\nstream\n`, icc, '\nendstream');
   }
 
-  // Campo de assinatura invisível (/Rect zerado), que só imprime e não se mexe (/F 132 = Print + Locked).
+  // Campo de assinatura, que imprime e não se mexe (/F 132 = Print + Locked): invisível (/Rect zerado) ou com o
+  // carimbo como aparência (/AP).
   let byteRangeAt = 0;
   let contentsAt = 0;
   if (signature) {
-    object(widgetId, `<< /Type /Annot /Subtype /Widget /FT /Sig /T (Assinatura) /F 132 /Rect [0 0 0 0] /P ${pageIds[0]} 0 R /V ${sigId} 0 R >>`);
+    const rect = stamp ? stamp.rect.map(num).join(' ') : '0 0 0 0';
+    const appearance = stamp ? ` /AP << /N ${appearanceId} 0 R >>` : '';
+    object(widgetId, `<< /Type /Annot /Subtype /Widget /FT /Sig /T (Assinatura) /F 132 /Rect [${rect}] /P ${pageIds[stampIndex]} 0 R /V ${sigId} 0 R${appearance} >>`);
+    if (stamp) object(appearanceId, stamp.appearance);
     offsets[sigId] = length;
     push(`${sigId} 0 obj\n<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /ETSI.CAdES.detached /M (${pdfDate(signature.time)}) /ByteRange `);
     byteRangeAt = length;

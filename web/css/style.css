@@ -372,6 +372,24 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .sheet-alert { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-soft); font-size: 0.92rem; }
 .sign-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
 .sign-file .muted { overflow-wrap: anywhere; }
+/* Carimbo da assinatura: a página em cima; embaixo, os lugares ao lado da prévia (cabem lado a lado no celular). */
+.stamp-field { margin: 0 0 12px; }
+.stamp-field .field-note { margin-bottom: 4px; }
+.stamp-options { margin-top: 8px; }
+.stamp-place { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; }
+.stamp-positions { margin: 0; padding: 0; border: 0; }
+.stamp-positions legend { padding: 0; margin-bottom: 4px; font-size: 0.92rem; font-weight: 600; }
+/* A folha em miniatura: três lugares em cima e três embaixo, cada um com alvo de 44 px. */
+.stamp-grid {
+  display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: 44px 1fr 44px; gap: 0 4px;
+  width: max-content; height: 196px; padding: 3px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+}
+.stamp-spot { display: grid; place-items: center; border-radius: 6px; cursor: pointer; }
+.stamp-spot:nth-child(n+4) { grid-row: 3; }
+.stamp-spot:has(input:checked) { background: var(--accent-soft); }
+.stamp-spot input { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.stamp-preview { flex: none; max-width: 100%; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
 .cert-info { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0 0 12px; }
 .cert-info dt { font-weight: 600; color: var(--muted); }
 .cert-info dd { margin: 0; overflow-wrap: anywhere; }

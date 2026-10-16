@@ -215,7 +215,7 @@
       <ul class="checklist">
         <li><strong>Não existe upload.</strong> As imagens são processadas pelo seu próprio navegador. Não temos servidor que receba arquivos — esta é só uma página estática.</li>
         <li><strong>Sem cookies, sem analytics, sem conta.</strong> Nenhum script, fonte ou pixel de terceiros. O app não guarda nada entre uma visita e outra.</li>
-        <li><strong>Metadados removidos.</strong> Localização GPS, modelo do celular e data da foto ficam de fora do PDF; do documento do Word e dos PDFs abertos, autor, empresa e programa também. O PDF também não leva nome de app nem carimbo.</li>
+        <li><strong>Metadados removidos.</strong> Localização GPS, modelo do celular e data da foto ficam de fora do PDF; do documento do Word e dos PDFs abertos, autor, empresa e programa também. A exceção é assinar um PDF sem mudar nada nele: aí ele segue exatamente como veio, e o app avisa antes. O PDF também não leva nome nem marca do app.</li>
         <li><strong>Funciona offline.</strong> Depois de aberto uma vez, dá pra usar até em modo avião.</li>
         <li><strong>Bloqueado por regra, não por promessa.</strong> A página tem uma política de segurança (<code>connect-src 'none'</code>) que impede o navegador de abrir qualquer conexão a partir dela.</li>
       </ul>
@@ -372,6 +372,27 @@
       </dl>
       <p class="tip"><span><strong>O certificado vai junto no PDF</strong>, com seu nome e CPF (ou CNPJ). É assim que quem recebe confere quem assinou. Fora isso, nada seu entra no arquivo, e a única data é a hora da assinatura.</span></p>
       <p id="sign-chain" class="muted small" hidden>O arquivo não trouxe a cadeia completa da certificadora. A assinatura sai do mesmo jeito, mas algum validador pode pedir a cadeia.</p>
+      <!-- Como a assinatura entra: no PDF montado de novo ou no fim do PDF que já existe, como veio (js/pdf-append.js). -->
+      <p id="sign-mode" class="tip" hidden><span></span></p>
+      <!-- Carimbo visível (js/stamp.js): desligado por padrão. A assinatura vale do mesmo jeito sem ele. -->
+      <div id="stamp-field" class="stamp-field">
+        <label class="check"><input id="stamp" type="checkbox" aria-describedby="stamp-note stamp-blocked"> Mostrar a assinatura na página (carimbo)</label>
+        <p id="stamp-note" class="field-note">Um quadro com "Assinado digitalmente por", o seu nome (sem o CPF), a data e a hora. A assinatura vale do mesmo jeito sem ele.</p>
+        <p id="stamp-blocked" class="field-note field-blocked" hidden></p>
+        <div id="stamp-options" class="stamp-options" hidden>
+          <label class="field">
+            <span>Página</span>
+            <select id="stamp-page"></select>
+          </label>
+          <div class="stamp-place">
+            <fieldset class="stamp-positions">
+              <legend>Lugar na página</legend>
+              <div id="stamp-grid" class="stamp-grid"></div>
+            </fieldset>
+            <canvas id="stamp-preview" class="stamp-preview" role="img" aria-label="Prévia da página com o carimbo"></canvas>
+          </div>
+        </div>
+      </div>
       <p class="muted small">A assinatura vale para o PDF exatamente como está na prévia. Se mudar alguma coisa depois, é preciso assinar de novo.</p>
     </div>
     <p id="sign-status" class="sheet-status" role="status" aria-live="polite"></p>

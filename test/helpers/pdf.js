@@ -173,5 +173,9 @@ export function samplePdfs() {
     // PDFs com senha só de proprietário (abrem sem senha): passam pela decifragem (pdf-crypt.js), com AES-256 e RC4.
     'senha-aes': new Uint8Array(readFileSync(new URL('../fixtures/pdf-senha/r6-so-restricoes.pdf', import.meta.url))),
     'senha-rc4': new Uint8Array(readFileSync(new URL('../fixtures/pdf-senha/r3-so-restricoes.pdf', import.meta.url))),
+    // Assinados por outro programa (pyHanko), com atualização incremental: um comum, com xref clássica, e um
+    // certificado com /DocMDP 2, com xref em stream de campos de 8 bytes (/W [1 8 2]).
+    'assinado-pyhanko': new Uint8Array(readFileSync(new URL('../fixtures/assinados/assinado.pdf', import.meta.url))),
+    'certificado-pyhanko': new Uint8Array(readFileSync(new URL('../fixtures/assinados/certificado-p2.pdf', import.meta.url))),
   };
 }

@@ -359,9 +359,15 @@ A parte que importa, que é **assinar com a chave privada, é feita pelo própri
 
 #### Fase 2: carimbo visível e coassinatura
 
-- [ ] Carimbo visível opcional, desligado por padrão ("Assinado digitalmente por NOME em dd/mm/aaaa hh:mm"), na página e na posição escolhidas, com prévia. Mostra só o nome: no e-CPF, o CPF vem depois do ":" no nome do certificado e fica de fora do carimbo
-- [ ] **Assinar um PDF que já existe sem reescrever o arquivo** (atualização incremental): o original fica intacto, e a assinatura nova vai no fim. É o que permite que duas pessoas assinem o mesmo contrato, uma depois da outra, sem invalidar a primeira assinatura
-- [ ] Respeitar o `/DocMDP`: se o PDF foi certificado sem permitir alterações, recusar e explicar o motivo
+- [x] Carimbo visível opcional, desligado por padrão ("Assinado digitalmente por NOME em dd/mm/aaaa às hh:mm (UTC-3)"), na página e na posição escolhidas, com prévia (`web/js/stamp.js`). Mostra só o nome: no e-CPF, o CPF vem depois do ":" no nome do certificado e fica de fora do carimbo
+  - [x] é a aparência do próprio campo de assinatura, não um desenho no conteúdo da página: serve também para o PDF que já existe
+  - [x] página (primeira, última ou o número) e um de seis lugares (em cima ou embaixo; à esquerda, no centro ou à direita), escolhidos na página como ela aparece, com o `/Rotate` e a CropBox
+  - [x] nome comprido diminui a letra e, no limite, é cortado com reticências; o que as fontes padrão não têm vira "?"
+- [x] **Assinar um PDF que já existe sem reescrever o arquivo** (atualização incremental, `web/js/pdf-append.js`): o original fica intacto, e a assinatura nova vai no fim. É o que permite que duas pessoas assinem o mesmo contrato, uma depois da outra, sem invalidar a primeira assinatura
+  - [x] regrava só o que precisa apontar para o campo novo (a página ou a lista `/Annots`, e o catálogo, o formulário ou a lista `/Fields`), com o mesmo número; a tabela xref nova é do mesmo tipo da última do original (clássica ou em stream), com `/Prev`
+  - [x] nome do campo sem repetir os que já existem ("Assinatura", "Assinatura 2"…)
+  - [x] conferência antes de entregar: o original continua byte a byte no começo, e o PDF assinado reabre com as mesmas páginas e sem reparo
+- [x] Respeitar o `/DocMDP`: se o PDF foi certificado sem permitir alterações, recusar e explicar o motivo. Vale a permissão mais restritiva, inclusive a de `/FieldMDP` com `/P` (PDF 2.0)
 
 #### Fase 3: política da ICP-Brasil e cadeia
 
@@ -384,7 +390,7 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 - **Certificado vencido ou que não serve para assinar:** o app recusa e diz o motivo.
 - **Cópia falsa do site:** quem hospeda uma cópia modificada pode roubar o `.pfx` e a senha. A tela de assinatura pede para conferir se a barra de endereço mostra o endereço oficial, e o README reforça isso.
 - **Código de criptografia próprio:** o 3DES e o RC2 só **decifram** o arquivo da própria pessoa, no aparelho. A operação com a chave (assinar) é do navegador. Os algoritmos próprios são testados com os vetores oficiais.
-- **Coassinatura (fase 2):** no modo incremental o original não é reescrito, então os metadados e o que mais ele tiver continuam lá. O app avisa: "o PDF segue como veio; só a assinatura nova é acrescentada".
+- **Coassinatura (fase 2):** no modo incremental o original não é reescrito, então os metadados e o que mais ele tiver continuam lá. O app avisa na janela de assinatura: "O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos)".
 - **SECURITY.md:** acrescentar "certificado ou senha saindo do aparelho, ou ficando guardados" na lista do que conta como falha.
 
 ### Testes
@@ -395,7 +401,11 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 - [x] `/ByteRange` cobre o arquivo todo, menos o `/Contents`; o `messageDigest` bate; e a assinatura é verificada com o `node:crypto` e com o `openssl cms -verify` (com a cadeia de teste)
 - [x] Saída sem `/Name`, `/Reason`, `/Location`, `/Info` nem XMP (com PDF/A, só o XMP de identificação)
 - [x] PDF sem assinatura continua idêntico byte a byte
-- [ ] Coassinatura: a primeira assinatura continua válida depois da segunda
+- [x] Coassinatura: a primeira assinatura continua válida depois da segunda, inclusive quando a primeira foi feita por outro programa (PDFs assinados pelo pyHanko com o certificado de teste, em `test/fixtures/assinados/`, gerados pelo `gerar.py` de lá). Conferido com o `node:crypto`, o `openssl cms -verify` e o qpdf; à mão, com o validador do pyHanko, que também analisa o que mudou depois de cada assinatura
+- [x] Carimbo: lugar certo e de pé nos quatro giros, com CropBox deslocada; texto, tamanho e corte do nome
+- [x] PDF certificado: recusado sem permissão de alteração; com permissão 2, assinado sem carimbo e aceito pelo pyHanko
+- [x] Fuzzing: todo PDF que abre também recebe uma assinatura acrescentada (só a estrutura) e tem que reabrir sem reparo
+- [x] Certificados de teste no formato do e-CPF A1 (várias OU, dados da pessoa física no subjectAltName, política no ramo da ICP-Brasil) e um segundo titular, para a coassinatura
 - [ ] Manual, com o certificado de teste: painel de assinaturas do Acrobat Reader. Ele avisa que a identidade é desconhecida (o certificado não é da ICP-Brasil), mas tem que dizer que o documento não foi alterado depois de assinado. Conferir também com `openssl cms -verify` e, se der, com o `pdfsig` (Poppler)
 - [ ] Manual, com um A1 de verdade: `validar.iti.gov.br`, num documento sem nada sensível. Esse envio ao ITI é uma escolha de quem testa, fora do app. Ainda não há um A1 válido para isso (ver perguntas)
 - [ ] Teste real no iPhone, no site publicado: escolher o `.pfx` no app Arquivos e assinar
@@ -404,7 +414,12 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 
 - **Só A1 e só PAdES básico (B-B):** é o que dá para fazer sem rede e sem programa instalado.
 - **Sem biblioteca nova:** o leitor de PKCS#12 e a montagem do CMS são próprios, e quem assina é o Web Crypto. A alternativa seria copiar o node-forge ou o PKI.js para `web/vendor/`, que são maiores e trazem muito mais do que o necessário.
-- **Carimbo visível desligado por padrão:** a assinatura vale do mesmo jeito sem ele, e o nome da pessoa só aparece desenhado na página se ela escolher.
+- **Carimbo visível desligado por padrão:** a assinatura vale do mesmo jeito sem ele, e o nome da pessoa só aparece desenhado na página se ela escolher. Lugar padrão: embaixo, à direita, na última página.
+- **Carimbo indisponível com o PDF/A:** o texto visível do carimbo exigiria fonte embutida, que só chega com a fase 2 do PDF/A.
+- **Assinar sem reescrever é automático** (decidido em 2026-10-16): quando a lista é um PDF só, inteiro, na ordem, sem giro, tarja, compressão, senha nova nem divisão. Se algo mudou, o app monta um PDF novo, como antes, e avisa que as assinaturas que o PDF tinha deixam de valer. PDF assinado e pesado não liga mais a compressão sozinho.
+- **PDF com senha ou com a xref danificada:** o app monta um PDF novo para assinar (acrescentar num arquivo cifrado exigiria cifrar os objetos novos com a chave dele) e avisa que as assinaturas anteriores deixam de valer.
+- **PDF certificado (com permissão de assinar):** a assinatura entra sem carimbo. O Acrobat aceita um campo visível novo depois da certificação, mas outros validadores (o pyHanko, por exemplo) dão a certificação como violada, e não se sabe de que lado fica o do ITI.
+- **Sem A1 real:** as fases 2 e 3 são feitas e conferidas só com os certificados de teste (decidido em 2026-10-16). Quem tiver um A1 testa depois, no próprio aparelho, e conta o resultado.
 - **Versão:** sai na v3.0.0, junto com o OCR.
 
 ### Perguntas em aberto

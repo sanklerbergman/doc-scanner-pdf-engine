@@ -1,5 +1,6 @@
-// O que o app faz com um PDF, sem o navegador: abrir (com os avisos), juntar, dividir e comprimir. Cada PDF
-// gerado é reaberto pelo próprio leitor e, se pedido, passa pelo qpdf --check.
+// O que o app faz com um PDF, sem o navegador: abrir (com os avisos), juntar, dividir, comprimir e acrescentar
+// uma assinatura sem reescrever o arquivo (só a estrutura, com o espaço reservado: a chave não muda nada nela).
+// Cada PDF gerado é reaberto pelo próprio leitor e, se pedido, passa pelo qpdf --check.
 // Usado pela varredura (varrer-pdfs.mjs) e pelo fuzzing (fuzz-pdf.mjs), sempre dentro de um Worker com tempo e
 // memória limitados (isolar.mjs): um PDF que trava o leitor derruba só o Worker dele.
 //
@@ -13,6 +14,7 @@ import { parentPort } from 'node:worker_threads';
 import { openPdf, copyPages, PdfError } from '../../web/js/pdf-reader.js';
 import { compressObjects, compressibleBytes } from '../../web/js/pdf-compress.js';
 import { buildPdf } from '../../web/js/pdf.js';
+import { appendBlocker, buildAppendToSign } from '../../web/js/pdf-append.js';
 
 // O app recodifica as imagens num canvas; aqui, toda imagem vira o mesmo JPEG pequeno. Basta para passar pela
 // leitura das imagens (descompactar, preditores, cores) e pela montagem do PDF com objetos trocados.
@@ -33,6 +35,26 @@ async function rebuild(doc, indices, replace) {
   }
   if (again.pages.length !== indices.length) throw new OutputError(`o PDF gerado tem ${again.pages.length} páginas, e não ${indices.length}`);
   return out;
+}
+
+// Assinar sem reescrever, quando o PDF permite: o original continua no começo, e o PDF com a assinatura acrescentada
+// (com carimbo na última página) reabre inteiro, sem precisar de reparo, e com a assinatura reconhecida.
+async function append(doc) {
+  if (appendBlocker(doc)) return null;
+  const { bytes } = buildAppendToSign(doc, {
+    reserve: 64, time: new Date(2026, 0, 2, 3, 4, 5), stamp: { name: 'PESSOA DE TESTE', page: 'last', position: 'bottom-right' },
+  });
+  if (!doc.bytes.every((b, i) => bytes[i] === b)) throw new OutputError('o original mudou ao acrescentar a assinatura');
+  let again;
+  try {
+    again = await openPdf(bytes);
+  } catch (err) {
+    throw new OutputError(`o PDF com a assinatura acrescentada não reabre: ${err.message}`);
+  }
+  if (again.repaired) throw new OutputError('o PDF com a assinatura acrescentada só abre com reparo');
+  if (again.pages.length !== doc.pages.length) throw new OutputError(`o PDF com a assinatura acrescentada tem ${again.pages.length} páginas, e não ${doc.pages.length}`);
+  if (!again.isSigned()) throw new OutputError('a assinatura acrescentada não é reconhecida');
+  return bytes;
 }
 
 /**
@@ -62,6 +84,9 @@ export async function exercise(bytes) {
     stage = 'comprimir';
     const replace = await compressObjects(doc, all, { encode });
     outputs.push(await rebuild(doc, all, replace));
+    stage = 'assinar sem reescrever';
+    const signed = await append(doc);
+    if (signed) outputs.push(signed);
     return done({ status: 'ok', pages: doc.pages.length });
   } catch (err) {
     if (stage === 'abrir' && err instanceof PdfError) return done({ status: 'recusado', message: err.message });

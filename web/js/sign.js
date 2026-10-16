@@ -106,8 +106,30 @@ export async function openCertificate(file, password, now = new Date()) {
       pkcs8.fill(0);
     }
 
+    const name = displayName(holder);
+    // O CMS tem sempre o mesmo tamanho: a assinatura RSA tem o tamanho da chave, e o hash, 32 bytes.
+    const reserve = signedData({
+      signed: signedAttributes(new Uint8Array(32), holder, certificateHash),
+      signature: new Uint8Array(holder.modulus.length), certificate: holder, chain: chainDer,
+    }).length + SLACK;
+    // Assina o espaço reservado (buildPdfToSign ou buildAppendToSign) e confere antes de entregar.
+    const fill = async (prepared) => {
+      const digest = await sha256(join(signedRanges(prepared.bytes, prepared.byteRange)));
+      const signed = signedAttributes(digest, holder, certificateHash);
+      const signature = new Uint8Array(await crypto.subtle.sign(RSA_PKCS1, key, signed));
+      fillSignature(prepared, signedData({ signed, signature, certificate: holder, chain: chainDer }));
+      if (!(await verifySignedPdf(prepared.bytes, holder.spki))) {
+        throw new SignError('A conferência da assinatura falhou, e o PDF não foi entregue. Tente de novo.');
+      }
+      return prepared.bytes;
+    };
+    const ready = (time) => {
+      if (!key) throw new SignError('O certificado já foi fechado. Abra de novo para assinar.');
+      check(holder, time);
+    };
+
     return {
-      name: displayName(holder),
+      name,
       issuer: holder.issuer.CN ?? holder.issuer.O ?? '',
       notBefore: holder.notBefore,
       notAfter: holder.notAfter,
@@ -115,33 +137,49 @@ export async function openCertificate(file, password, now = new Date()) {
       /**
        * Monta e assina o PDF. Os bytes que saem são exatamente os que foram assinados e conferidos.
        * @param {object[]} pages as páginas de buildPdf (pdf.js)
-       * @param {Date} [time] hora da assinatura (/M)
-       * @param {{password?: string, pdfa?: boolean}} [options] password: protege o PDF com senha (pdf-crypt.js)
-       *   antes de assinar, porque a assinatura cobre os bytes finais do arquivo; pdfa: PDF/A-2b (não combina com
-       *   senha: o PDF/A não permite criptografia)
+       * @param {Date} [time] hora da assinatura (/M e carimbo)
+       * @param {{password?: string, pdfa?: boolean, stamp?: {position: string, page: 'first' | 'last' | number}}}
+       *   [options] password: protege o PDF com senha (pdf-crypt.js) antes de assinar, porque a assinatura cobre os
+       *   bytes finais do arquivo; pdfa: PDF/A-2b (não combina com senha: o PDF/A não permite criptografia; nem com
+       *   o carimbo, que exigiria fonte embutida); stamp: carimbo visível com o nome do titular (stamp.js)
        */
-      async sign(pages, time = new Date(), { password, pdfa = false } = {}) {
+      async sign(pages, time = new Date(), { password, pdfa = false, stamp } = {}) {
         if (password && pdfa) throw new SignError('O PDF/A não permite senha: escolha um dos dois.');
-        if (!key) throw new SignError('O certificado já foi fechado. Abra de novo para assinar.');
-        check(holder, time);
-        // O CMS tem sempre o mesmo tamanho: a assinatura RSA tem o tamanho da chave, e o hash, 32 bytes.
-        const sample = signedData({
-          signed: signedAttributes(new Uint8Array(32), holder, certificateHash),
-          signature: new Uint8Array(holder.modulus.length), certificate: holder, chain: chainDer,
-        });
-        let prepared = buildPdfToSign(pages, { reserve: sample.length + SLACK, time, pdfa });
+        if (stamp && pdfa) throw new SignError('Por enquanto, o carimbo visível não combina com o PDF/A: escolha um dos dois.');
+        ready(time);
+        let prepared = buildPdfToSign(pages, { reserve, time, pdfa, stamp: stamp && { ...stamp, name } });
         if (password) {
           const { protectPdf } = await import('./pdf-crypt.js');
           prepared = await protectPdf(prepared.bytes, password, { signature: true });
         }
-        const digest = await sha256(join(signedRanges(prepared.bytes, prepared.byteRange)));
-        const signed = signedAttributes(digest, holder, certificateHash);
-        const signature = new Uint8Array(await crypto.subtle.sign(RSA_PKCS1, key, signed));
-        fillSignature(prepared, signedData({ signed, signature, certificate: holder, chain: chainDer }));
-        if (!(await verifySignedPdf(prepared.bytes, holder.spki))) {
-          throw new SignError('A conferência da assinatura falhou, e o PDF não foi entregue. Tente de novo.');
+        return fill(prepared);
+      },
+      /**
+       * Assina um PDF que já existe sem reescrever o arquivo: a assinatura entra no fim (pdf-append.js), e as
+       * assinaturas que ele já tinha continuam valendo. Recusa (SignError) o PDF certificado sem permitir
+       * alterações; quem chama confere antes com appendBlocker se dá para acrescentar.
+       * @param {object} doc documento do pdf-reader
+       * @param {Date} [time]
+       * @param {{stamp?: {position: string, page: 'first' | 'last' | number}}} [options]
+       */
+      async signExisting(doc, time = new Date(), { stamp } = {}) {
+        ready(time);
+        const [{ appendBlocker, buildAppendToSign, changePermission }, { openPdf }] = await Promise.all([import('./pdf-append.js'), import('./pdf-reader.js')]);
+        const blocker = appendBlocker(doc);
+        if (blocker) throw new SignError(blocker.message);
+        // Campo visível novo depois de uma certificação: o Acrobat aceita, mas outros validadores (o pyHanko, por
+        // exemplo) dão a certificação como violada. Num PDF certificado, a assinatura entra sem carimbo.
+        if (stamp && changePermission(doc) !== null) {
+          throw new SignError('Este PDF foi certificado pelo autor: a assinatura entra sem carimbo, para não invalidar a certificação.');
         }
-        return prepared.bytes;
+        const bytes = await fill(buildAppendToSign(doc, { reserve, time, stamp: stamp && { ...stamp, name } }));
+        // O original continua byte a byte no começo, e o PDF assinado abre com as mesmas páginas.
+        const reopened = await openPdf(bytes).catch(() => null);
+        if (!startsWith(bytes, doc.bytes) || !reopened || reopened.repaired
+          || reopened.pages.length !== doc.pages.length || !reopened.isSigned()) {
+          throw new SignError('A conferência do PDF assinado falhou, e ele não foi entregue. Tente de novo.');
+        }
+        return bytes;
       },
       // Solta a chave: sem referência, o navegador descarta.
       discard() {
@@ -152,6 +190,13 @@ export async function openCertificate(file, password, now = new Date()) {
     for (const key of keys) key.fill(0);
     rsaKey?.fill(0);
   }
+}
+
+// O PDF assinado começa com o original, byte a byte (laço simples: o PDF pode ter centenas de MB).
+function startsWith(bytes, prefix) {
+  if (bytes.length < prefix.length) return false;
+  for (let i = 0; i < prefix.length; i++) if (bytes[i] !== prefix[i]) return false;
+  return true;
 }
 
 function join(parts) {

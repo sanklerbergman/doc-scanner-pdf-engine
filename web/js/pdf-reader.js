@@ -263,6 +263,8 @@ class PdfDocument {
     this.decoded = 0;
     this.trailer = new PdfDict();
     this.security = null; // PDF com senha, depois de aberto: {hadPassword, restricted}
+    this.startxref = null; // posição da tabela xref mais nova (para acrescentar uma atualização no fim)
+    this.repaired = false; // xref quebrada: os objetos foram achados varrendo o arquivo
   }
 
   async load(password) {
@@ -283,6 +285,7 @@ class PdfDocument {
       ok = false;
     }
     if (!ok || !this.catalog()) {
+      this.repaired = true;
       this.entries.clear();
       this.cache.clear();
       this.objectStreams.clear();
@@ -308,6 +311,7 @@ class PdfDocument {
     for (let m; (m = match.exec(tail));) last = m;
     if (!last) return false;
     let offset = Number(last[1]);
+    this.startxref = offset;
     const seen = new Set();
     let first = true;
     while (offset !== undefined && offset !== null && !seen.has(offset)) {
@@ -371,8 +375,9 @@ class PdfDocument {
     const widths = dict.get('W');
     if (!Array.isArray(widths) || widths.length < 3) return null;
     const [w0, w1, w2] = widths;
-    // Linha de tamanho zero faria o laço de /Index rodar sem avançar; campo de mais de 7 bytes não cabe num número.
-    if (![w0, w1, w2].every((w) => Number.isInteger(w) && w >= 0 && w <= 7) || w0 + w1 + w2 === 0) return null;
+    // Linha de tamanho zero faria o laço de /Index rodar sem avançar. Campo de até 8 bytes (o pyHanko grava
+    // /W [1 8 2]): um valor acima de 2^53 perde precisão, mas aí a posição já cai fora do arquivo e é recusada.
+    if (![w0, w1, w2].every((w) => Number.isInteger(w) && w >= 0 && w <= 8) || w0 + w1 + w2 === 0) return null;
     const size = dict.get('Size') ?? 0;
     const index = dict.get('Index') ?? [0, size];
     const rowLength = w0 + w1 + w2;
@@ -622,7 +627,7 @@ class PdfDocument {
       if (Array.isArray(kids) && !isName(node.get('Type'), 'Page')) {
         for (const kid of kids) walk(kid, attrs, depth + 1);
       } else {
-        pages.push(this.pageInfo(node, attrs));
+        pages.push({ ...this.pageInfo(node, attrs), ref: ref instanceof PdfRef ? ref : null });
       }
     };
     walk(this.catalog().get('Pages'), {}, 0);

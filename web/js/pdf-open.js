@@ -141,13 +141,16 @@ export async function openPdfFile(file, password = null) {
     doc.previewBytes = buildPdf(all.map((index) => ({ copy: { source: copy, page: copy.pages.get(index) } })));
   }
   if (doc.isSigned()) {
-    notes.push('Este PDF tem assinatura digital: no PDF novo a assinatura deixa de valer (ela só vale no arquivo original).');
+    // Com senha, o app sempre monta um PDF novo (pdf-append.js não acrescenta em arquivo cifrado).
+    notes.push(doc.security
+      ? 'Este PDF tem assinatura digital: no PDF novo a assinatura deixa de valer (ela só vale no arquivo original).'
+      : 'Este PDF tem assinatura digital. Se você só assinar, sem mudar nada, ela continua valendo; se juntar, separar ou mudar as páginas, ela deixa de valer no PDF novo.');
   }
   if (doc.layers?.removed) {
     notes.push('Este PDF tem camadas ocultas: o conteúdo delas não vai para o PDF novo, como já estava escondido na tela.');
   }
   if (doc.hasAnnotations()) {
-    notes.push('Links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.');
+    notes.push('No PDF novo, links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.');
   }
   const pages = doc.pages.map((page, index) => ({ index, width: page.width, height: page.height }));
   const images = compressibleBytes(doc);
