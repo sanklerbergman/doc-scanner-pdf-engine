@@ -198,15 +198,20 @@ kbd {
 }
 
 /* Ajustes */
-select, input[type="text"] {
+select, input[type="text"], input[type="password"] {
   min-height: 44px; padding: 6px 10px; font: inherit; color: var(--text);
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   max-width: 100%;
 }
 @media (hover: hover) {
-  select:hover:not(:disabled), input[type="text"]:hover:not(:disabled) { border-color: var(--accent); }
+  select:hover:not(:disabled), input[type="text"]:hover:not(:disabled), input[type="password"]:hover:not(:disabled) { border-color: var(--accent); }
 }
-select:disabled, input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed; }
+select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { opacity: 0.6; cursor: not-allowed; }
+/* Caixa de seleção com texto ao lado (OCR): alvo de 44 px para o dedo. */
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.check input { width: 22px; height: 22px; margin: 0; flex: none; accent-color: var(--accent); cursor: pointer; }
+.check input:disabled, .check input:disabled + * { cursor: not-allowed; }
+.field-note { margin: 0; font-size: 0.88rem; font-weight: normal; color: var(--muted); }
 .settings {
   margin-top: 20px; padding: 16px; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--radius);
@@ -224,8 +229,8 @@ select:disabled, input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed
 .compress-tip { margin: 8px 0 4px; border: 1px solid var(--accent); }
 .compress-tip .btn { flex: none; }
 
-.actions { margin-top: 20px; display: flex; justify-content: center; }
-.actions .btn { width: 100%; max-width: 360px; }
+.actions { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.actions .btn { flex: 1 1 260px; max-width: 360px; }
 
 .result {
   margin-top: 16px; padding: 20px; text-align: center;
@@ -340,6 +345,28 @@ select:disabled, input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed
   color: #d0d5dd; font: inherit; font-size: 0.9rem; text-decoration: underline; cursor: pointer;
 }
 .camera :focus-visible { outline-color: #fde68a; }
+
+/* Assinatura com certificado: janela no meio da tela (no celular, ocupa a largura). */
+.sheet {
+  width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto;
+  padding: 20px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text); box-shadow: 0 12px 40px rgb(0 0 0 / 25%);
+}
+.sheet::backdrop { background: rgb(16 19 23 / 55%); }
+.sheet h2 { margin: 0 0 12px; font-size: 1.2rem; }
+.sheet p { margin: 0 0 12px; }
+.sheet .field { margin-bottom: 12px; }
+.sheet .tip { margin-bottom: 12px; }
+.sheet-alert { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-soft); font-size: 0.92rem; }
+.sign-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+.sign-file .muted { overflow-wrap: anywhere; }
+.cert-info { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0 0 12px; }
+.cert-info dt { font-weight: 600; color: var(--muted); }
+.cert-info dd { margin: 0; overflow-wrap: anywhere; }
+.sheet-status { min-height: 1.4em; font-size: 0.92rem; color: var(--muted); }
+.sheet-status[data-kind="error"] { color: var(--danger); }
+.sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.sheet-actions .btn { flex: 1 1 160px; }
 
 /* Página em tela cheia e ajuste do recorte. */
 .viewer {

@@ -30,6 +30,11 @@ const PREVIEW_SIDE = 1280; // cópia reduzida guardada em memória (miniaturas, 
 const THUMB_SIDE = 960; // no celular a miniatura ocupa a largura da tela, em tela de alta densidade
 const VIEW_SIDE = 2000; // página em tela cheia
 const UNDO_MS = 10000; // tempo para desfazer a remoção de uma página
+// OCR: o Tesseract lê bem com o lado maior entre 2000 e 3500 px. A imagem do PDF serve quando está nessa faixa;
+// abaixo disso (qualidade Leve), a foto é desenhada de novo, só para o OCR. A medir no iPhone.
+const OCR_MIN_SIDE = 2000;
+const OCR_SIDE = 2400;
+const OCR_MAX_SIDE = 3500;
 
 const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const isDocx = (file) => /\.docx$/i.test(file.name) || file.type === DOCX_TYPE;
@@ -52,6 +57,8 @@ function lazy(path) {
 }
 const loadDocuments = lazy('./document.js'); // .docx: ZIP, XML, layout
 const loadPdfTools = lazy('./pdf-open.js'); // .pdf: leitor de PDF
+const loadOcr = lazy('./ocr.js'); // OCR: o motor (vendor/tesseract) só carrega quando o reconhecimento começa
+const loadSigning = lazy('./sign.js'); // assinatura: PKCS#12, certificado e CMS
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -93,16 +100,35 @@ const els = {
   compressTip: $('#compress-tip'),
   compressTipText: $('#compress-tip-text'),
   compressTipToggle: $('#compress-tip-toggle'),
+  ocr: $('#ocr'),
+  ocrField: $('#ocr-field'),
+  sign: $('#sign'),
+  cancel: $('#cancel'),
+  signDialog: $('#sign-dialog'),
+  signStepOpen: $('#sign-step-open'),
+  signStepConfirm: $('#sign-step-confirm'),
+  signPick: $('#sign-pick'),
+  signFile: $('#sign-file'),
+  signFileName: $('#sign-file-name'),
+  signPassword: $('#sign-password'),
+  signHolder: $('#sign-holder'),
+  signIssuer: $('#sign-issuer'),
+  signValid: $('#sign-valid'),
+  signChain: $('#sign-chain'),
+  signStatus: $('#sign-status'),
+  signCancel: $('#sign-cancel'),
+  signNext: $('#sign-next'),
 };
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
 const lockedWhileBusy = [
   'filterAll', 'pageSize', 'margin', 'quality', 'fileName', 'clear', 'pickFiles', 'takePhoto', 'undo', 'qualityTipApply',
-  'outputMode', 'ranges', 'pdfCompress', 'compressTipToggle',
+  'outputMode', 'ranges', 'pdfCompress', 'compressTipToggle', 'ocr', 'sign',
 ].map((key) => els[key]);
 
 // compressChosen: a pessoa já mexeu na opção de comprimir (aí o app não liga nem desliga sozinho).
-const state = { pages: [], busy: false, output: null, compressChosen: false }; // output: PDFs gerados, [{file, url}]
+// cancel: durante o OCR, interrompe a geração (botão Cancelar).
+const state = { pages: [], busy: false, output: null, compressChosen: false, cancel: null }; // output: PDFs gerados, [{file, url}]
 let nextId = 1;
 
 function announce(message, kind = 'info') {
@@ -343,6 +369,7 @@ function renderPages() {
   // Filtro, tamanho, margem e qualidade só valem para fotos: documento do Word e PDF seguem o próprio arquivo.
   const hasPhotos = state.pages.some(isPhoto);
   for (const control of [els.filterAll, els.pageSize, els.margin, els.quality]) control.closest('.field').hidden = !hasPhotos;
+  els.ocrField.hidden = !hasPhotos; // OCR só nas fotos: Word e PDF já têm texto (PDF escaneado fica para depois)
   els.documentNote.hidden = state.pages.every(isPhoto);
   els.pdfCompress.closest('.field').hidden = !state.pages.some((page) => page.kind === 'pdf');
   updateCompressTip();
@@ -427,6 +454,7 @@ els.pages.addEventListener('click', async (event) => {
     }
     case 'rotate':
       page.rotation = (page.rotation + 90) % 360;
+      page.ocr = null;
       await refreshThumb(page);
       renderPages();
       if (focusLost()) els.pages.children[state.pages.indexOf(page)]?.querySelector('[data-action="rotate"]')?.focus();
@@ -441,6 +469,7 @@ els.pages.addEventListener('change', async (event) => {
   if (!event.target.matches('.page-filter') || state.busy) return;
   const page = state.pages[findPage(event.target)];
   page.filter = event.target.value;
+  page.ocr = null;
   discardPdf();
   await refreshThumb(page);
   renderPages();
@@ -484,6 +513,7 @@ const viewer = setupViewer({
   detect: (page) => detectQuad(page.preview, page.preview.width, page.preview.height),
   async applyCrop(page, quad) {
     page.quad = quad;
+    page.ocr = null;
     discardPdf();
     await refreshThumb(page);
     renderPages();
@@ -558,13 +588,14 @@ els.filterAll.addEventListener('change', async () => {
   discardPdf();
   for (const page of state.pages) {
     if (!isPhoto(page)) continue;
+    if (page.filter !== els.filterAll.value) page.ocr = null;
     page.filter = els.filterAll.value;
     await refreshThumb(page);
   }
   renderPages();
 });
 
-for (const select of [els.pageSize, els.margin, els.quality]) select.addEventListener('change', discardPdf);
+for (const select of [els.pageSize, els.margin, els.quality, els.ocr]) select.addEventListener('change', discardPdf);
 els.quality.addEventListener('change', updateQualityTip);
 els.fileName.addEventListener('input', discardPdf);
 
@@ -638,12 +669,26 @@ function discardPdf() {
 
 const nextFrame = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-async function generate() {
-  if (!state.pages.length || state.busy) return;
+// O que muda o resultado do OCR de uma foto: recorte, filtro e rotação. A qualidade não (as posições do texto
+// são guardadas relativas à imagem).
+const ocrKey = (page) => JSON.stringify([page.quad, page.filter, page.rotation]);
+
+class Cancelled extends Error {}
+
+/**
+ * Gera os PDFs. Ordem de cada página: montar, reconhecer o texto (OCR), comprimir e, por último, assinar.
+ * @param {{signer?: object}} [options] signer: certificado aberto em sign.js; descartado no fim, dê certo ou não
+ */
+async function generate({ signer } = {}) {
+  if (!state.pages.length || state.busy) {
+    signer?.discard();
+    return;
+  }
   let groups;
   try {
     groups = outputGroups(state.pages.length);
   } catch (err) {
+    signer?.discard();
     announce(err.message, 'error');
     els.ranges.focus();
     return;
@@ -655,6 +700,23 @@ async function generate() {
   const size = els.pageSize.value;
 
   const list = [...state.pages]; // retrato da lista: o PDF sai igual ao que estava na tela
+  // OCR: só nas fotos, e só nas que ainda não têm o texto reconhecido com o recorte, o filtro e a rotação de agora.
+  const useOcr = els.ocr.checked && list.some(isPhoto);
+  const toRead = useOcr ? list.filter((page) => isPhoto(page) && page.ocr?.key !== ocrKey(page)) : [];
+  let ocr = null; // motor do OCR: um só, encerrado no fim
+  let cancelled = false;
+  if (toRead.length) {
+    els.cancel.hidden = false;
+    state.cancel = () => {
+      cancelled = true;
+      els.cancel.disabled = true;
+      ocr?.cancel();
+    };
+  }
+  const stopIfCancelled = () => {
+    if (cancelled) throw new Cancelled();
+  };
+
   let ok = false;
   try {
     // Fotos e documentos são processados uma vez só, mesmo que a página entre em mais de um arquivo.
@@ -662,6 +724,7 @@ async function generate() {
     for (const [i, page] of list.entries()) {
       announce(`Processando página ${i + 1} de ${list.length}…`);
       await nextFrame();
+      stopIfCancelled();
       if (page.kind === 'pdf') {
         pages.push(null); // copiada mais abaixo, junto com as outras páginas do mesmo PDF
         continue;
@@ -672,16 +735,38 @@ async function generate() {
       }
       const image = await decodeFile(page.file);
       let canvas;
+      let layout;
       try {
         // O filtro roda num Web Worker: a página continua respondendo durante a geração.
         canvas = await renderPageAsync(image.source, image.width, image.height, { rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: quality.maxSide });
+        layout = layoutPage(canvas.width, canvas.height, size, margin);
+        if (toRead.includes(page)) {
+          if (!ocr) {
+            announce('Preparando o reconhecimento de texto (na primeira vez, o app baixa uns 5 MB)…');
+            const { startOcr } = await loadOcr().catch(() => {
+              throw Object.assign(new Error('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.'), { name: 'OcrError' });
+            });
+            stopIfCancelled();
+            ocr = await startOcr();
+            stopIfCancelled();
+          }
+          announce(`Reconhecendo o texto: página ${toRead.indexOf(page) + 1} de ${toRead.length}…`);
+          page.ocr = { key: ocrKey(page), words: await recognizePage(ocr, image, canvas, page, layout) };
+        }
       } finally {
         image.release();
       }
+      stopIfCancelled();
       const blob = await canvasToBlob(canvas, 'image/jpeg', quality.jpeg);
-      pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), ...layoutPage(canvas.width, canvas.height, size, margin) });
+      const words = useOcr ? page.ocr?.words : null;
+      pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), ...layout, ...(words?.length ? { ocr: words } : {}) });
       canvas.width = canvas.height = 0; // devolve a memória do canvas na hora
     }
+    // O motor do OCR ocupa centenas de MB: sai da memória assim que as fotos terminam.
+    ocr?.terminate();
+    ocr = null;
+    els.cancel.hidden = true;
+    state.cancel = null;
 
     const tools = list.some((page) => page.kind === 'pdf') ? await loadPdfTools() : null;
 
@@ -717,52 +802,104 @@ async function generate() {
         if (!wanted.has(page.doc)) wanted.set(page.doc, []);
         wanted.get(page.doc).push(page.index);
       }
-      const build = (compressed) => {
+      const pagesOf = (compressed) => {
         const copies = new Map([...wanted].map(([doc, indices]) => [doc, tools.copyPages(doc, indices, {
           replace: compressed ? replacements.get(doc) : undefined,
         })]));
-        return buildPdf(group.map((i) => {
+        return group.map((i) => {
           const page = list[i];
           if (page.kind !== 'pdf') return pages[i];
           const source = copies.get(page.doc);
           return { copy: { source, page: source.pages.get(page.index) }, rotation: page.rotation };
-        }));
+        });
       };
       // Comprimido só fica se diminuir; senão, vai a versão sem recomprimir.
-      let bytes = build(false);
+      let chosen = pagesOf(false);
+      let bytes = buildPdf(chosen);
       let before = null;
       if (wanted.size && replacements.size) {
-        const small = build(true);
+        const smallPages = pagesOf(true);
+        const small = buildPdf(smallPages);
         if (small.length < bytes.length) {
           before = bytes.length;
           bytes = small;
+          chosen = smallPages;
         } else {
           notSmaller++;
         }
+      }
+      // Assinar é sempre o último passo: qualquer mudança depois invalidaria a assinatura.
+      if (signer) {
+        announce(groups.length === 1 ? 'Assinando o PDF…' : `Assinando o PDF ${g + 1} de ${groups.length}…`);
+        bytes = await signer.sign(chosen);
       }
       const name = groups.length === 1 ? `${base}.pdf` : groupFileName(base, group, list.length);
       files.push({ file: new File([bytes], name, { type: 'application/pdf' }), before });
     }
     state.output = files.map(({ file, before }) => ({ file, before, url: URL.createObjectURL(file) }));
-    showResult(groups);
-    const ready = files.length === 1
-      ? 'PDF pronto. Ele só existe aqui no seu aparelho até você baixar.'
-      : `${files.length} PDFs prontos. Eles só existem aqui no seu aparelho até você baixar.`;
+    showResult(groups, signer);
+    const what = signer ? (files.length === 1 ? 'PDF assinado.' : `${files.length} PDFs assinados.`) : (files.length === 1 ? 'PDF pronto.' : `${files.length} PDFs prontos.`);
+    const ready = `${what} ${files.length === 1 ? 'Ele só existe' : 'Eles só existem'} aqui no seu aparelho até você baixar.`;
     const kept = !notSmaller ? '' : notSmaller === files.length && files.length === 1
       ? ' Comprimir não diminuiu este PDF (o tamanho está no texto e nas fontes, ou as imagens já eram leves): ficou sem recomprimir.'
       : ` ${notSmaller === 1 ? 'Um arquivo não diminuiu' : `${notSmaller} arquivos não diminuíram`} com a compressão e ${notSmaller === 1 ? 'ficou' : 'ficaram'} sem recomprimir.`;
-    announce(ready + kept, 'success');
+    const blank = useOcr ? list.filter((page) => isPhoto(page) && !page.ocr?.words.length).length : 0;
+    const read = !useOcr ? '' : blank === 0
+      ? ' O texto das fotos foi reconhecido: dá para buscar e copiar no PDF.'
+      : ` Não achei texto impresso em ${blank === 1 ? 'uma das fotos' : `${blank} das fotos`}.`;
+    announce(ready + kept + read, 'success');
     ok = true;
   } catch (err) {
-    console.error(err);
-    announce(`Algo deu errado ao gerar o PDF: ${err.message}`, 'error');
+    if (cancelled || err instanceof Cancelled) {
+      announce('Cancelado. Nenhum PDF foi gerado.');
+    } else {
+      // Erros do OCR e da assinatura já vêm com a explicação; os outros, com a mensagem técnica.
+      const known = err?.name === 'SignError' || err?.name === 'OcrError';
+      if (!known) console.error(err);
+      announce(known ? err.message : `Algo deu errado ao gerar o PDF: ${err.message}`, 'error');
+    }
   } finally {
+    ocr?.terminate();
+    signer?.discard(); // a chave sai da memória, dê certo ou não
+    state.cancel = null;
+    els.cancel.hidden = true;
+    els.cancel.disabled = false;
     setBusy(false);
     // Foco só depois de liberar os controles (controle desabilitado não recebe foco).
-    if (!ok) els.generate.focus();
+    if (!ok) (signer ? els.sign : els.generate).focus();
     else (state.output.length === 1 ? els.download : els.downloadAll).focus();
   }
 }
+
+// Reconhece o texto de uma foto. A imagem do PDF serve quando já tem resolução boa para o OCR; senão, a foto é
+// desenhada de novo, maior, só para isso. Devolve as palavras com posições relativas à imagem.
+async function recognizePage(ocr, image, canvas, page, layout) {
+  const long = Math.max(canvas.width, canvas.height);
+  let source = canvas;
+  let temporary = null;
+  if (long < OCR_MIN_SIDE && Math.max(image.width, image.height) > long) {
+    temporary = await renderPageAsync(image.source, image.width, image.height, {
+      rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: OCR_SIDE,
+    });
+  } else if (long > OCR_MAX_SIDE) {
+    const scale = OCR_MAX_SIDE / long;
+    temporary = document.createElement('canvas');
+    temporary.width = Math.max(1, Math.round(canvas.width * scale));
+    temporary.height = Math.max(1, Math.round(canvas.height * scale));
+    const ctx = temporary.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(canvas, 0, 0, temporary.width, temporary.height);
+  }
+  if (temporary) source = temporary;
+  try {
+    // Resolução da imagem na página do PDF, em pontos por polegada: ajuda o Tesseract a medir as letras.
+    return await ocr.recognize(source, { dpi: source.width / (layout.box.w / 72) });
+  } finally {
+    if (temporary) temporary.width = temporary.height = 0;
+  }
+}
+
+els.cancel.addEventListener('click', () => state.cancel?.());
 
 // "1,2 MB" ou, quando comprimiu, "1,2 MB (antes 4,8 MB, −75%)".
 function sizeText(size, before) {
@@ -770,16 +907,19 @@ function sizeText(size, before) {
   return `${formatBytes(size)} (antes ${formatBytes(before)}, −${Math.round((1 - size / before) * 100)}%)`;
 }
 
-function showResult(groups) {
+function showResult(groups, signer) {
   const files = state.output;
   const total = files.reduce((sum, { file }) => sum + file.size, 0);
   const totalBefore = files.some(({ before }) => before) ? files.reduce((sum, { file, before }) => sum + (before ?? file.size), 0) : null;
   const pages = (n) => `${n} ${n === 1 ? 'página' : 'páginas'}`;
   const single = files.length === 1;
-  els.resultTitle.textContent = single ? 'PDF pronto' : `${files.length} PDFs prontos`;
+  els.resultTitle.textContent = signer
+    ? (single ? 'PDF assinado' : `${files.length} PDFs assinados`)
+    : (single ? 'PDF pronto' : `${files.length} PDFs prontos`);
+  const signed = signer ? ` · assinado por ${signer.name}` : '';
   els.resultInfo.textContent = single
-    ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}`
-    : `${sizeText(total, totalBefore)} no total`;
+    ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}${signed}`
+    : `${sizeText(total, totalBefore)} no total${signer ? ` · assinados por ${signer.name}` : ''}`;
   els.download.hidden = !single;
   els.download.href = files[0].url;
   els.download.download = files[0].file.name;
@@ -908,6 +1048,115 @@ els.share.addEventListener('click', async () => {
     await navigator.share({ files, title: files.length === 1 ? files[0].name : 'PDFs' });
   } catch (err) {
     if (err.name !== 'AbortError') announce('Não deu para compartilhar. Use o botão Baixar.', 'error');
+  }
+});
+
+// ---------- Assinar com certificado digital (A1) ----------
+// Dois passos na mesma janela: escolher o .pfx e digitar a senha; depois, conferir titular e validade e confirmar.
+// A senha sai do campo assim que é usada, o arquivo é zerado depois de lido, e a chave (já no Web Crypto,
+// sem como ser lida de volta) é descartada ao fechar a janela ou ao terminar a assinatura.
+
+const signing = { file: null, signer: null };
+
+function signStatus(message, kind = 'info') {
+  els.signStatus.textContent = message;
+  els.signStatus.dataset.kind = kind;
+}
+
+function resetSigning() {
+  signing.signer?.discard();
+  signing.signer = null;
+  signing.file = null;
+  els.signFile.value = '';
+  els.signPassword.value = '';
+  els.signFileName.textContent = 'Nenhum arquivo escolhido';
+  els.signStepOpen.hidden = false;
+  els.signStepConfirm.hidden = true;
+  els.signNext.textContent = 'Abrir o certificado';
+  els.signNext.disabled = false;
+  signStatus('');
+}
+
+els.sign.addEventListener('click', () => {
+  if (!state.pages.length || state.busy) return;
+  try {
+    outputGroups(state.pages.length); // intervalos inválidos: avisa antes de pedir o certificado
+  } catch (err) {
+    announce(err.message, 'error');
+    els.ranges.focus();
+    return;
+  }
+  resetSigning();
+  els.signDialog.showModal();
+  els.signPick.focus();
+});
+
+els.signPick.addEventListener('click', () => els.signFile.click());
+els.signFile.addEventListener('change', () => {
+  signing.file = els.signFile.files[0] ?? null;
+  els.signFileName.textContent = signing.file ? signing.file.name : 'Nenhum arquivo escolhido';
+  signStatus('');
+  if (signing.file) els.signPassword.focus();
+});
+els.signPassword.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    els.signNext.click();
+  }
+});
+els.signCancel.addEventListener('click', () => els.signDialog.close());
+// Fechar de qualquer jeito (Cancelar, Esc) solta o certificado e limpa a senha.
+els.signDialog.addEventListener('close', () => {
+  if (signing.signer || signing.file || els.signPassword.value) resetSigning();
+});
+
+els.signNext.addEventListener('click', async () => {
+  if (signing.signer) {
+    // Passo 2: confirmou. A chave vai para a geração, que a descarta no fim.
+    const { signer } = signing;
+    signing.signer = null;
+    els.signDialog.close();
+    generate({ signer });
+    return;
+  }
+  if (!signing.file) {
+    signStatus('Escolha o arquivo do certificado (.pfx ou .p12).', 'error');
+    els.signPick.focus();
+    return;
+  }
+  const password = els.signPassword.value;
+  els.signPassword.value = ''; // a senha não fica no campo depois de usada
+  els.signNext.disabled = true;
+  signStatus('Abrindo o certificado…');
+  let module;
+  let bytes;
+  try {
+    module = await loadSigning();
+    if (signing.file.size > 1024 * 1024) throw new module.SignError('Este arquivo é grande demais para ser um certificado A1.');
+    bytes = new Uint8Array(await signing.file.arrayBuffer());
+    const signer = await module.openCertificate(bytes, password);
+    if (!els.signDialog.open) {
+      signer.discard(); // a janela foi fechada enquanto o certificado abria
+      return;
+    }
+    signing.signer = signer;
+    els.signHolder.textContent = signer.name;
+    els.signIssuer.textContent = signer.issuer;
+    els.signValid.textContent = signer.notAfter.toLocaleDateString('pt-BR');
+    els.signChain.hidden = signer.chainComplete;
+    els.signStepOpen.hidden = true;
+    els.signStepConfirm.hidden = false;
+    const many = outputGroups(state.pages.length).length > 1;
+    els.signNext.textContent = many ? 'Assinar e gerar os PDFs' : 'Assinar e gerar o PDF';
+    signStatus('');
+    els.signNext.focus();
+  } catch (err) {
+    // Sem console: a mensagem não leva nada do certificado, e o erro técnico também não precisa ir para lá.
+    signStatus(module && err instanceof module.SignError ? err.message : 'Não deu para abrir o certificado.', 'error');
+    els.signPassword.focus();
+  } finally {
+    bytes?.fill(0);
+    els.signNext.disabled = false;
   }
 });
 

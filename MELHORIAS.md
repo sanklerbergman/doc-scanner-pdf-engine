@@ -221,7 +221,7 @@ Tarefas:
 
 | Arquivo | Origem | Tamanho |
 | --- | --- | --- |
-| `tesseract.esm.min.js` e `worker.min.js` | `tesseract.js@7.0.0` | ~0,17 MB |
+| `worker.min.js` | `tesseract.js@7.0.0` | ~0,11 MB |
 | `tesseract-core-*-lstm.wasm.js` (três variantes: o aparelho baixa só a que ele suporta, com ou sem SIMD) | `tesseract.js-core@7.0.0` | ~3,9 MB cada |
 | Modelo de português (`4.0.0_best_int/por.traineddata.gz`) | `@tesseract.js-data/por@1.0.0` | ~1,4 MB |
 
@@ -231,7 +231,8 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 
 - O Worker do Tesseract nasce de um blob, então herda o `connect-src 'none'`, como os Workers dos filtros e do PDF.js.
 - O núcleo vem nos arquivos `.wasm.js`, que têm o WebAssembly embutido e são carregados por `importScripts`. Isso já é coberto pelo `script-src 'self' 'wasm-unsafe-eval'` atual.
-- O Tesseract.js baixa o modelo com `fetch`, e a CSP bloqueia isso. Em vez de abrir uma exceção, o modelo vira um módulo JS (`por.traineddata.js`, com o `.gz` em base64, ~1,9 MB), gerado por um script em `scripts/`. Os bytes são passados direto: `createWorker([{ code: 'por', data }])`.
+- O Tesseract.js baixa o modelo com `fetch`, e a CSP bloqueia isso. Em vez de abrir uma exceção, o modelo vira um módulo JS (`por.traineddata.js`, com o `.gz` em base64, ~1,9 MB), gerado por um script em `scripts/`. Os bytes são passados direto ao worker (`loadLanguage` com `{ code: 'por', data }`).
+- O app conversa direto com o worker do Tesseract.js, pelo protocolo dele, sem a biblioteca da página (`tesseract.esm.min.js`): na 7.0.0 ela manda os bytes do modelo no lugar do nome do idioma ao inicializar, e o Tesseract não inicia (ver `web/vendor/tesseract/README.md`).
 - `cacheMethod: 'none'`: por padrão, o Tesseract.js guarda o modelo no IndexedDB. Isso fica desligado, porque a CSP não bloqueia o IndexedDB e a regra é não guardar nada.
 
 **A camada de texto no PDF:**
@@ -251,19 +252,19 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 
 #### Fase 1: fotos
 
-- [ ] Copiar o Tesseract.js, o núcleo e o modelo para `web/vendor/tesseract/`, com um `README.md` (versão, origem, SHA-256 do `.tgz` e de cada arquivo, licenças)
-- [ ] Script em `scripts/` que gera o `por.traineddata.js` a partir do `.gz` e confere o SHA-256
-- [ ] `web/js/ocr.js`:
-  - [ ] carregar só quando o OCR for ligado
-  - [ ] Worker de blob, com `cacheMethod: 'none'` e sem `logger`
-  - [ ] um Worker por vez, encerrado (`terminate`) no fim, para liberar a memória
-- [ ] Reduzir a imagem antes do OCR (lado maior entre 2000 e 3500 px, a medir no iPhone)
-- [ ] `pdf.js`: páginas de imagem aceitam uma camada de texto invisível
-- [ ] Interface:
-  - [ ] opção "Texto pesquisável (OCR)", desligada por padrão
-  - [ ] progresso por página ("Reconhecendo o texto: página 2 de 5") e botão de cancelar
-- [ ] Resultado guardado na memória, por página, e descartado se a pessoa mudar o recorte, o filtro ou a rotação
-- [ ] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`. O vendor fica fora do `APP_FILES` e entra no cache quando é usado, como o PDF.js
+- [x] Copiar o Tesseract.js, o núcleo e o modelo para `web/vendor/tesseract/`, com um `README.md` (versão, origem, SHA-256 do `.tgz` e de cada arquivo, licenças)
+- [x] Script em `scripts/` que gera o `por.traineddata.js` a partir do `.gz` e confere o SHA-256 (`scripts/gerar-modelo-ocr.mjs`)
+- [x] `web/js/ocr.js`:
+  - [x] carregar só quando o OCR for ligado
+  - [x] Worker de blob, com `cacheMethod: 'none'` e sem `logger`
+  - [x] um Worker por vez, encerrado (`terminate`) no fim, para liberar a memória
+- [x] Reduzir a imagem antes do OCR: a imagem do PDF serve quando o lado maior está entre 2000 e 3500 px; abaixo disso (qualidade Leve), a foto é desenhada de novo com 2400 px. Valores provisórios, a medir no iPhone
+- [x] `pdf.js`: páginas de imagem aceitam uma camada de texto invisível
+- [x] Interface:
+  - [x] opção "Texto pesquisável (OCR)", desligada por padrão
+  - [x] progresso por página ("Reconhecendo o texto: página 2 de 5") e botão de cancelar
+- [x] Resultado guardado na memória, por página, e descartado se a pessoa mudar o recorte, o filtro ou a rotação
+- [x] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`. O vendor fica fora do `APP_FILES` e entra no cache quando é usado, como o PDF.js
 
 #### Fase 2: PDFs escaneados
 
@@ -289,11 +290,11 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 
 ### Testes
 
-- [ ] Camada de texto montada a partir de um resultado de OCR simulado (palavras e caixas fixas): texto com `3 Tr`, posições dentro da página e rotação
-- [ ] `(`, `)`, `\` e acentos não quebram o content stream
-- [ ] PDF sem OCR continua idêntico byte a byte
+- [x] Camada de texto montada a partir de um resultado de OCR simulado (palavras e caixas fixas): texto com `3 Tr`, posições dentro da página e rotação (`test/ocr.test.js`)
+- [x] `(`, `)`, `\` e acentos não quebram o content stream
+- [x] PDF sem OCR continua idêntico byte a byte
 - [ ] PDF escaneado: a página com texto é pulada, a página sem texto ganha a camada e a xref continua válida
-- [ ] No navegador: nenhuma requisição na aba Rede e nada no IndexedDB durante o OCR
+- [x] No navegador: nenhuma requisição na aba Rede e nada no IndexedDB durante o OCR (Playwright, no Chromium e no WebKit, com e sem o service worker)
 - [ ] Teste real no iPhone, no site publicado: tempo por página, memória e seleção do texto no visualizador do iPhone, no Chrome e no Acrobat
 
 ### Decisões
@@ -344,17 +345,17 @@ A parte que importa, que é **assinar com a chave privada, é feita pelo própri
 
 #### Fase 1: assinar o PDF que o app gera
 
-- [ ] `asn1.js`: leitor e escritor DER (inteiros, OIDs, sequências, sets ordenados e datas)
-- [ ] `pkcs12.js`: MAC, PBES2, 3DES e RC2-40, com mensagem clara para senha errada e arquivo corrompido
-- [ ] `cms.js`: `SignedData` destacado com os atributos do PAdES
-- [ ] `pdf.js`: campo de assinatura, espaço reservado, `/ByteRange` e preenchimento
-- [ ] Autoconferência da assinatura antes de entregar
-- [ ] Interface:
-  - [ ] "Assinar com certificado digital (A1)", junto de "Gerar PDF"
-  - [ ] escolher o `.pfx`, digitar a senha, ver titular e validade e confirmar
-  - [ ] aviso de que o certificado vai junto no PDF (ver Segurança)
-- [ ] Vários arquivos de saída (dividir): a senha é pedida uma vez para todos, e a chave é descartada no fim
-- [ ] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`
+- [x] `asn1.js`: leitor e escritor DER (inteiros, OIDs, sequências, sets ordenados e datas). O leitor também aceita BER (comprimento indefinido e strings em pedaços), como o Windows grava o `.pfx`
+- [x] `pkcs12.js`: MAC, PBES2, 3DES e RC2-40, com mensagem clara para senha errada e arquivo corrompido (3DES e RC2 em `legacy-ciphers.js`)
+- [x] `cms.js`: `SignedData` destacado com os atributos do PAdES
+- [x] `pdf.js`: campo de assinatura, espaço reservado, `/ByteRange` e preenchimento
+- [x] Autoconferência da assinatura antes de entregar (`sign.js`, que também lê o certificado com o `x509.js`)
+- [x] Interface:
+  - [x] "Assinar com certificado digital (A1)", junto de "Gerar PDF"
+  - [x] escolher o `.pfx`, digitar a senha, ver titular e validade e confirmar
+  - [x] aviso de que o certificado vai junto no PDF (ver Segurança)
+- [x] Vários arquivos de saída (dividir): a senha é pedida uma vez para todos, e a chave é descartada no fim
+- [x] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`
 
 #### Fase 2: carimbo visível e coassinatura
 
@@ -388,12 +389,12 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 
 ### Testes
 
-- [ ] Certificados **de teste**, com dados fictícios (titular "PESSOA DE TESTE", CPF fictício), gerados com o OpenSSL e guardados em `test/fixtures/` com os comandos anotados. **Nunca** usar certificado real no repositório nem nos testes
-- [ ] `.pfx` com AES (padrão do OpenSSL 3), com 3DES e RC2 (opção `-legacy`, como sai do Windows), com senha errada, corrompido, vencido e sem cadeia
-- [ ] 3DES e RC2 com os vetores oficiais (NIST e RFC 2268), e o KDF do PKCS#12 conferido contra o OpenSSL
-- [ ] `/ByteRange` cobre o arquivo todo, menos o `/Contents`; o `messageDigest` bate; e a assinatura é verificada com o `node:crypto`
-- [ ] Saída sem `/Name`, `/Reason`, `/Location`, `/Info` nem XMP (com PDF/A, só o XMP de identificação)
-- [ ] PDF sem assinatura continua idêntico byte a byte
+- [x] Certificados **de teste**, com dados fictícios (titular "PESSOA DE TESTE", CPF fictício), gerados com o OpenSSL e guardados em `test/fixtures/certificados/` com os comandos anotados (`gerar.sh`). **Nunca** usar certificado real no repositório nem nos testes
+- [x] `.pfx` com AES (padrão do OpenSSL 3), com 3DES e RC2 (opção `-legacy`, como sai do Windows), com senha errada, corrompido, vencido e sem cadeia. Também em BER, sem uso para assinar, com chave de 1024 bits e com curva elíptica
+- [x] 3DES e RC2 com os vetores oficiais (NIST e RFC 2268), e o KDF do PKCS#12 conferido contra o OpenSSL
+- [x] `/ByteRange` cobre o arquivo todo, menos o `/Contents`; o `messageDigest` bate; e a assinatura é verificada com o `node:crypto` e com o `openssl cms -verify` (com a cadeia de teste)
+- [x] Saída sem `/Name`, `/Reason`, `/Location`, `/Info` nem XMP (com PDF/A, só o XMP de identificação)
+- [x] PDF sem assinatura continua idêntico byte a byte
 - [ ] Coassinatura: a primeira assinatura continua válida depois da segunda
 - [ ] Manual, com o certificado de teste: painel de assinaturas do Acrobat Reader. Ele avisa que a identidade é desconhecida (o certificado não é da ICP-Brasil), mas tem que dizer que o documento não foi alterado depois de assinado. Conferir também com `openssl cms -verify` e, se der, com o `pdfsig` (Poppler)
 - [ ] Manual, com um A1 de verdade: `validar.iti.gov.br`, num documento sem nada sensível. Esse envio ao ITI é uma escolha de quem testa, fora do app. Ainda não há um A1 válido para isso (ver perguntas)

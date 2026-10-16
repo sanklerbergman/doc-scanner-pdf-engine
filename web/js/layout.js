@@ -7,8 +7,7 @@
 // - {type: 'line', x1, x2, y, width, color} (horizontal, sublinhado e tachado) ou {x1, y1, x2, y2, ...} (bordas);
 // - {type: 'rect', x, y, w, h, color}, fundo de célula de tabela;
 // - {type: 'image', image, x, y, w, h}, com image = caminho da imagem no .docx (document.js põe os bytes).
-import { pdfFont, textWidth } from './fonts.js';
-import { winAnsiCode } from './pdf.js';
+import { pdfFont, textWidth, winAnsiCode } from './fonts.js';
 
 const LINE_HEIGHT = 1.15; // altura da linha simples, em relação ao tamanho da fonte
 const DESCENT = 0.25; // parte da linha abaixo da linha de base

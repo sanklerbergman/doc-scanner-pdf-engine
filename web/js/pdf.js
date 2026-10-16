@@ -1,9 +1,12 @@
 // Gerador de PDF mínimo, sem dependências. Três tipos de página:
-// - foto: imagem JPEG (filtro DCTDecode), que entra no PDF byte a byte, sem recompressão;
+// - foto: imagem JPEG (filtro DCTDecode), que entra no PDF byte a byte, sem recompressão, com a camada de texto
+//   invisível do OCR quando a pessoa liga essa opção;
 // - texto (documento do Word): texto de verdade, selecionável, com as fontes padrão do PDF
 //   (Helvetica, Times e Courier, codificação WinAnsi), sem embutir fonte;
 // - copiada de outro PDF (juntar e dividir): os objetos vêm prontos do pdf-reader.js, renumerados aqui.
-// Nenhum metadado é gravado (sem /Info, sem datas, sem "Producer").
+// Nenhum metadado é gravado (sem /Info, sem datas, sem "Producer"). A única data possível é a hora da assinatura
+// (/M), e só quando a pessoa assina (buildPdfToSign).
+import { textWidth, winAnsiCode } from './fonts.js';
 
 const encoder = new TextEncoder();
 
@@ -54,21 +57,6 @@ export const STANDARD_FONTS = [
   'Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic',
   'Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique',
 ];
-
-// WinAnsi: ASCII e Latin-1 (todos os acentos do português), mais estes 27 caracteres entre 0x80 e 0x9F.
-const WIN_ANSI_EXTRA = new Map([
-  [0x20ac, 0x80], [0x201a, 0x82], [0x0192, 0x83], [0x201e, 0x84], [0x2026, 0x85], [0x2020, 0x86], [0x2021, 0x87],
-  [0x02c6, 0x88], [0x2030, 0x89], [0x0160, 0x8a], [0x2039, 0x8b], [0x0152, 0x8c], [0x017d, 0x8e], [0x2018, 0x91],
-  [0x2019, 0x92], [0x201c, 0x93], [0x201d, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97], [0x02dc, 0x98],
-  [0x2122, 0x99], [0x0161, 0x9a], [0x203a, 0x9b], [0x0153, 0x9c], [0x017e, 0x9e], [0x0178, 0x9f],
-]);
-
-// Código WinAnsi de um caractere, ou undefined se as fontes padrão não o têm.
-export function winAnsiCode(char) {
-  const code = char.codePointAt(0);
-  if ((code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff)) return code;
-  return WIN_ANSI_EXTRA.get(code);
-}
 
 // String literal do PDF só com ASCII: parênteses e barra invertida escapados, o que passa do ASCII em octal.
 function pdfString(text) {
@@ -123,10 +111,57 @@ function textContent(page, fontNames, imageNames) {
   return ops.join('\n');
 }
 
+const OCR_FONT = 'Helvetica';
+
+// Texto que veio do OCR, só com caracteres da WinAnsi: o que as fontes padrão não têm vira "?".
+const ocrText = (text) => [...text].map((char) => (winAnsiCode(char) === undefined ? '?' : char)).join('');
+
+// String hexadecimal (<...>): o texto reconhecido na imagem nunca entra cru no conteúdo da página, então um ")"
+// ou uma "\" lida na foto não tem como quebrar o PDF.
+const hexString = (text) => `<${[...text].map((char) => winAnsiCode(char).toString(16).padStart(2, '0')).join('')}>`;
+
+/**
+ * Camada de texto invisível (3 Tr) do OCR, em cima da foto: cada palavra na posição em que aparece na imagem.
+ * O tamanho da letra sai da altura da linha, e a largura é ajustada com Tz para a seleção cair em cima da palavra.
+ * Entre as palavras da mesma linha vai um espaço, esticado até a próxima, para copiar e colar sair com espaços.
+ * @param {import('./ocr.js').OcrWord[]} words medidas de 0 a 1 relativas à imagem
+ * @param {{x: number, y: number, w: number, h: number}} box posição da imagem na página
+ */
+function ocrLayer(words, box, fontName) {
+  const clamp = (v) => Math.min(1, Math.max(0, v));
+  const ops = ['BT', '3 Tr'];
+  let tf = '';
+  let tz = '100';
+  words.forEach((word, i) => {
+    const next = word.last ? null : words[i + 1];
+    const text = ocrText(word.text) + (next ? ' ' : '');
+    const size = Math.max(1, word.size * box.h);
+    const x0 = clamp(word.x0);
+    const end = clamp(next ? Math.max(word.x1, next.x0) : word.x1);
+    const natural = textWidth(text, OCR_FONT, size);
+    const scale = natural > 0 ? Math.min(1000, Math.max(1, (100 * (end - x0) * box.w) / natural)) : 100;
+    const font = `${fontName} ${num(size)} Tf`;
+    if (font !== tf) ops.push((tf = font));
+    if (num(scale) !== tz) ops.push(`${(tz = num(scale))} Tz`);
+    ops.push(`1 0 0 1 ${num(box.x + x0 * box.w)} ${num(box.y + (1 - clamp(word.baseline)) * box.h)} Tm ${hexString(text)} Tj`);
+  });
+  ops.push('ET');
+  return ops.join('\n');
+}
+
+// Data no formato do PDF, com o fuso do aparelho: D:20261016093000-03'00'.
+export function pdfDate(date) {
+  const pad = (v) => String(v).padStart(2, '0');
+  const offset = -date.getTimezoneOffset();
+  const zone = offset === 0 ? 'Z' : `${offset > 0 ? '+' : '-'}${pad(Math.floor(Math.abs(offset) / 60))}'${pad(Math.abs(offset) % 60)}'`;
+  return `D:${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}` +
+    `${pad(date.getMinutes())}${pad(date.getSeconds())}${zone}`;
+}
+
 /**
  * Monta um PDF. Cada página é de um destes tipos:
- * - foto: {jpeg: Uint8Array, width, height, box: {x, y, w, h}}, com a imagem posicionada em box
- *   (origem no canto inferior esquerdo);
+ * - foto: {jpeg: Uint8Array, width, height, box: {x, y, w, h}, ocr?}, com a imagem posicionada em box
+ *   (origem no canto inferior esquerdo) e ocr = palavras reconhecidas (ocr.js), que viram texto invisível;
  * - texto: {width, height, items, rotation?}, com items vindos de layout.js: {type: 'text', x, y, text, font,
  *   size, color?, wordSpacing?, rise?}, {type: 'line', x1, x2, y (ou y1 e y2), width, color?}, {type: 'rect', x, y,
  *   w, h, color} e {type: 'image', jpeg, x, y, w, h}, origem no canto superior esquerdo e y do texto na linha
@@ -138,6 +173,42 @@ function textContent(page, fontNames, imageNames) {
  * @returns {Uint8Array}
  */
 export function buildPdf(pages) {
+  return assemble(pages).bytes;
+}
+
+/**
+ * Monta o PDF com o espaço da assinatura digital (PAdES): campo de assinatura invisível na primeira página,
+ * dicionário /Sig com o /ByteRange já preenchido e o /Contents em zeros, para o cms.js preencher (fillSignature).
+ * Sem /Name, /Reason, /Location nem /ContactInfo: só a hora da assinatura (/M), que faz parte do padrão.
+ * @param {object[]} pages as mesmas de buildPdf
+ * @param {{reserve: number, time: Date}} signature reserve: bytes reservados para o CMS
+ * @returns {{bytes: Uint8Array, byteRange: number[], contents: {at: number, length: number}}} contents: posição
+ *   e tamanho (em dígitos hexadecimais) do espaço da assinatura, entre o < e o >
+ */
+export function buildPdfToSign(pages, signature) {
+  if (!(signature?.reserve > 0) || !(signature.time instanceof Date)) throw new Error('Assinatura sem espaço ou sem hora');
+  return assemble(pages, signature);
+}
+
+// Bytes que a assinatura cobre: o arquivo todo, menos o /Contents (com o < e o >).
+export function signedRanges(bytes, byteRange) {
+  const [a, b, c, d] = byteRange;
+  return [bytes.subarray(a, a + b), bytes.subarray(c, c + d)];
+}
+
+/**
+ * Grava a assinatura (o CMS em DER) no espaço reservado por buildPdfToSign. O resto fica em zeros.
+ * @param {{bytes: Uint8Array, contents: {at: number, length: number}}} prepared
+ * @param {Uint8Array} der
+ */
+export function fillSignature({ bytes, contents }, der) {
+  if (der.length * 2 > contents.length) throw new Error('A assinatura não coube no espaço reservado');
+  const hex = encoder.encode([...der].map((b) => b.toString(16).padStart(2, '0')).join(''));
+  bytes.set(hex, contents.at);
+  return bytes;
+}
+
+function assemble(pages, signature) {
   if (!pages.length) throw new Error('Nenhuma página para gerar');
 
   const chunks = [];
@@ -174,6 +245,11 @@ export function buildPdf(pages) {
       fontNames.set(item.font, `/F${fontIds.size}`);
     }
   }
+  // Camada do OCR nas fotos: Helvetica, a mesma das páginas de texto (uma vez só no arquivo).
+  if (pages.some((page) => page.jpeg && page.ocr?.length) && !fontIds.has(OCR_FONT)) {
+    fontIds.set(OCR_FONT, nextId++);
+    fontNames.set(OCR_FONT, `/F${fontIds.size}`);
+  }
   // Imagens das páginas de texto (documentos do Word), depois das fontes.
   const imageIds = new Map();
   const imageNames = new Map();
@@ -195,16 +271,24 @@ export function buildPdf(pages) {
   }
   const parts = (list, base) => list.map((part) => (part?.ref !== undefined ? `${base + part.ref} 0 R` : part));
 
-  // Página copiada pode usar recursos de versões mais novas do formato (transparência, JPEG 2000…).
-  push(sources.size ? '%PDF-1.7\n' : '%PDF-1.4\n');
+  // Assinatura: campo (widget) e dicionário /Sig, os dois últimos objetos.
+  const widgetId = signature ? nextId++ : 0;
+  const sigId = signature ? nextId++ : 0;
+
+  // Página copiada pode usar recursos de versões mais novas do formato (transparência, JPEG 2000…). A assinatura
+  // no padrão PAdES (/ETSI.CAdES.detached) também é do PDF 1.7 em diante.
+  push(sources.size || signature ? '%PDF-1.7\n' : '%PDF-1.4\n');
   push(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a])); // marca de arquivo binário
 
-  object(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  object(1, signature
+    ? `<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [${widgetId} 0 R] /SigFlags 3 >> >>`
+    : '<< /Type /Catalog /Pages 2 0 R >>');
   object(2, `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`);
 
   pages.forEach((page, i) => {
     const id = pageIds[i];
     const mediaBox = `/MediaBox [0 0 ${num(page.width)} ${num(page.height)}]`;
+    const annots = signature && i === 0 ? ` /Annots [${widgetId} 0 R]` : '';
 
     if (page.copy) {
       const { source, page: copied } = page.copy;
@@ -218,7 +302,7 @@ export function buildPdf(pages) {
         ' /Resources ', ...parts(copied.resources, base),
         ...(copied.contents ? [' /Contents ', ...parts(copied.contents, base)] : []),
         ...(copied.group ? [' /Group ', ...parts(copied.group, base)] : []),
-        ' >>');
+        `${annots} >>`);
       return;
     }
 
@@ -231,17 +315,20 @@ export function buildPdf(pages) {
       const content = textContent(page, fontNames, imageNames); // só ASCII: o tamanho em caracteres é o tamanho em bytes
       object(id,
         `<< /Type /Page /Parent 2 0 R ${mediaBox}${rotate}` +
-        ` /Resources <<${fonts ? ` /Font <<${fonts} >>` : ''}${pictures ? ` /XObject <<${pictures} >>` : ''} >> /Contents ${id + 1} 0 R >>`);
+        ` /Resources <<${fonts ? ` /Font <<${fonts} >>` : ''}${pictures ? ` /XObject <<${pictures} >>` : ''} >> /Contents ${id + 1} 0 R${annots} >>`);
       object(id + 1, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
       return;
     }
 
     const { x, y, w, h } = page.box;
-    const content = `q ${num(w)} 0 0 ${num(h)} ${num(x)} ${num(y)} cm /Im0 Do Q`;
+    const ocr = page.ocr?.length ? fontNames.get(OCR_FONT) : null;
+    let content = `q ${num(w)} 0 0 ${num(h)} ${num(x)} ${num(y)} cm /Im0 Do Q`;
+    if (ocr) content += `\n${ocrLayer(page.ocr, page.box, ocr)}`; // só ASCII, como o das páginas de texto
+    const font = ocr ? ` /Font << ${ocr} ${fontIds.get(OCR_FONT)} 0 R >>` : '';
 
     object(id,
       `<< /Type /Page /Parent 2 0 R ${mediaBox}` +
-      ` /Resources << /XObject << /Im0 ${id + 2} 0 R >> >> /Contents ${id + 1} 0 R >>`);
+      ` /Resources << /XObject << /Im0 ${id + 2} 0 R >>${font} >> /Contents ${id + 1} 0 R${annots} >>`);
     object(id + 1, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
     object(id + 2, ...imageObject(page.jpeg));
   });
@@ -254,6 +341,21 @@ export function buildPdf(pages) {
     source.objects.forEach((list, i) => object(base + i, ...parts(list, base)));
   }
 
+  // Campo de assinatura invisível (/Rect zerado), que só imprime e não se mexe (/F 132 = Print + Locked).
+  let byteRangeAt = 0;
+  let contentsAt = 0;
+  if (signature) {
+    object(widgetId, `<< /Type /Annot /Subtype /Widget /FT /Sig /T (Assinatura) /F 132 /Rect [0 0 0 0] /P ${pageIds[0]} 0 R /V ${sigId} 0 R >>`);
+    offsets[sigId] = length;
+    push(`${sigId} 0 obj\n<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /ETSI.CAdES.detached /M (${pdfDate(signature.time)}) /ByteRange `);
+    byteRangeAt = length;
+    push(BYTE_RANGE_SPACE);
+    push(' /Contents ');
+    contentsAt = length;
+    push(`<${'0'.repeat(signature.reserve * 2)}>`);
+    push(' >>\nendobj\n');
+  }
+
   const xrefOffset = length;
   const count = offsets.length;
   let xref = `xref\n0 ${count}\n0000000000 65535 f \n`;
@@ -264,8 +366,18 @@ export function buildPdf(pages) {
   const out = new Uint8Array(length);
   let pos = 0;
   for (const chunk of chunks) { out.set(chunk, pos); pos += chunk.length; }
-  return out;
+  if (!signature) return { bytes: out };
+
+  // /ByteRange: do começo até o "<" do /Contents e do ">" até o fim. Os números ocupam o espaço reservado
+  // (o que sobra fica em branco antes do "]"), então nenhum offset do arquivo muda.
+  const after = contentsAt + signature.reserve * 2 + 2;
+  const byteRange = [0, contentsAt, after, out.length - after];
+  const text = `[${byteRange.join(' ')}`;
+  out.set(encoder.encode(`${text.padEnd(BYTE_RANGE_SPACE.length - 1)}]`), byteRangeAt);
+  return { bytes: out, byteRange, contents: { at: contentsAt + 1, length: signature.reserve * 2 } };
 }
+
+const BYTE_RANGE_SPACE = '[0 0000000000 0000000000 0000000000]';
 
 // Posiciona a imagem na página. sizes em pontos; margin em pontos.
 export const PAGE_SIZES = { a4: [595.28, 841.89], letter: [612, 792] };
