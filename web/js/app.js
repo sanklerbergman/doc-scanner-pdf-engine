@@ -6,7 +6,9 @@ import { setupCamera } from './camera.js';
 import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
 import { parseRanges } from './ranges.js';
-import { paintRedactions, rotateRedactions, toUnrotated, redactLayout, filterWords, textUnderRedactions } from './redact.js';
+import { paintRedactions, rotateRedactions, toUnrotated, toRotatedRects, redactLayout, filterWords, textUnderRedactions } from './redact.js';
+import { findInPieces, padRect, TYPE_LABELS } from './find-data.js';
+import { textWidth } from './fonts.js';
 
 // O site oficial já proíbe ser embutido em outro pelo cabeçalho frame-ancestors (web/_headers). Esta checagem
 // fica como segunda camada, e protege cópias hospedadas onde não dá para enviar cabeçalhos: o app se recusa a
@@ -130,12 +132,19 @@ const els = {
   pdfPasswordStatus: $('#pdf-password-status'),
   pdfPasswordOpen: $('#pdf-password-open'),
   pdfPasswordSkip: $('#pdf-password-skip'),
+  findData: $('#find-data'),
+  findDialog: $('#find-dialog'),
+  findSummary: $('#find-summary'),
+  findList: $('#find-list'),
+  findApply: $('#find-apply'),
+  findCancel: $('#find-cancel'),
 };
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
 const lockedWhileBusy = [
   'filterAll', 'pageSize', 'margin', 'quality', 'fileName', 'clear', 'pickFiles', 'takePhoto', 'undo', 'qualityTipApply',
   'outputMode', 'ranges', 'pdfCompress', 'compressTipToggle', 'ocr', 'sign', 'protect', 'protectPassword', 'protectConfirm',
+  'findData',
 ].map((key) => els[key]);
 
 // compressChosen: a pessoa já mexeu na opção de comprimir (aí o app não liga nem desliga sozinho).
@@ -774,11 +783,12 @@ function groupFileName(base, group, total) {
   return `${base}-${first === last ? first : `${first}-${last}`}.pdf`;
 }
 
-function setBusy(busy) {
+// label: o que aparece no botão de gerar enquanto o app trabalha.
+function setBusy(busy, label = 'Gerando…') {
   state.busy = busy;
   if (busy) disarmClear();
   els.generate.disabled = busy;
-  els.generate.textContent = busy ? 'Gerando…' : 'Gerar PDF';
+  els.generate.textContent = busy ? label : 'Gerar PDF';
   if (busy) els.workspace.setAttribute('aria-busy', 'true');
   else els.workspace.removeAttribute('aria-busy');
   for (const control of lockedWhileBusy) control.disabled = busy;
@@ -889,7 +899,11 @@ async function generate({ signer } = {}) {
           }
           announce(`Reconhecendo o texto: página ${toRead.indexOf(page) + 1} de ${toRead.length}…`);
           // O OCR lê a foto já tarjada; o que ele achar sobre uma tarja (a borda da caixa, ruído) também sai.
-          page.ocr = { key: ocrKey(page), words: filterWords(await recognizePage(ocr, image, canvas, page, layout), page.redactions) };
+          page.ocr = {
+            key: ocrKey(page),
+            words: filterWords(await recognizePage(ocr, image, canvas, page, layout), page.redactions),
+            size: { width: canvas.width, height: canvas.height },
+          };
         }
       } finally {
         image.release();
@@ -1273,6 +1287,219 @@ els.share.addEventListener('click', async () => {
   } catch (err) {
     if (err.name !== 'AbortError') announce('Não deu para compartilhar. Use o botão Baixar.', 'error');
   }
+});
+
+// ---------- Procurar dados para tarjar ----------
+// Lê o texto de cada página (Word: o layout; PDF: o PDF.js; foto: o OCR, que roda na hora se precisar), acha
+// CPF, CNPJ, e-mail, telefone, CEP e cartão (find-data.js) e mostra numa janela. Só vira tarja o que a pessoa
+// deixar marcado. Os dados achados só existem na memória e na janela, e nada vai para o console.
+
+let findings = null; // enquanto a janela está aberta: [{page, index, type, value, rects}]
+
+// Posição de cada caractere de um trecho (de x0 a x1), pela largura das letras numa fonte parecida: no PDF e na
+// foto, só se sabe onde o trecho começa e termina.
+const measureContext = document.createElement('canvas').getContext('2d');
+function charPositions(text, x0, x1, family = 'sans-serif') {
+  measureContext.font = `100px ${family}`;
+  const widths = [...text].flatMap((char) => {
+    const width = measureContext.measureText(char).width;
+    return char.length === 2 ? [width, 0] : [width]; // caractere fora do BMP ocupa duas posições na string
+  });
+  const total = widths.reduce((sum, width) => sum + width, 0) || 1;
+  const xs = [x0];
+  let acc = 0;
+  for (const width of widths) {
+    acc += width;
+    xs.push(x0 + ((x1 - x0) * acc) / total);
+  }
+  return xs;
+}
+
+// Word: a posição exata de cada letra sai das larguras das fontes padrão (as mesmas do PDF).
+function findInDocument(page) {
+  const { width, height, items } = page.layout;
+  const pieces = items.filter((item) => item.type === 'text').map((item) => {
+    const xs = [item.x / width];
+    let x = item.x;
+    for (let k = 0; k < item.text.length; k++) {
+      const char = item.text[k];
+      x += textWidth(char, item.font, item.size) + (char === ' ' ? item.wordSpacing ?? 0 : 0);
+      xs.push(x / width);
+    }
+    const baseline = item.y - (item.rise ?? 0);
+    return { str: item.text, xs, y0: (baseline - item.size * 0.85) / height, y1: (baseline + item.size * 0.25) / height };
+  });
+  return findInPieces(pieces, { width, height }).map((found) => ({ ...found, rect: toRotatedRects([found.rect], page.rotation)[0] }));
+}
+
+async function findInPdfPage(page) {
+  const tools = await loadPdfTools();
+  const { items, width, height } = await tools.pdfPageTextItems(page.doc, page.index);
+  const pieces = items.map((item) => ({ str: item.str, xs: charPositions(item.str, item.x0, item.x1, item.family), y0: item.y0, y1: item.y1 }));
+  // A posição de cada letra é estimada: a tarja ganha uma margem maior.
+  return findInPieces(pieces, { width, height })
+    .map((found) => ({ ...found, rect: toRotatedRects([padRect(found.rect, { width, height }, 0.3)], page.rotation)[0] }));
+}
+
+// Foto: o texto do OCR (já tarjado). Sem ele, o reconhecimento roda agora e fica guardado para gerar o PDF.
+async function findInPhoto(page, startEngine) {
+  if (page.ocr?.key !== ocrKey(page)) {
+    const ocr = await startEngine();
+    const image = await decodeFile(page.file);
+    let canvas;
+    try {
+      canvas = await renderPageAsync(image.source, image.width, image.height, {
+        rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: OCR_SIDE, redactions: page.redactions,
+      });
+    } finally {
+      image.release();
+    }
+    try {
+      // Sem a página do PDF ainda, a resolução é estimada como a de uma folha A4.
+      const words = await ocr.recognize(canvas, { dpi: Math.max(canvas.width, canvas.height) / 11.69 });
+      page.ocr = { key: ocrKey(page), words: filterWords(words, page.redactions), size: { width: canvas.width, height: canvas.height } };
+    } finally {
+      canvas.width = canvas.height = 0;
+    }
+  }
+  const size = page.ocr.size ?? { width: 1, height: 1.414 };
+  const pieces = page.ocr.words.map((word) => ({ str: word.text, xs: charPositions(word.text, word.x0, word.x1), y0: word.y0, y1: word.y1 }));
+  return findInPieces(pieces, size).map((found) => ({ ...found, rect: padRect(found.rect, size, 0.3) }));
+}
+
+const inside = (outer, inner) => inner.x0 >= outer.x0 && inner.y0 >= outer.y0 && inner.x1 <= outer.x1 && inner.y1 <= outer.y1;
+
+async function findData() {
+  if (!state.pages.length || state.busy) return;
+  setBusy(true, 'Procurando…');
+  const list = [...state.pages];
+  const toRead = list.filter((page) => isPhoto(page) && page.ocr?.key !== ocrKey(page));
+  let ocr = null;
+  let cancelled = false;
+  if (toRead.length) {
+    els.cancel.hidden = false;
+    state.cancel = () => {
+      cancelled = true;
+      els.cancel.disabled = true;
+      ocr?.cancel();
+    };
+  }
+  const startEngine = async () => {
+    if (ocr) return ocr;
+    announce('Preparando o reconhecimento de texto das fotos (na primeira vez, o app baixa uns 5 MB)…');
+    const { startOcr } = await loadOcr().catch(() => {
+      throw Object.assign(new Error('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.'), { name: 'OcrError' });
+    });
+    if (cancelled) throw new Cancelled();
+    ocr = await startOcr();
+    return ocr;
+  };
+  const groups = new Map();
+  const unreadable = [];
+  let ok = false;
+  try {
+    for (const [i, page] of list.entries()) {
+      if (cancelled) throw new Cancelled();
+      announce(toRead.includes(page)
+        ? `Reconhecendo o texto da foto ${toRead.indexOf(page) + 1} de ${toRead.length} para procurar dados…`
+        : `Procurando dados na página ${i + 1} de ${list.length}…`);
+      await nextFrame();
+      let found;
+      try {
+        found = isDocument(page) ? findInDocument(page) : page.kind === 'pdf' ? await findInPdfPage(page) : await findInPhoto(page, startEngine);
+      } catch (err) {
+        if (cancelled || err instanceof Cancelled || err?.name === 'OcrCancelled' || err?.name === 'OcrError') throw err;
+        unreadable.push(i + 1); // ex.: página de PDF que o PDF.js não consegue ler
+        continue;
+      }
+      for (const { type, value, rect } of found) {
+        if ((page.redactions ?? []).some((existing) => inside(existing, rect))) continue; // já tarjado
+        const key = `${i}|${type}|${value}`;
+        if (!groups.has(key)) groups.set(key, { page, index: i, type, value, rects: [] });
+        groups.get(key).rects.push(rect);
+      }
+    }
+    ok = true;
+  } catch (err) {
+    if (cancelled || err instanceof Cancelled || err?.name === 'OcrCancelled') announce('Busca cancelada.');
+    else announce(err?.name === 'OcrError' ? err.message : 'Não deu para procurar os dados. Tente de novo.', 'error');
+  } finally {
+    ocr?.terminate();
+    state.cancel = null;
+    els.cancel.hidden = true;
+    els.cancel.disabled = false;
+    setBusy(false);
+  }
+  if (!ok) {
+    els.findData.focus();
+    return;
+  }
+  const missed = !unreadable.length ? '' : ` Não deu para ler o texto ${unreadable.length === 1 ? `da página ${unreadable[0]}` : `das páginas ${unreadable.join(', ')}`}.`;
+  if (!groups.size) {
+    announce(`Não achei CPF, CNPJ, e-mail, telefone, CEP nem cartão no texto das páginas.${missed}`);
+    els.findData.focus();
+    return;
+  }
+  showFindings([...groups.values()], missed);
+}
+
+function showFindings(list, missed) {
+  findings = list;
+  const pages = new Set(list.map(({ index }) => index)).size;
+  els.findSummary.textContent = `${list.length === 1 ? '1 dado' : `${list.length} dados`} em ${pages === 1 ? '1 página' : `${pages} páginas`}. Desmarque o que não precisa ser tarjado.${missed}`;
+  const byPage = new Map();
+  list.forEach((found, i) => {
+    if (!byPage.has(found.index)) byPage.set(found.index, []);
+    byPage.get(found.index).push(el('label', { className: 'check' }, [
+      el('input', { type: 'checkbox', checked: true, 'data-key': i }),
+      el('span', { textContent: `${TYPE_LABELS[found.type]}: ${found.value}${found.rects.length > 1 ? ` (${found.rects.length} vezes)` : ''}` }),
+    ]));
+  });
+  els.findList.replaceChildren(...[...byPage].map(([index, rows]) => el('fieldset', { className: 'find-page' }, [
+    el('legend', { textContent: `Página ${index + 1}` }), ...rows,
+  ])));
+  updateFindApply();
+  announce(`${list.length === 1 ? '1 dado encontrado' : `${list.length} dados encontrados`}: confira na janela o que vai ser tarjado.`);
+  els.findDialog.showModal();
+  els.findApply.focus();
+}
+
+function updateFindApply() {
+  const count = els.findList.querySelectorAll('input:checked').length;
+  els.findApply.disabled = !count;
+  els.findApply.textContent = count === 0 ? 'Tarjar os marcados' : count === 1 ? 'Tarjar 1 dado' : `Tarjar ${count} dados`;
+}
+
+els.findData.addEventListener('click', findData);
+els.findList.addEventListener('change', updateFindApply);
+els.findCancel.addEventListener('click', () => {
+  els.findDialog.close();
+  announce('Nenhuma tarja adicionada.');
+});
+// A lista (com os dados) sai da página ao fechar a janela.
+els.findDialog.addEventListener('close', () => {
+  findings = null;
+  els.findList.replaceChildren();
+  els.findSummary.textContent = '';
+});
+els.findApply.addEventListener('click', async () => {
+  const chosen = (findings ?? []).filter((_, i) => els.findList.querySelector(`input[data-key="${i}"]`)?.checked);
+  els.findDialog.close();
+  if (!chosen.length) return;
+  const touched = new Set();
+  for (const { page, rects } of chosen) {
+    const valid = page.ocr?.key === ocrKey(page);
+    page.redactions = [...(page.redactions ?? []), ...rects];
+    // O texto do OCR continua valendo, sem o que ficou sob as tarjas novas: não precisa reconhecer de novo.
+    if (valid) page.ocr = { ...page.ocr, key: ocrKey(page), words: filterWords(page.ocr.words, page.redactions) };
+    touched.add(page);
+  }
+  discardPdf();
+  for (const page of touched) await refreshThumb(page);
+  renderPages();
+  const total = chosen.reduce((sum, { rects }) => sum + rects.length, 0);
+  announce(`${total === 1 ? '1 tarja adicionada' : `${total} tarjas adicionadas`} em ${touched.size === 1 ? '1 página' : `${touched.size} páginas`}. Confira em tela cheia: dá para ajustar ou remover cada uma.`);
+  els.findData.focus();
 });
 
 // ---------- Assinar com certificado digital (A1) ----------

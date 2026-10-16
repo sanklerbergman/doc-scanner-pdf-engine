@@ -96,6 +96,22 @@ export async function pdfTextBoxes(bytes, indices) {
   }
 }
 
+/**
+ * Texto de uma página de um PDF aberto, pelo PDF.js: a busca de dados para tarjar. Sem o PDF.js, dá erro.
+ * @param {object} doc documento do pdf-reader
+ * @param {number} index
+ */
+export async function pdfPageTextItems(doc, index) {
+  renderer ??= import('./pdf-render.js');
+  try {
+    const { pageTextItems } = await renderer;
+    return await pageTextItems(doc, doc.previewBytes ?? doc.bytes, index);
+  } catch (err) {
+    renderer = undefined;
+    throw err;
+  }
+}
+
 // Libera a memória dos PDFs abertos no PDF.js (ao limpar a lista).
 export async function releasePdfPreviews() {
   if (renderer) (await renderer.catch(() => null))?.releaseAll();

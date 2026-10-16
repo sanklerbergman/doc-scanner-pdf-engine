@@ -83,6 +83,42 @@ export async function renderPdfPage(key, bytes, index, { maxSide, rotation = 0 }
   }
 }
 
+// Caixa de um trecho de texto do PDF.js na página (de 0 a 1, origem no canto superior esquerdo), pelo viewport:
+// da linha de base um pouco para baixo até perto do tamanho da letra para cima.
+function itemBox(item, viewport) {
+  const [, , c, d, e, f] = item.transform;
+  const height = item.height || Math.hypot(c, d);
+  const corners = [[e, f - height * 0.2], [e + item.width, f + height * 0.8]].map(([x, y]) => viewport.convertToViewportPoint(x, y));
+  const xs = corners.map(([x]) => x / viewport.width);
+  const ys = corners.map(([, y]) => y / viewport.height);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
+/**
+ * Texto de uma página de um PDF aberto no app, para a busca de dados a tarjar: cada trecho com a caixa (de 0 a 1,
+ * com o /Rotate do próprio PDF, sem o giro feito no app) e a família da fonte, para estimar onde fica cada letra.
+ * @param {object} key identifica o PDF (o documento do pdf-reader)
+ * @returns {Promise<{items: Array<{str: string, x0: number, y0: number, x1: number, y1: number, family: string}>,
+ *   width: number, height: number}>}
+ */
+export async function pageTextItems(key, bytes, index) {
+  const doc = await load(key, bytes);
+  const page = await doc.getPage(index + 1);
+  try {
+    const viewport = page.getViewport({ scale: 1 });
+    const { items, styles } = await page.getTextContent();
+    return {
+      width: viewport.width,
+      height: viewport.height,
+      items: items.filter((item) => item.str?.trim()).map((item) => ({
+        str: item.str, ...itemBox(item, viewport), family: styles[item.fontName]?.fontFamily ?? 'sans-serif',
+      })),
+    };
+  } finally {
+    page.cleanup();
+  }
+}
+
 /**
  * Texto de páginas de um PDF, lido pelo PDF.js, com a posição como a página aparece na tela (de 0 a 1, origem no
  * canto superior esquerdo, já com o /Rotate): a conferência das tarjas (redact.js). Inclui texto invisível
@@ -117,16 +153,7 @@ export async function pageTexts(bytes, indices) {
       try {
         const viewport = page.getViewport({ scale: 1 });
         const { items } = await page.getTextContent();
-        out.set(index, items.filter((item) => item.str?.trim()).map((item) => {
-          const [, , c, d, e, f] = item.transform;
-          const height = item.height || Math.hypot(c, d);
-          // Caixa do trecho: da linha de base um pouco para baixo até perto do tamanho da letra para cima.
-          const corners = [[e, f - height * 0.2], [e + item.width, f + height * 0.8]]
-            .map(([x, y]) => viewport.convertToViewportPoint(x, y));
-          const xs = corners.map(([x]) => x / viewport.width);
-          const ys = corners.map(([, y]) => y / viewport.height);
-          return { str: item.str, x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
-        }));
+        out.set(index, items.filter((item) => item.str?.trim()).map((item) => ({ str: item.str, ...itemBox(item, viewport) })));
       } finally {
         page.cleanup();
       }

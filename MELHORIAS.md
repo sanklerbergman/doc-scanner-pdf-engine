@@ -550,9 +550,9 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 
 #### Fase 3: busca automática
 
-- [ ] Padrões brasileiros, com dígito verificador onde existe
-- [ ] Busca no texto do Word e no texto dos PDFs (PDF.js, `getTextContent`); nas fotos, depois do OCR
-- [ ] Cada sugestão confirmada pela pessoa
+- [x] Padrões brasileiros, com dígito verificador onde existe (`web/js/find-data.js`): CPF e CNPJ, inclusive o CNPJ alfanumérico da Receita (2026), e-mail, telefone (DDD válido), CEP e cartão (Luhn)
+- [x] Busca no texto do Word e no texto dos PDFs (PDF.js, `getTextContent`); nas fotos, depois do OCR (que roda na hora da busca, se ainda não rodou, e fica guardado para gerar o PDF)
+- [x] Cada sugestão confirmada pela pessoa: uma janela lista os dados por página, com caixas de marcar, e só o que fica marcado vira tarja
 
 ### Segurança e privacidade
 
@@ -567,7 +567,7 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 - [x] Word: o texto sob a tarja não está no PDF, nem depois de descompactar (`test/redact.test.js`)
 - [x] PDF: a página tarjada é só imagem, e nenhum texto dela fica no arquivo (no navegador)
 - [x] Conferência: um PDF montado de propósito com texto sob a tarja é recusado (no Node, a regra; no navegador, com o PDF.js)
-- [ ] Padrões: CPF e CNPJ válidos e inválidos, com e sem pontuação, e falsos positivos comuns (número de processo, datas)
+- [x] Padrões: CPF e CNPJ válidos e inválidos, com e sem pontuação, e falsos positivos comuns (número de processo, datas, valores, boleto) (`test/find-data.test.js`)
 - [ ] Teste real no iPhone, no site publicado
 
 ### Decisões
@@ -577,6 +577,8 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 - **Só a caixa preta, sem texto** ("tarjado" ou parecido): é o padrão em documentos enviados a processos e órgãos públicos. Dá para mudar se o dono preferir.
 - **Uma letra do Word sai quando a tarja cobre pelo menos 20% da altura dela**; encostar na linha de cima ou de baixo não tira nada. A conferência acusa texto com 30% ou mais da altura sob a tarja.
 - **Versão:** a tarja manual e a conferência (fases 1 e 2) saem na v3.2.0; a busca automática (fase 3), na v3.3.0.
+- **Posição de cada letra na busca:** no Word, exata (as larguras das fontes padrão); no PDF e na foto, estimada pela largura das letras numa fonte parecida, com uma margem a mais na tarja. A pessoa confere em tela cheia.
+- **CNPJ alfanumérico só com a máscara** (XX.XXX.XXX/XXXX-DV): sem a pontuação, qualquer palavra de 14 letras e números poderia parecer um.
 
 ### Perguntas em aberto
 
