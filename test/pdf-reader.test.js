@@ -188,6 +188,20 @@ test('/Filter que não é nome nem lista: recusa com PdfError, sem erro inespera
   await assert.rejects(openPdf(bytes), (err) => err instanceof PdfError && /Filtro/.test(err.message));
 });
 
+test('stream de conteúdo com /Filter que não é nome nem lista vai vazio e sem filtro para a cópia (achado do fuzzing)', async () => {
+  const doc = await openPdf(makeRawPdf({
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 612 792] >>',
+    3: '<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /XObject << /Im1 6 0 R >> >> >>',
+    4: '<< /Filter true /Length 9 >>\nstream\nq Q 1 0 0\nendstream',
+    6: { dict: '/Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter [/FlateDecode 7]', data: 'x' },
+  }).bytes);
+  const copy = copyPages(doc, [0]);
+  const text = latin1(buildPdf([{ copy: { source: copy, page: copy.pages.get(0) } }])); // passa pelo qpdf --check
+  assert.doesNotMatch(text, /\/Filter true|\/Filter \[\/FlateDecode 7\]/);
+  assert.equal(text.match(/\/Length 0 >>\nstream\n\nendstream/g).length, 2, 'o conteúdo e a imagem vão vazios');
+});
+
 test('/Contents: só streams vão para a cópia, e uma lista indireta não some com as anotações', async () => {
   const doc = await openPdf(makeRawPdf({
     1: '<< /Type /Catalog /Pages 2 0 R >>',

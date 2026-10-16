@@ -13,6 +13,7 @@ Este é um projeto de comunidade, mantido no tempo livre: não há recompensa em
 - Metadados da foto (GPS, modelo do aparelho, data) indo parar no PDF.
 - O arquivo do certificado digital (.pfx), a chave ou a senha saindo do aparelho, ficando guardados ou aparecendo no console. (O certificado público vai no PDF assinado de propósito: é por ele que quem recebe confere quem assinou.)
 - Um PDF entregue como "assinado" sem que a assinatura confira.
+- A senha de um PDF (a digitada para abrir ou a escolhida para proteger) saindo do aparelho, ficando guardada ou aparecendo no console, ou um PDF "protegido com senha" que abre sem ela.
 - Problemas no workflow de publicação que permitam publicar código não revisado.
 
 ## Regras para quem contribui

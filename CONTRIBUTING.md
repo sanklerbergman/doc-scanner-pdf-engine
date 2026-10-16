@@ -22,6 +22,7 @@ npm test    # testes
 - Mudou arquivo do app? Aumente a versão de `CACHE` em `web/sw.js`.
 - Os PDFs que os testes geram passam pelo `qpdf --check` quando ele está instalado (no CI é obrigatório; a variável `QPDF` aponta o programa).
 - Os testes da assinatura usam só os certificados **de teste** de `test/fixtures/certificados` (dados fictícios, gerados pelo `gerar.sh` de lá). Nunca coloque um certificado real no repositório nem nos testes. A conferência com o `openssl cms -verify` roda quando o OpenSSL está instalado (no CI é obrigatória).
+- PDFs com senha para os testes: `test/fixtures/pdf-senha`, gerados pelo `gerar.mjs` de lá com o qpdf (os comandos ficam no próprio arquivo).
 - Mexeu no leitor de PDF? Rode também a varredura com PDFs reais (`node scripts/varrer-pdfs.mjs <pasta> --qpdf`) e uma rodada longa de fuzzing (`node scripts/fuzz-pdf.mjs`). Como usar cada um está no começo do arquivo.
 - O `npm start` não envia os cabeçalhos de segurança. Para ver o site como ele fica no ar: `cd deploy && npm ci --ignore-scripts && npx wrangler telemetry disable && npx wrangler dev` (o `telemetry disable` impede o wrangler de enviar estatísticas de uso ao Cloudflare).
 - Nova release: a versão fica em `package.json` e no rodapé do `web/index.html` (o teste confere que batem); depois `gh release create vX.Y.Z --generate-notes`.

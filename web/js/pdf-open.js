@@ -4,6 +4,7 @@
 // a página aparece como um cartão com o formato da folha e o número. No PDF novo, ela sai igual ao original.
 import { openPdf, copyPages, PdfError } from './pdf-reader.js';
 import { compressObjects, compressibleBytes } from './pdf-compress.js';
+import { buildPdf } from './pdf.js';
 
 // PDF "pesado": imagens que dá para recomprimir somando 1 MB ou mais, e pelo menos 40% do arquivo.
 // Aí o app já liga a compressão e avisa (dá para desligar com um toque).
@@ -26,7 +27,7 @@ export async function drawPdfPage(doc, page, options) {
   try {
     renderer ??= import('./pdf-render.js');
     const { renderPdfPage } = await renderer;
-    return { canvas: await renderPdfPage(doc, doc.bytes, page.index, options), real: true };
+    return { canvas: await renderPdfPage(doc, doc.previewBytes ?? doc.bytes, page.index, options), real: true };
   } catch (err) {
     console.warn('Página de PDF sem desenho:', err);
     renderer = undefined; // tenta de novo na próxima (ex.: sem rede e sem cache na primeira vez)
@@ -85,13 +86,27 @@ export async function releasePdfPreviews() {
 
 /**
  * @param {File} file
+ * @param {string | null} [password] senha do PDF protegido. Sem ela (ou errada), um PDF que precisa de senha é
+ *   recusado com PdfPasswordError (pdf-crypt.js), e quem chama pede a senha
  * @returns {Promise<{doc: object, pages: Array<{index: number, width: number, height: number}>, notes: string[],
  *   heavy: boolean}>} heavy: PDF pesado por causa de imagens que a compressão consegue diminuir
  */
-export async function openPdfFile(file) {
+export async function openPdfFile(file, password = null) {
   if (file.size > MAX_FILE) throw new PdfError('O PDF passa de 200 MB.');
-  const doc = await openPdf(new Uint8Array(await file.arrayBuffer()));
+  const doc = await openPdf(new Uint8Array(await file.arrayBuffer()), { password });
   const notes = [];
+  if (doc.security?.hadPassword) {
+    notes.push('Este PDF tinha senha: o PDF novo sai sem ela, a não ser que você ligue "Proteger o PDF com senha".');
+  } else if (doc.security?.restricted) {
+    notes.push('Este PDF tinha restrições do autor (como não permitir imprimir ou alterar): o PDF novo sai sem elas.');
+  }
+  if (doc.security) {
+    // O PDF.js desenha uma cópia já decifrada, com as mesmas páginas que vão para o PDF novo: assim a senha não
+    // precisa ficar guardada para as miniaturas.
+    const all = doc.pages.map((_, index) => index);
+    const copy = copyPages(doc, all);
+    doc.previewBytes = buildPdf(all.map((index) => ({ copy: { source: copy, page: copy.pages.get(index) } })));
+  }
   if (doc.isSigned()) {
     notes.push('Este PDF tem assinatura digital: no PDF novo a assinatura deixa de valer (ela só vale no arquivo original).');
   }

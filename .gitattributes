@@ -1,0 +1,7 @@
+# Arquivos binários: o Git nunca mexe nas quebras de linha deles. No Windows, a conversão de \r\n corromperia os
+# PDFs de teste (alguns parecem texto para o Git, mas os dados cifrados contêm esses bytes) e os certificados.
+*.pdf binary
+*.pfx binary
+*.p12 binary
+*.cer binary
+*.jpg binary

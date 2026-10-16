@@ -59,6 +59,7 @@ const loadDocuments = lazy('./document.js'); // .docx: ZIP, XML, layout
 const loadPdfTools = lazy('./pdf-open.js'); // .pdf: leitor de PDF
 const loadOcr = lazy('./ocr.js'); // OCR: o motor (vendor/tesseract) só carrega quando o reconhecimento começa
 const loadSigning = lazy('./sign.js'); // assinatura: PKCS#12, certificado e CMS
+const loadCrypt = lazy('./pdf-crypt.js'); // proteger o PDF gerado com senha
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -118,12 +119,22 @@ const els = {
   signStatus: $('#sign-status'),
   signCancel: $('#sign-cancel'),
   signNext: $('#sign-next'),
+  protect: $('#protect'),
+  protectInputs: $('#protect-inputs'),
+  protectPassword: $('#protect-password'),
+  protectConfirm: $('#protect-confirm'),
+  pdfPasswordDialog: $('#pdf-password'),
+  pdfPasswordName: $('#pdf-password-name'),
+  pdfPasswordInput: $('#pdf-password-input'),
+  pdfPasswordStatus: $('#pdf-password-status'),
+  pdfPasswordOpen: $('#pdf-password-open'),
+  pdfPasswordSkip: $('#pdf-password-skip'),
 };
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
 const lockedWhileBusy = [
   'filterAll', 'pageSize', 'margin', 'quality', 'fileName', 'clear', 'pickFiles', 'takePhoto', 'undo', 'qualityTipApply',
-  'outputMode', 'ranges', 'pdfCompress', 'compressTipToggle', 'ocr', 'sign',
+  'outputMode', 'ranges', 'pdfCompress', 'compressTipToggle', 'ocr', 'sign', 'protect', 'protectPassword', 'protectConfirm',
 ].map((key) => els[key]);
 
 // compressChosen: a pessoa já mexeu na opção de comprimir (aí o app não liga nem desliga sozinho).
@@ -260,7 +271,21 @@ async function addPdfFile(file) {
   let module;
   try {
     module = await loadPdfTools();
-    const { doc, pages, notes, heavy } = await module.openPdfFile(file);
+    // PDF com senha: pede a senha e tenta de novo, quantas vezes a pessoa quiser (ou pula o arquivo).
+    let opened;
+    let password = null;
+    while (!opened) {
+      try {
+        opened = await module.openPdfFile(file, password);
+      } catch (err) {
+        if (err?.name !== 'PdfPasswordError') throw err;
+        announce(`${file.name} está protegido por senha.`);
+        password = await askPdfPassword(file.name, err.wrong);
+        if (password === null) return { error: `${file.name} ficou de fora: ele precisa de senha para abrir.` };
+      }
+    }
+    password = null;
+    const { doc, pages, notes, heavy } = opened;
     doc.heavy = heavy;
     doc.size = file.size;
     for (const info of pages) {
@@ -298,6 +323,54 @@ async function refreshThumb(page) {
     }), 'image/jpeg', 0.8);
   if (page.thumbUrl) URL.revokeObjectURL(page.thumbUrl);
   page.thumbUrl = URL.createObjectURL(blob);
+}
+
+// Pede a senha de um PDF protegido. Devolve a senha, ou null se a pessoa pular o arquivo. O campo é limpo na hora.
+function askPdfPassword(name, wrong) {
+  return new Promise((resolve) => {
+    const dialog = els.pdfPasswordDialog;
+    const status = (message, kind = 'info') => {
+      els.pdfPasswordStatus.textContent = message;
+      els.pdfPasswordStatus.dataset.kind = kind;
+    };
+    const finish = (value) => {
+      els.pdfPasswordOpen.removeEventListener('click', submit);
+      els.pdfPasswordSkip.removeEventListener('click', skip);
+      els.pdfPasswordInput.removeEventListener('keydown', onKey);
+      dialog.removeEventListener('cancel', onCancel);
+      els.pdfPasswordInput.value = '';
+      dialog.close();
+      resolve(value);
+    };
+    const submit = () => {
+      const value = els.pdfPasswordInput.value;
+      if (!value) {
+        status('Digite a senha do PDF.', 'error');
+        els.pdfPasswordInput.focus();
+        return;
+      }
+      finish(value);
+    };
+    const skip = () => finish(null);
+    const onKey = (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      submit();
+    };
+    const onCancel = (event) => { // Esc: o mesmo que pular
+      event.preventDefault();
+      finish(null);
+    };
+    els.pdfPasswordName.textContent = name;
+    els.pdfPasswordInput.value = '';
+    status(wrong ? 'A senha não confere. Confira maiúsculas e minúsculas e tente de novo.' : '', wrong ? 'error' : 'info');
+    els.pdfPasswordOpen.addEventListener('click', submit);
+    els.pdfPasswordSkip.addEventListener('click', skip);
+    els.pdfPasswordInput.addEventListener('keydown', onKey);
+    dialog.addEventListener('cancel', onCancel);
+    dialog.showModal();
+    els.pdfPasswordInput.focus();
+  });
 }
 
 // Página de PDF desenhada pelo PDF.js; se não der, um cartão com o formato da folha e o número.
@@ -596,6 +669,33 @@ els.filterAll.addEventListener('change', async () => {
 });
 
 for (const select of [els.pageSize, els.margin, els.quality, els.ocr]) select.addEventListener('change', discardPdf);
+
+// Proteger com senha: os campos só aparecem com a opção ligada; desligar apaga o que foi digitado.
+els.protect.addEventListener('change', () => {
+  discardPdf();
+  els.protectInputs.hidden = !els.protect.checked;
+  if (els.protect.checked) els.protectPassword.focus();
+  else els.protectPassword.value = els.protectConfirm.value = '';
+});
+for (const input of [els.protectPassword, els.protectConfirm]) input.addEventListener('input', discardPdf);
+
+// Senha para proteger o PDF, já conferida. null: sem proteção; undefined: falta ou não confere (já avisado).
+function protectionPassword() {
+  if (!els.protect.checked) return null;
+  const password = els.protectPassword.value;
+  if (!password) {
+    announce('Digite a senha para proteger o PDF.', 'error');
+    els.protectPassword.focus();
+    return undefined;
+  }
+  if (password !== els.protectConfirm.value) {
+    announce('As duas senhas não são iguais. Digite de novo.', 'error');
+    els.protectConfirm.value = '';
+    els.protectConfirm.focus();
+    return undefined;
+  }
+  return password;
+}
 els.quality.addEventListener('change', updateQualityTip);
 els.fileName.addEventListener('input', discardPdf);
 
@@ -693,6 +793,11 @@ async function generate({ signer } = {}) {
     els.ranges.focus();
     return;
   }
+  const password = protectionPassword(); // proteger com senha: conferida antes de começar
+  if (password === undefined) {
+    signer?.discard();
+    return;
+  }
   setBusy(true);
   discardPdf();
   const quality = QUALITY[els.quality.value];
@@ -769,6 +874,7 @@ async function generate({ signer } = {}) {
     state.cancel = null;
 
     const tools = list.some((page) => page.kind === 'pdf') ? await loadPdfTools() : null;
+    const crypt = password && !signer ? await loadCrypt() : null; // com assinatura, quem protege é o sign.js
 
     // Comprimir: as imagens de cada PDF de origem são recodificadas uma vez só, para todos os arquivos.
     const level = tools ? els.pdfCompress.value : 'none';
@@ -828,16 +934,21 @@ async function generate({ signer } = {}) {
           notSmaller++;
         }
       }
-      // Assinar é sempre o último passo: qualquer mudança depois invalidaria a assinatura.
+      // Assinar é sempre o último passo: qualquer mudança depois invalidaria a assinatura. Com senha, o PDF é
+      // cifrado antes de ser assinado (a assinatura cobre o arquivo cifrado).
       if (signer) {
         announce(groups.length === 1 ? 'Assinando o PDF…' : `Assinando o PDF ${g + 1} de ${groups.length}…`);
-        bytes = await signer.sign(chosen);
+        bytes = await signer.sign(chosen, new Date(), { password });
+      } else if (password) {
+        announce(groups.length === 1 ? 'Protegendo o PDF com a senha…' : `Protegendo o PDF ${g + 1} de ${groups.length} com a senha…`);
+        bytes = (await crypt.protectPdf(bytes, password)).bytes;
       }
       const name = groups.length === 1 ? `${base}.pdf` : groupFileName(base, group, list.length);
       files.push({ file: new File([bytes], name, { type: 'application/pdf' }), before });
     }
     state.output = files.map(({ file, before }) => ({ file, before, url: URL.createObjectURL(file) }));
-    showResult(groups, signer);
+    showResult(groups, signer, !!password);
+    if (password) els.protectPassword.value = els.protectConfirm.value = ''; // a senha não fica nos campos
     const what = signer ? (files.length === 1 ? 'PDF assinado.' : `${files.length} PDFs assinados.`) : (files.length === 1 ? 'PDF pronto.' : `${files.length} PDFs prontos.`);
     const ready = `${what} ${files.length === 1 ? 'Ele só existe' : 'Eles só existem'} aqui no seu aparelho até você baixar.`;
     const kept = !notSmaller ? '' : notSmaller === files.length && files.length === 1
@@ -847,7 +958,10 @@ async function generate({ signer } = {}) {
     const read = !useOcr ? '' : blank === 0
       ? ' O texto das fotos foi reconhecido: dá para buscar e copiar no PDF.'
       : ` Não achei texto impresso em ${blank === 1 ? 'uma das fotos' : `${blank} das fotos`}.`;
-    announce(ready + kept + read, 'success');
+    const locked = !password ? '' : files.length === 1
+      ? ' Ele só abre com a senha que você escolheu.'
+      : ' Eles só abrem com a senha que você escolheu.';
+    announce(ready + locked + kept + read, 'success');
     ok = true;
   } catch (err) {
     if (cancelled || err instanceof Cancelled) {
@@ -907,7 +1021,7 @@ function sizeText(size, before) {
   return `${formatBytes(size)} (antes ${formatBytes(before)}, −${Math.round((1 - size / before) * 100)}%)`;
 }
 
-function showResult(groups, signer) {
+function showResult(groups, signer, locked) {
   const files = state.output;
   const total = files.reduce((sum, { file }) => sum + file.size, 0);
   const totalBefore = files.some(({ before }) => before) ? files.reduce((sum, { file, before }) => sum + (before ?? file.size), 0) : null;
@@ -916,10 +1030,11 @@ function showResult(groups, signer) {
   els.resultTitle.textContent = signer
     ? (single ? 'PDF assinado' : `${files.length} PDFs assinados`)
     : (single ? 'PDF pronto' : `${files.length} PDFs prontos`);
-  const signed = signer ? ` · assinado por ${signer.name}` : '';
+  const signed = signer ? ` · ${single ? 'assinado' : 'assinados'} por ${signer.name}` : '';
+  const withPassword = locked ? ' · com senha' : '';
   els.resultInfo.textContent = single
-    ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}${signed}`
-    : `${sizeText(total, totalBefore)} no total${signer ? ` · assinados por ${signer.name}` : ''}`;
+    ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}${signed}${withPassword}`
+    : `${sizeText(total, totalBefore)} no total${signed}${withPassword}`;
   els.download.hidden = !single;
   els.download.href = files[0].url;
   els.download.download = files[0].file.name;
@@ -1086,6 +1201,7 @@ els.sign.addEventListener('click', () => {
     els.ranges.focus();
     return;
   }
+  if (protectionPassword() === undefined) return; // senha de proteção faltando ou diferente: idem
   resetSigning();
   els.signDialog.showModal();
   els.signPick.focus();

@@ -604,14 +604,17 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 
 #### Fase 1: abrir
 
-- [ ] `pdf-crypt.js`: chave a partir da senha (revisões 2 a 6), RC4, MD5 e decifragem por objeto
-- [ ] `pdf-reader.js`: decifrar strings e streams; parar de recusar PDF com `/Encrypt`
-- [ ] Interface: pedir a senha quando a vazia não abre, com mensagem clara para senha errada
-- [ ] Aviso: "O PDF novo sai sem senha"
+- [x] `pdf-crypt.js`: chave a partir da senha (revisões 2 a 6), RC4, MD5 e decifragem por objeto
+- [x] `pdf-reader.js`: decifrar strings e streams; parar de recusar PDF com `/Encrypt`. Todos os objetos são decifrados ao abrir, e a chave é descartada em seguida
+- [x] Interface: pedir a senha quando a vazia não abre, com mensagem clara para senha errada (e "Pular este arquivo")
+- [x] Aviso: "O PDF novo sai sem senha" (e, no PDF só com restrições, que elas não valem no PDF novo)
+- [x] PDF que só cifra os anexos (`/EFF`) abre sem senha: o documento em si não é cifrado
+- [x] As miniaturas (PDF.js) são desenhadas de uma cópia já decifrada, para a senha não precisar ficar guardada
 
 #### Fase 2: proteger o PDF gerado
 
-- [ ] Opção "Proteger com senha" ao gerar: AES-256 (revisão 6), só com senha de abertura e sem senha de proprietário escondida
+- [x] Opção "Proteger o PDF com senha" ao gerar: AES-256 (revisão 6), só com senha de abertura e sem senha de proprietário escondida (a de proprietário é a mesma, e nada é restrito)
+- [x] Junto com a assinatura: o PDF é cifrado antes de ser assinado, e o `/Contents` da assinatura fica sem cifrar, como a norma manda
 
 ### Segurança e privacidade
 
@@ -622,20 +625,19 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 
 ### Testes
 
-- [ ] PDFs de teste cifrados com o qpdf, em cada revisão, com os comandos anotados: senha de abertura, só senha de proprietário e senha com acentos
-- [ ] Senha errada, senha vazia e senha Unicode
-- [ ] MD5 (RFC 1321) e RC4 com os vetores oficiais
-- [ ] O conteúdo decifrado bate com o `qpdf --decrypt` do mesmo arquivo
+- [x] PDFs de teste cifrados com o qpdf, em cada revisão, com os comandos anotados (`test/fixtures/pdf-senha/gerar.mjs`): senha de abertura, só senha de proprietário e senha com acentos
+- [x] Senha errada, senha vazia e senha Unicode
+- [x] MD5 (RFC 1321) e RC4 com os vetores oficiais
+- [x] O conteúdo decifrado bate com o `qpdf --decrypt` do mesmo arquivo
+- [x] PDF protegido pelo app: o qpdf e o PDF.js abrem com a senha e recusam a errada; o conteúdo volta igual
+- [x] Varredura com os 994 PDFs de teste do PDF.js: nenhum que abria deixou de abrir, e 13 dos cifrados passaram a abrir sem senha (só restrições ou só anexos). Os que pedem senha abrem com a senha do manifesto do PDF.js
 - [ ] Teste real no iPhone, no site publicado
 
 ### Decisões
 
 - **AES pelo navegador e só MD5 e RC4 em JS:** menos código próprio de criptografia.
-- **Versão:** a decidir.
-
-### Perguntas em aberto
-
-- **Respeitar as permissões do autor?** Um PDF pode abrir sem senha e mesmo assim proibir alterações, incluindo juntar e separar páginas. O Acrobat e o PdfCraft respeitam isso e pedem a senha de proprietário. Respeitar é o correto com o autor do documento, mas pode impedir justamente o uso comum (juntar o contracheque com outros documentos). A recomendação é respeitar e explicar o motivo na mensagem.
+- **Versão:** sai na v3.1.0, com as duas fases (decisão do dono em 2026-10-16).
+- **Permissões do autor não são respeitadas** (decisão do dono em 2026-10-16). Um PDF pode abrir sem senha e mesmo assim proibir alterações, incluindo juntar e separar páginas; o Acrobat e o PdfCraft pedem a senha de proprietário nesse caso. O app abre do mesmo jeito, porque o uso comum é justamente juntar o contracheque com outros documentos, e só avisa que o PDF novo sai sem as restrições.
 
 ## Testes com PDFs maliciosos e conferência dos PDFs gerados
 

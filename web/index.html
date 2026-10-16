@@ -151,6 +151,21 @@
           <ol id="output-files" class="output-files"></ol>
         </div>
         <p id="document-note" class="tip field-wide" hidden><span>Páginas de documentos do Word e de PDFs saem com o tamanho e as margens do próprio arquivo. O texto continua de verdade: dá para selecionar e pesquisar.</span></p>
+        <!-- Proteger com senha (js/pdf-crypt.js, AES-256): a senha só fica nos campos até o PDF ser gerado. -->
+        <div class="field field-wide check-field">
+          <label class="check"><input id="protect" type="checkbox" aria-describedby="protect-note"> Proteger o PDF com senha</label>
+          <p id="protect-note" class="field-note">Quem receber o PDF vai precisar da senha para abrir. O app não guarda a senha e não tem como recuperá-la: anote num lugar seguro.</p>
+          <div id="protect-inputs" class="protect-inputs" hidden>
+            <label class="field">
+              <span>Senha</span>
+              <input id="protect-password" type="password" autocomplete="off" spellcheck="false" maxlength="100">
+            </label>
+            <label class="field">
+              <span>Repita a senha</span>
+              <input id="protect-confirm" type="password" autocomplete="off" spellcheck="false" maxlength="100">
+            </label>
+          </div>
+        </div>
         <label class="field field-wide">
           <span>Nome do arquivo</span>
           <input id="file-name" type="text" value="documento" maxlength="80" autocomplete="off" spellcheck="false">
@@ -272,6 +287,22 @@
       <button id="crop-full" type="button" class="btn">Foto inteira</button>
       <button id="crop-cancel" type="button" class="btn">Cancelar</button>
       <button id="crop-apply" type="button" class="btn btn-primary">Aplicar recorte</button>
+    </div>
+  </dialog>
+
+  <!-- Senha de um PDF protegido (js/pdf-crypt.js): usada só para abrir o arquivo, aqui no aparelho. -->
+  <dialog id="pdf-password" class="sheet" aria-labelledby="pdf-password-title">
+    <h2 id="pdf-password-title">PDF com senha</h2>
+    <p><strong id="pdf-password-name"></strong> está protegido por senha. Digite a senha para abrir.</p>
+    <label class="field">
+      <span>Senha do PDF</span>
+      <input id="pdf-password-input" type="password" autocomplete="off" spellcheck="false" maxlength="200">
+    </label>
+    <p class="muted small">A senha só é usada aqui no aparelho, para abrir o arquivo, e não fica guardada.</p>
+    <p id="pdf-password-status" class="sheet-status" role="status" aria-live="polite"></p>
+    <div class="sheet-actions">
+      <button id="pdf-password-skip" type="button" class="btn">Pular este arquivo</button>
+      <button id="pdf-password-open" type="button" class="btn btn-primary">Abrir</button>
     </div>
   </dialog>
 

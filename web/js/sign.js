@@ -115,8 +115,11 @@ export async function openCertificate(file, password, now = new Date()) {
       /**
        * Monta e assina o PDF. Os bytes que saem são exatamente os que foram assinados e conferidos.
        * @param {object[]} pages as páginas de buildPdf (pdf.js)
+       * @param {Date} [time] hora da assinatura (/M)
+       * @param {{password?: string}} [options] password: protege o PDF com senha (pdf-crypt.js) antes de assinar,
+       *   porque a assinatura cobre os bytes finais do arquivo
        */
-      async sign(pages, time = new Date()) {
+      async sign(pages, time = new Date(), { password } = {}) {
         if (!key) throw new SignError('O certificado já foi fechado. Abra de novo para assinar.');
         check(holder, time);
         // O CMS tem sempre o mesmo tamanho: a assinatura RSA tem o tamanho da chave, e o hash, 32 bytes.
@@ -124,7 +127,11 @@ export async function openCertificate(file, password, now = new Date()) {
           signed: signedAttributes(new Uint8Array(32), holder, certificateHash),
           signature: new Uint8Array(holder.modulus.length), certificate: holder, chain: chainDer,
         });
-        const prepared = buildPdfToSign(pages, { reserve: sample.length + SLACK, time });
+        let prepared = buildPdfToSign(pages, { reserve: sample.length + SLACK, time });
+        if (password) {
+          const { protectPdf } = await import('./pdf-crypt.js');
+          prepared = await protectPdf(prepared.bytes, password, { signature: true });
+        }
         const digest = await sha256(join(signedRanges(prepared.bytes, prepared.byteRange)));
         const signed = signedAttributes(digest, holder, certificateHash);
         const signature = new Uint8Array(await crypto.subtle.sign(RSA_PKCS1, key, signed));

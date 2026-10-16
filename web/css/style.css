@@ -212,6 +212,7 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .check input { width: 22px; height: 22px; margin: 0; flex: none; accent-color: var(--accent); cursor: pointer; }
 .check input:disabled, .check input:disabled + * { cursor: not-allowed; }
 .field-note { margin: 0; font-size: 0.88rem; font-weight: normal; color: var(--muted); }
+.protect-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 4px; }
 .settings {
   margin-top: 20px; padding: 16px; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--radius);

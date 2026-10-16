@@ -367,17 +367,27 @@ function assemble(pages, signature) {
   let pos = 0;
   for (const chunk of chunks) { out.set(chunk, pos); pos += chunk.length; }
   if (!signature) return { bytes: out };
+  return { bytes: out, ...finishSignature(out, { byteRangeAt, contentsAt, reserve: signature.reserve }) };
+}
 
-  // /ByteRange: do começo até o "<" do /Contents e do ">" até o fim. Os números ocupam o espaço reservado
-  // (o que sobra fica em branco antes do "]"), então nenhum offset do arquivo muda.
-  const after = contentsAt + signature.reserve * 2 + 2;
+// Espaço do /ByteRange: números de até 10 dígitos (arquivos de até 9,9 GB).
+export const BYTE_RANGE_SPACE = '[0 0000000000 0000000000 0000000000]';
+
+/**
+ * Preenche o /ByteRange: do começo até o "<" do /Contents e do ">" até o fim. Os números ocupam o espaço
+ * reservado (o que sobra fica em branco antes do "]"), então nenhum offset do arquivo muda.
+ * Também usado pelo pdf-crypt.js, depois de cifrar um PDF que vai ser assinado.
+ * @param {Uint8Array} out o PDF inteiro
+ * @param {{byteRangeAt: number, contentsAt: number, reserve: number}} at posição do espaço do /ByteRange, do "<"
+ *   do /Contents e bytes reservados para o CMS
+ */
+export function finishSignature(out, { byteRangeAt, contentsAt, reserve }) {
+  const after = contentsAt + reserve * 2 + 2;
   const byteRange = [0, contentsAt, after, out.length - after];
   const text = `[${byteRange.join(' ')}`;
   out.set(encoder.encode(`${text.padEnd(BYTE_RANGE_SPACE.length - 1)}]`), byteRangeAt);
-  return { bytes: out, byteRange, contents: { at: contentsAt + 1, length: signature.reserve * 2 } };
+  return { byteRange, contents: { at: contentsAt + 1, length: reserve * 2 } };
 }
-
-const BYTE_RANGE_SPACE = '[0 0000000000 0000000000 0000000000]';
 
 // Posiciona a imagem na página. sizes em pontos; margin em pontos.
 export const PAGE_SIZES = { a4: [595.28, 841.89], letter: [612, 792] };

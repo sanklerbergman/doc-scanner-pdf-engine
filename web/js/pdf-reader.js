@@ -7,11 +7,19 @@
 // anotações (links, comentários, campos de formulário), ações (/AA, /OpenAction, JavaScript), metadados
 // (/Info, XMP) e a árvore de estrutura. O conteúdo de camadas ocultas sai das páginas (pdf-layers.js).
 // Limites de objetos, páginas e tamanho descompactado evitam que um arquivo malicioso trave o navegador.
-// PDF criptografado (com senha) é recusado.
+// PDF com senha: com a senha certa (ou sem senha, quando ele só tem restrições), todos os objetos são decifrados
+// ao abrir (pdf-crypt.js) e a chave é descartada; daí em diante ele é lido como qualquer outro.
 import { inflate, InflateError } from './inflate.js';
 import { prepareLayers } from './pdf-layers.js';
 
 export class PdfError extends Error {}
+
+// Erro da senha ou da proteção, carregando o erro de verdade (cause): passa pela reconstrução sem ser engolido.
+class SecurityError extends Error {
+  constructor(cause) {
+    super(cause.message, { cause });
+  }
+}
 
 export const PDF_LIMITS = {
   maxObjects: 500000,
@@ -230,12 +238,13 @@ const A4_BOX = [0, 0, 595.28, 841.89];
 /**
  * Abre um PDF.
  * @param {Uint8Array} bytes
- * @param {Partial<typeof PDF_LIMITS>} [limits]
+ * @param {Partial<typeof PDF_LIMITS> & {password?: string}} [options] password: senha do PDF protegido. Sem ela
+ *   (ou errada), um PDF que precisa de senha é recusado com PdfPasswordError (pdf-crypt.js)
  */
-export async function openPdf(bytes, limits = {}) {
+export async function openPdf(bytes, { password = null, ...limits } = {}) {
   const doc = new PdfDocument(bytes, { ...PDF_LIMITS, ...limits });
   try {
-    await doc.load();
+    await doc.load(password);
     await prepareLayers(doc);
   } catch (err) {
     if (err instanceof InflateError) throw new PdfError(err.reason === 'too-big' ? err.message : 'O PDF está corrompido.');
@@ -253,30 +262,38 @@ class PdfDocument {
     this.objectStreams = new Map(); // num do object stream → Map(num → valor)
     this.decoded = 0;
     this.trailer = new PdfDict();
+    this.security = null; // PDF com senha, depois de aberto: {hadPassword, restricted}
   }
 
-  async load() {
+  async load(password) {
     const { bytes } = this;
     const head = latin1(bytes, 0, Math.min(bytes.length, 1024));
     if (!head.includes('%PDF-')) throw new PdfError('Não parece um arquivo PDF.');
 
-    // PDF com senha: os streams são cifrados, e os object streams não descompactariam. Sem o /Encrypt no trailer,
-    // ele cairia na reconstrução e seria recusado como corrompido, em vez de com o aviso da senha.
+    // PDF com senha: os streams (inclusive os object streams) são cifrados. Primeiro a senha e a decifragem de
+    // todos os objetos; só depois os object streams, que aí já descompactam.
     let ok = false;
     try {
       ok = await this.readXref();
-      if (ok && !this.trailer.has('Encrypt')) await this.preloadObjectStreams(); // daqui em diante, a leitura dos objetos é síncrona
+      if (ok && this.trailer.has('Encrypt')) await this.unlock(password);
+      if (ok) await this.preloadObjectStreams(); // daqui em diante, a leitura dos objetos é síncrona
     } catch (err) {
       if (err instanceof InflateError && err.reason === 'too-big') throw err;
+      if (err instanceof SecurityError) throw err.cause;
       ok = false;
     }
-    if (!this.trailer.has('Encrypt') && (!ok || !this.catalog())) {
+    if (!ok || !this.catalog()) {
       this.entries.clear();
       this.cache.clear();
       this.objectStreams.clear();
-      await this.rebuild();
+      try {
+        await this.rebuild(password);
+      } catch (err) {
+        if (err instanceof SecurityError) throw err.cause;
+        throw err;
+      }
     }
-    if (this.trailer.has('Encrypt')) throw new PdfError('O PDF está protegido por senha (criptografado). Abra-o num leitor de PDF e salve uma cópia sem senha.');
+    this.crypt = null; // a chave não fica guardada: o que precisava ser decifrado já foi
     if (!this.catalog()) throw new PdfError('O PDF está corrompido.');
     this.pages = this.readPages();
     if (!this.pages.length) throw new PdfError('O PDF não tem nenhuma página.');
@@ -386,7 +403,7 @@ class PdfDocument {
   }
 
   // Xref quebrada: procura "n g obj" no arquivo inteiro. O último de cada número vence (atualizações).
-  async rebuild() {
+  async rebuild(password) {
     const text = latin1(this.bytes, 0, this.bytes.length);
     const pattern = /(?:^|[\s>\]])(\d+)\s+(\d+)\s+obj\b/g;
     for (let m; (m = pattern.exec(text));) {
@@ -400,7 +417,7 @@ class PdfDocument {
     for (const [num, entry] of [...this.entries]) {
       const value = this.parseObjectAt(entry.offset)?.value;
       if (!(value instanceof PdfStream)) continue;
-      if (isName(value.dict.get('Type'), 'ObjStm')) objectStreams.push([num, value]);
+      if (isName(value.dict.get('Type'), 'ObjStm')) objectStreams.push(num);
       else if (isName(value.dict.get('Type'), 'XRef')) trailers.push({ offset: entry.offset, read: () => value.dict });
     }
     for (const { read } of trailers.sort((a, b) => b.offset - a.offset)) {
@@ -409,9 +426,11 @@ class PdfDocument {
         if (dict instanceof PdfDict && dict.get('Root') instanceof PdfRef) { this.trailer = dict; break; }
       } catch { /* tenta o anterior */ }
     }
-    if (this.trailer.has('Encrypt')) return; // com senha: os object streams são cifrados, e o load recusa
+    if (this.trailer.has('Encrypt')) await this.unlock(password); // os object streams estão cifrados
     // Objetos dentro de object streams
-    for (const [num, value] of objectStreams) {
+    for (const num of objectStreams) {
+      const value = this.object(num);
+      if (!(value instanceof PdfStream)) continue;
       const objects = await this.loadObjectStream(num, value);
       for (const inner of objects.keys()) if (!this.entries.has(inner)) this.addEntry(inner, { type: 2, stream: num });
     }
@@ -439,11 +458,11 @@ class PdfDocument {
         const save = parser.pos;
         parser.skip();
         if (latin1(this.bytes, parser.pos, parser.pos + 6) === 'stream') {
-          return { num, value: this.readStream(value, parser.pos + 6) };
+          return { num, gen, value: this.readStream(value, parser.pos + 6) };
         }
         parser.pos = save;
       }
-      return { num, value };
+      return { num, gen, value };
     } catch {
       return null;
     }
@@ -511,10 +530,51 @@ class PdfDocument {
   async preloadObjectStreams() {
     const streams = new Set([...this.entries.values()].filter((entry) => entry.type === 2).map((entry) => entry.stream));
     for (const num of streams) {
-      const entry = this.entries.get(num);
-      const value = entry?.type === 1 ? this.parseObjectAt(entry.offset)?.value : null;
+      const value = this.entries.get(num)?.type === 1 ? this.object(num) : null; // já decifrado, num PDF com senha
       if (value instanceof PdfStream) await this.loadObjectStream(num, value);
     }
+  }
+
+  // PDF com senha: confere a senha (a vazia primeiro) e decifra todos os objetos de uma vez, no cache. Os
+  // objetos dentro de object streams não são cifrados um a um: vêm decifrados com o stream deles.
+  // Senha que falta ou não confere (e proteção que o app não abre) sai como SecurityError: não é PDF quebrado,
+  // e a reconstrução não pode engolir o erro.
+  async unlock(password) {
+    if (!this.crypt) {
+      const { openSecurity } = await import('./pdf-crypt.js');
+      const encrypt = this.resolveRaw(this.trailer.get('Encrypt'));
+      if (!(encrypt instanceof PdfDict)) throw new SecurityError(new PdfError('O PDF está protegido por senha, mas a proteção está corrompida.'));
+      const ids = this.resolveRaw(this.trailer.get('ID'));
+      const id = Array.isArray(ids) && ids[0] instanceof PdfString ? ids[0].bytes : new Uint8Array(0);
+      try {
+        this.crypt = await openSecurity(encrypt, id, password, (value) => this.resolveRaw(value));
+      } catch (err) {
+        throw new SecurityError(err);
+      }
+      this.security = { hadPassword: this.crypt.hadPassword, restricted: this.crypt.restricted };
+    }
+    const encryptRef = this.trailer.get('Encrypt');
+    this.cache.clear();
+    for (const [num, entry] of this.entries) {
+      if (entry.type !== 1) continue;
+      const parsed = this.parseObjectAt(entry.offset);
+      if (!parsed || parsed.num !== num) {
+        this.cache.set(num, null);
+        continue;
+      }
+      // O dicionário /Encrypt não é cifrado.
+      const plain = encryptRef instanceof PdfRef && encryptRef.num === num;
+      this.cache.set(num, plain ? parsed.value : await this.crypt.decrypt(parsed.value, num, parsed.gen));
+    }
+  }
+
+  // Objeto sem passar pelo cache (para ler o /Encrypt e o /ID antes de decifrar o resto).
+  resolveRaw(value, depth = 0) {
+    while (value instanceof PdfRef && depth++ < 32) {
+      const entry = this.entries.get(value.num);
+      value = entry?.type === 1 ? this.parseObjectAt(entry.offset)?.value ?? null : null;
+    }
+    return value;
   }
 
   object(num) {
@@ -697,7 +757,7 @@ export function formatNumber(n) {
 // /UserUnit (tamanho da unidade, em 1/72 pol.): só um número positivo de tamanho razoável vai para a cópia.
 const validUserUnit = (value) => (typeof value === 'number' && value > 0 && value <= 75000 ? value : null);
 
-function formatName(name) {
+export function formatName(name) {
   let out = '/';
   for (const char of name) {
     const code = char.charCodeAt(0);
@@ -706,7 +766,7 @@ function formatName(name) {
   return out;
 }
 
-function formatString(bytes) {
+export function formatString(bytes) {
   let out = '<';
   for (const b of bytes) out += b.toString(16).padStart(2, '0');
   return `${out}>`;
@@ -794,10 +854,19 @@ export function copyPages(doc, indices, { replace } = {}) {
         return out;
       }
       const dict = new PdfDict(value.dict);
-      dict.set('Length', value.data.length);
+      let { data } = value;
+      // /Filter que não é nome nem lista de nomes (ex.: "/Filter true"): nenhum leitor decodifica esse stream, e
+      // copiado assim ele deixaria o PDF gerado inválido. Vai vazio e sem filtro (achado do fuzzing).
+      const filter = doc.resolve(dict.get('Filter'));
+      if (filter != null && !(filter instanceof PdfName) && !(Array.isArray(filter) && filter.every((item) => doc.resolve(item) instanceof PdfName))) {
+        dict.delete('Filter');
+        dict.delete('DecodeParms');
+        data = new Uint8Array(0);
+      }
+      dict.set('Length', data.length);
       dict.delete('DL');
       write(dict, out);
-      out.push('\nstream\n', value.data, '\nendstream');
+      out.push('\nstream\n', data, '\nendstream');
     }
     return out;
   }

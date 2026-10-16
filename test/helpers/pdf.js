@@ -170,5 +170,8 @@ export function samplePdfs() {
       8: { dict: '/Type /XObject /Subtype /Image /Width 8 /Height 6 /ColorSpace /DeviceGray /BitsPerComponent 8', data: pixels.subarray(0, 48), deflate: true },
       9: { dict: '/N 3', data: 'perfil' },
     }).bytes,
+    // PDFs com senha só de proprietário (abrem sem senha): passam pela decifragem (pdf-crypt.js), com AES-256 e RC4.
+    'senha-aes': new Uint8Array(readFileSync(new URL('../fixtures/pdf-senha/r6-so-restricoes.pdf', import.meta.url))),
+    'senha-rc4': new Uint8Array(readFileSync(new URL('../fixtures/pdf-senha/r3-so-restricoes.pdf', import.meta.url))),
   };
 }
