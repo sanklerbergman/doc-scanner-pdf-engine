@@ -7,7 +7,7 @@ Valeu por querer ajudar! Issues, ideias, traduções e PRs são bem-vindos.
 1. **Nenhum dado do usuário sai do navegador.** Nada de upload, API externa ou "só um log".
 2. **Nada de rastreamento.** Sem analytics, cookies, pixels, fingerprinting ou armazenamento persistente de dados do usuário.
 3. **Nada de terceiros em runtime.** Sem CDN, fontes externas ou scripts de outros domínios. Não afrouxe a Content-Security-Policy do `index.html` nem os cabeçalhos de `web/_headers`.
-4. **Sem dependências sem conversa prévia.** O app é JavaScript puro de propósito: fácil de auditar e de rodar. As exceções ficam em `web/vendor/` (decodificador de HEIC, renderizador de PDF, OCR e gerador de QR Code), copiadas para o repositório e carregadas sob demanda.
+4. **Sem dependências sem conversa prévia.** O app é JavaScript puro de propósito: fácil de auditar e de rodar. As exceções ficam em `web/vendor/` (decodificador de HEIC, renderizador de PDF, OCR, gerador de QR Code e as fontes do PDF/A), copiadas para o repositório e carregadas sob demanda.
 
 ## Fluxo
 

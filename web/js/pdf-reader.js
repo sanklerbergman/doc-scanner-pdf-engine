@@ -11,6 +11,7 @@
 // ao abrir (pdf-crypt.js) e a chave é descartada; daí em diante ele é lido como qualquer outro.
 import { inflate, InflateError } from './inflate.js';
 import { prepareLayers } from './pdf-layers.js';
+import { ocrLayer, OCR_FONT } from './ocr-layer.js';
 
 export class PdfError extends Error {}
 
@@ -645,7 +646,8 @@ class PdfDocument {
 
   pageInfo(node, attrs) {
     let media = this.box(attrs.MediaBox);
-    if (!media || media[2] - media[0] <= 0 || media[3] - media[1] <= 0) media = A4_BOX;
+    const guessed = !media || media[2] - media[0] <= 0 || media[3] - media[1] <= 0; // sem MediaBox válida: A4
+    if (guessed) media = A4_BOX;
     let crop = this.box(attrs.CropBox);
     if (crop) crop = [Math.max(crop[0], media[0]), Math.max(crop[1], media[1]), Math.min(crop[2], media[2]), Math.min(crop[3], media[3])];
     if (!crop || crop[2] - crop[0] <= 0 || crop[3] - crop[1] <= 0) crop = media;
@@ -655,7 +657,7 @@ class PdfDocument {
     const height = crop[3] - crop[1];
     const sideways = rotate % 180 !== 0;
     return {
-      node, attrs, media, crop: crop === media ? null : crop, rotate,
+      node, attrs, media, crop: crop === media ? null : crop, rotate, guessed,
       width: sideways ? height : width,
       height: sideways ? width : height,
     };
@@ -782,8 +784,11 @@ export function formatString(bytes) {
  * Objetos compartilhados entre as páginas (uma fonte usada em todas, por exemplo) são copiados uma vez só.
  * @param {PdfDocument} doc
  * @param {number[]} indices posições das páginas (a partir de 0)
- * @param {{replace?: Map<number, PdfStream>}} [options] replace: objetos trocados na cópia (ex.: imagens
- *   recomprimidas pelo pdf-compress.js), pelo número no PDF de origem
+ * @param {{replace?: Map<number, PdfStream>, ocr?: Map<number, {words: object[], rotation: number}>}} [options]
+ *   replace: objetos trocados na cópia (ex.: imagens recomprimidas pelo pdf-compress.js), pelo número no PDF de
+ *   origem; ocr: palavras reconhecidas (ocr.js) nas páginas escaneadas, pela posição da página, medidas na página
+ *   como ela aparece com o /Rotate dela mais o giro rotation (o do app, que vai junto no /Rotate do PDF novo): viram
+ *   uma camada de texto invisível por cima do conteúdo, como nas fotos (ocr-layer.js)
  * Anotações (links, comentários, campos de formulário) não são copiadas como anotações: o que elas mostram
  * (o valor preenchido num campo, um carimbo, o selo de uma assinatura) é desenhado na própria página.
  * Assim o PDF novo fica igual ao que se via, mas sem nada clicável nem editável.
@@ -791,7 +796,7 @@ export function formatString(bytes) {
  *   objects: cada objeto como uma lista de partes; {ref: i} aponta para objects[i].
  *   pages: por página, {mediaBox, cropBox, rotate, resources, contents, group}, também em partes.
  */
-export function copyPages(doc, indices, { replace } = {}) {
+export function copyPages(doc, indices, { replace, ocr } = {}) {
   const objects = [];
   const local = new Map(); // num no PDF de origem → posição em objects
   const queue = [];
@@ -882,6 +887,7 @@ export function copyPages(doc, indices, { replace } = {}) {
     const page = doc.pages[index];
     const group = page.node.get('Group');
     const appearances = flattenAnnotations(doc, page);
+    const { words, rotation = 0 } = ocr?.get(index) ?? {};
     // /Resources que não é dicionário (aponta para um stream ou para um objeto que não existe) vira um vazio.
     let resources = doc.resolve(page.attrs.Resources) instanceof PdfDict ? page.attrs.Resources : new PdfDict();
     const own = doc.layers?.contents.get(index); // conteúdo refeito sem as camadas ocultas
@@ -892,17 +898,31 @@ export function copyPages(doc, indices, { replace } = {}) {
       .filter((item) => doc.resolve(item) instanceof PdfStream);
     let contents = null;
 
-    if (appearances.length) {
-      // Recursos: cópia só desta página, com as aparências como XObjects /Annot0, /Annot1…
+    if (appearances.length || words?.length) {
+      // Recursos: cópia só desta página (outras páginas podem usar os mesmos), com as aparências como XObjects
+      // /Annot0, /Annot1… e a fonte da camada do OCR.
       const copy = new PdfDict(doc.resolve(resources));
-      const xobjects = new PdfDict(doc.resolve(copy.get('XObject')) instanceof PdfDict ? doc.resolve(copy.get('XObject')) : []);
       let ops = 'Q';
-      appearances.forEach(({ stream, matrix }, i) => {
-        xobjects.set(`Annot${i}`, stream);
-        ops += `
+      if (appearances.length) {
+        const xobjects = new PdfDict(doc.resolve(copy.get('XObject')) instanceof PdfDict ? doc.resolve(copy.get('XObject')) : []);
+        appearances.forEach(({ stream, matrix }, i) => {
+          xobjects.set(`Annot${i}`, stream);
+          ops += `
 q ${matrix.map(formatNumber).join(' ')} cm /Annot${i} Do Q`;
-      });
-      copy.set('XObject', xobjects);
+        });
+        copy.set('XObject', xobjects);
+      }
+      if (words?.length) {
+        // Texto invisível por cima de tudo, com um nome de fonte que a página ainda não usa.
+        const fonts = new PdfDict(doc.resolve(copy.get('Font')) instanceof PdfDict ? doc.resolve(copy.get('Font')) : []);
+        let name = 'OCR';
+        for (let n = 1; fonts.has(name); n++) name = `OCR${n}`;
+        fonts.set(name, new PdfDict([['Type', new PdfName('Font')], ['Subtype', new PdfName('Type1')],
+          ['BaseFont', new PdfName(OCR_FONT)], ['Encoding', new PdfName('WinAnsiEncoding')]]));
+        copy.set('Font', fonts);
+        ops += `
+${ocrLayer(words, { box: page.crop ?? page.media, rotate: (page.rotate + rotation) % 360 }, formatName(name))}`;
+      }
       resources = copy;
       // O conteúdo original fica entre q e Q: o que ele mudar no estado gráfico não afeta as aparências.
       const before = add(new PdfStream(new PdfDict(), new TextEncoder().encode('q')));

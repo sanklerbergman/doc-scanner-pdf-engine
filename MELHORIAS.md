@@ -268,10 +268,12 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 
 #### Fase 2: PDFs escaneados
 
-- [ ] Desenhar a página com o PDF.js na resolução do OCR
-- [ ] Pular páginas que já têm texto
-- [ ] Acrescentar o content stream e a fonte à página copiada, sem mexer no que já existe. Recursos compartilhados entre páginas são copiados antes de mudar
-- [ ] Respeitar `/Rotate`, `MediaBox` e `CropBox`
+- [x] Desenhar a página com o PDF.js na resolução do OCR
+- [x] Pular páginas que já têm texto
+- [x] Acrescentar o content stream e a fonte à página copiada, sem mexer no que já existe. Recursos compartilhados entre páginas são copiados antes de mudar (`copyPages`, opção `ocr`; a camada saiu do `pdf.js` para o `ocr-layer.js`, que os dois usam)
+- [x] Respeitar `/Rotate`, `MediaBox` e `CropBox`
+- [x] Página de PDF tarjada (que vira imagem) também é lida, já tarjada, e o que o OCR achar sob uma tarja sai
+- [x] A busca de dados para tarjar também lê as páginas escaneadas pelo OCR
 
 #### Fase 3: acabamento
 
@@ -293,7 +295,8 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 - [x] Camada de texto montada a partir de um resultado de OCR simulado (palavras e caixas fixas): texto com `3 Tr`, posições dentro da página e rotação (`test/ocr.test.js`)
 - [x] `(`, `)`, `\` e acentos não quebram o content stream
 - [x] PDF sem OCR continua idêntico byte a byte
-- [ ] PDF escaneado: a página com texto é pulada, a página sem texto ganha a camada e a xref continua válida
+- [x] PDF escaneado: a página sem texto ganha a camada, com recursos só dela, e as outras páginas não mudam; com `/Rotate` e CropBox deslocada, o texto fica de pé e em cima da palavra (`test/ocr.test.js`, com o qpdf)
+- [x] No navegador (Chromium e WebKit, Tesseract de verdade), num PDF escaneado de teste: a página com texto é pulada, as escaneadas ganham o texto certo e na posição certa (conferido com o PyMuPDF), inclusive a girada pelo `/Rotate`, a gravada deitada e endireitada no app e a tarjada
 - [x] No navegador: nenhuma requisição na aba Rede e nada no IndexedDB durante o OCR (Playwright, no Chromium e no WebKit, com e sem o service worker)
 - [ ] Teste real no iPhone, no site publicado: tempo por página, memória e seleção do texto no visualizador do iPhone, no Chrome e no Acrobat
 
@@ -302,7 +305,9 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 - **Dependência nova:** o Tesseract.js é a quarta biblioteca em `web/vendor/`. Pela regra 4 do CONTRIBUTING, isso precisa de conversa antes; este plano é essa conversa, e o pedido veio do dono do projeto.
 - **Desligado por padrão:** pesa ~5,5 MB e leva alguns segundos por página no celular.
 - **Modelo `best_int`:** é o que o Tesseract.js usa com o motor LSTM e o menor (~1,4 MB). O modelo maior (~6,8 MB) só acrescenta o motor antigo, que não será usado.
-- **Versão:** sai na v3.0.0, junto com a assinatura digital.
+- **Versão:** sai na v3.0.0, junto com a assinatura digital. A fase 2 (PDFs escaneados) sai na próxima versão.
+- **O OCR lê a página como ela aparece no app** (decidido em 2026-10-16), com o `/Rotate` do PDF e o giro escolhido, como nas fotos: é assim que a pessoa deixa de pé uma página que o scanner gravou deitada. O texto vai para o PDF com o giro total. Girar a página depois faz o OCR ler de novo.
+- **Assinar sem reescrever não combina com o OCR:** com o OCR ligado, as páginas mudam, e o app monta um PDF novo para assinar.
 
 ### Perguntas em aberto
 
@@ -367,6 +372,7 @@ A parte que importa, que é **assinar com a chave privada, é feita pelo própri
   - [x] regrava só o que precisa apontar para o campo novo (a página ou a lista `/Annots`, e o catálogo, o formulário ou a lista `/Fields`), com o mesmo número; a tabela xref nova é do mesmo tipo da última do original (clássica ou em stream), com `/Prev`
   - [x] nome do campo sem repetir os que já existem ("Assinatura", "Assinatura 2"…)
   - [x] conferência antes de entregar: o original continua byte a byte no começo, e o PDF assinado reabre com as mesmas páginas e sem reparo
+  - [x] só acrescenta em estrutura limpa: `/Size` coerente, geração válida e igual na referência e no objeto que vai ser regravado, e toda página com MediaBox. PDF danificado que o leitor ainda abre vai pelo caminho de sempre (o PDF novo), que conserta essas coisas (achado do fuzzing com o qpdf)
 - [x] Respeitar o `/DocMDP`: se o PDF foi certificado sem permitir alterações, recusar e explicar o motivo. Vale a permissão mais restritiva, inclusive a de `/FieldMDP` com `/P` (PDF 2.0)
 
 #### Fase 3: política da ICP-Brasil e cadeia
@@ -474,11 +480,13 @@ O que falta no PDF de hoje para ele ser PDF/A-2b:
 
 #### Fase 2: documentos do Word
 
-- [ ] Copiar as fontes Liberation (normal, negrito, itálico e negrito itálico das três famílias) para `web/vendor/liberation/`, com um `README.md` (versão, origem, SHA-256 e licença)
-- [ ] `ttf.js`: ler larguras e `cmap` e gerar o subconjunto
-- [ ] `layout.js` e `fonts.js`: larguras da fonte embutida quando o PDF/A está ligado
-- [ ] `pdf.js`: fonte TrueType com `FontFile2` (subconjunto), `WinAnsiEncoding` e `ToUnicode`
-- [ ] Medir quanto cada fonte acrescenta ao PDF
+- [x] Copiar as fontes Liberation 2.1.5 (normal, negrito, itálico e negrito itálico das três famílias) para `web/vendor/liberation/`, com um `README.md` (versão, origem, SHA-256 e licença). Cada `.ttf` vira um módulo JS em base64 (`scripts/gerar-fontes-pdfa.mjs`, que confere o SHA-256), como o modelo do OCR: a página não pode usar `fetch`
+- [x] `ttf.js`: ler larguras e `cmap` e gerar o subconjunto (os números das letras ficam; as não usadas ficam vazias e sem largura; as partes das letras compostas vão junto; cmap (3,1) refeito só com as letras usadas; sem GSUB, GPOS e kern; post formato 3)
+- [x] ~~`layout.js` e `fonts.js`: larguras da fonte embutida quando o PDF/A está ligado~~ Não precisou: as Liberation têm as larguras das fontes padrão em toda a WinAnsi, menos ¯ ± µ · ÷ (até 0,4 ponto de diferença em letra 12). O layout continua o mesmo, e o `/Widths` vem da fonte embutida
+- [x] `pdf.js`: fonte TrueType com `FontFile2` (subconjunto, FlateDecode), `WinAnsiEncoding` e `ToUnicode` (`pdfa-fonts.js` prepara, uma vez para todos os arquivos)
+- [x] Medir quanto cada fonte acrescenta ao PDF: uns 10 KB por fonte (de 9,7 a 11,4 KB com umas 60 letras diferentes). Na primeira vez, o app baixa cada fonte usada (de 0,4 a 0,55 MB)
+- [x] A camada do OCR das fotos divide a Helvetica com o Word: quando ela vai embutida, leva também as letras do OCR. Sem página de Word, continua sem embutir (texto invisível)
+- [x] Conferido no veraPDF: Word (as 12 fontes), Word com foto e OCR, e Word assinado; e pela tela, no Chromium e no WebKit
 
 #### Fase 3: junto com a v3.0.0
 
@@ -509,7 +517,8 @@ O que falta no PDF de hoje para ele ser PDF/A-2b:
 - **PDF/A-2b:** é o nível mais aceito e o que o app consegue garantir para fotos e Word.
 - **Desligado por padrão:** a maioria não precisa, e no Word as fontes aumentam o arquivo.
 - **Liberation em vez de outra família livre:** é a que tem as larguras das fontes que o app já usa, então o documento quebra as linhas do mesmo jeito. As fontes entram em `web/vendor/`, o que pela regra 4 do CONTRIBUTING precisa de conversa antes; este plano é essa conversa, e o pedido veio do dono do projeto.
-- **Versão:** a fase 1 (fotos), com o OCR e a assinatura, sai na v3.4.0.
+- **Versão:** a fase 1 (fotos), com o OCR e a assinatura, sai na v3.4.0. A fase 2 (Word) sai na próxima versão (decidido em 2026-10-16, sem esperar a confirmação dos tribunais).
+- **Carimbo da assinatura e PDF/A continuam sem combinar:** a aparência do carimbo usa Helvetica sem embutir. Dá para embutir com o mesmo caminho do Word, se houver pedido.
 - **PDF/A e senha não se combinam:** o PDF/A proíbe criptografia; com um ligado, o outro fica indisponível, com o motivo.
 
 ### Perguntas em aberto
@@ -693,3 +702,4 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 
 - **Versão:** são melhorias internas; entram na próxima versão que sair. As correções no leitor de PDF são patch.
 - **O fuzzing do `npm test`** usa 20 mil variações fixas (semente 1), em uns 5 segundos. Rodadas com outras sementes ou com PDFs reais como base ficam no script.
+- **Etapas novas no fuzzing (2026-10-16):** a camada do OCR (com palavras simuladas) e a assinatura acrescentada sem reescrever. No PDF com a assinatura acrescentada, o original vai byte a byte, com os defeitos dele, e o qpdf os descreve de outro jeito; ali só conta erro do qpdf que a entrada não tinha, e o trecho acrescentado é conferido à parte (número e geração de cada objeto novo, e a xref nova apontando para ele).

@@ -130,7 +130,7 @@
         <!-- OCR (js/ocr.js): desligado por padrão; o motor e o modelo só são baixados quando a pessoa liga. -->
         <div id="ocr-field" class="field field-wide check-field" hidden>
           <label class="check"><input id="ocr" type="checkbox" aria-describedby="ocr-note"> Texto pesquisável (OCR)</label>
-          <p id="ocr-note" class="field-note">Reconhece o texto impresso das fotos: no PDF dá para buscar, selecionar e copiar. Na primeira vez o app baixa uns 5 MB, e cada página leva alguns segundos. O texto vai junto no PDF, escondido embaixo da imagem, inclusive CPF, endereço e valores. Uma tarja feita depois, em outro programa, não apaga esse texto: se for tarjar, deixe esta opção desligada.</p>
+          <p id="ocr-note" class="field-note">Reconhece o texto impresso das fotos e dos PDFs escaneados: no PDF dá para buscar, selecionar e copiar. Página de PDF que já tem texto fica como está. Na primeira vez o app baixa uns 5 MB, e cada página leva alguns segundos. O texto vai junto no PDF, escondido embaixo da imagem, inclusive CPF, endereço e valores. Uma tarja feita depois, em outro programa, não apaga esse texto: se for tarjar, tarje aqui no app ou deixe esta opção desligada.</p>
         </div>
         <label class="field">
           <span>Gerar</span>
@@ -175,10 +175,10 @@
             </label>
           </div>
         </div>
-        <!-- PDF/A-2b (js/pdf.js e js/icc.js): só com fotos, por enquanto, e sem senha. -->
+        <!-- PDF/A-2b (js/pdf.js, js/icc.js e, nas páginas de Word, js/pdfa-fonts.js): sem página de outro PDF e sem senha. -->
         <div class="field field-wide check-field">
           <label class="check"><input id="pdfa" type="checkbox" aria-describedby="pdfa-note pdfa-blocked"> PDF/A (tribunais e arquivamento)</label>
-          <p id="pdfa-note" class="field-note">Formato de arquivamento (PDF/A-2b) que alguns tribunais pedem no processo eletrônico. Na tela, o PDF fica igual; dentro do arquivo vão a identificação do padrão e o perfil de cor.</p>
+          <p id="pdfa-note" class="field-note">Formato de arquivamento (PDF/A-2b) que alguns tribunais pedem no processo eletrônico. Na tela, o PDF fica igual; dentro do arquivo vão a identificação do padrão, o perfil de cor e, nas páginas de Word, as fontes, só com as letras usadas (na primeira vez, o app baixa cada fonte, uns 0,5 MB).</p>
           <p id="pdfa-blocked" class="field-note field-blocked" hidden></p>
         </div>
         <label class="field field-wide">

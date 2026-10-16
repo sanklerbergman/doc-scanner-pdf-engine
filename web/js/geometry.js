@@ -369,3 +369,24 @@ export const FULL_QUAD = [[0, 0], [1, 0], [1, 1], [0, 1]];
 export function isFullFrame(quad, tolerance = 0.01) {
   return quad.every(([x, y], i) => Math.abs(x - FULL_QUAD[i][0]) <= tolerance && Math.abs(y - FULL_QUAD[i][1]) <= tolerance);
 }
+
+// ---------- Página do PDF com /Rotate ----------
+// O carimbo da assinatura (stamp.js) e a camada do OCR (ocr-layer.js) são posicionados na página como ela aparece
+// e gravados nas coordenadas do PDF, que não giram.
+
+/**
+ * Ponto da página como ela aparece (origem em cima à esquerda, v para baixo, em pontos) → coordenadas do PDF.
+ * @param {number[]} box a área visível [x1 y1 x2 y2] (CropBox ou MediaBox)
+ * @param {number} rotate 0, 90, 180 ou 270 (/Rotate)
+ */
+export function visibleToPdf([x1, y1, x2, y2], rotate, u, v) {
+  if (rotate === 90) return [x1 + v, y1 + u];
+  if (rotate === 180) return [x2 - u, y1 + v];
+  if (rotate === 270) return [x2 - v, y2 - u];
+  return [x1 + u, y2 - v];
+}
+
+// Matriz que deixa de pé, na página girada, o que é desenhado "como aparece" (x para a direita, y para cima).
+export function uprightMatrix(rotate) {
+  return { 90: [0, 1, -1, 0, 0, 0], 180: [-1, 0, 0, -1, 0, 0], 270: [0, -1, 1, 0, 0, 0] }[rotate] ?? [1, 0, 0, 1, 0, 0];
+}

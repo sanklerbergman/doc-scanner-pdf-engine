@@ -7,10 +7,11 @@
 // Nenhum metadado é gravado (sem /Info, sem datas, sem "Producer"). A única data possível é a hora da assinatura
 // (/M), e só quando a pessoa assina (buildPdfToSign). Com a opção PDF/A, entra só a identificação do padrão (XMP com
 // pdfaid), o perfil de cor sRGB e o /ID, tirado do próprio conteúdo.
-import { textWidth, winAnsiCode } from './fonts.js';
+import { winAnsiCode } from './fonts.js';
 import { srgbProfile } from './icc.js';
 import { md5 } from './md5.js';
 import { buildStamp, stampPageIndex } from './stamp.js';
+import { ocrLayer, OCR_FONT } from './ocr-layer.js';
 
 const encoder = new TextEncoder();
 
@@ -120,44 +121,6 @@ function textContent(page, fontNames, imageNames) {
   return ops.join('\n');
 }
 
-const OCR_FONT = 'Helvetica';
-
-// Texto que veio do OCR, só com caracteres da WinAnsi: o que as fontes padrão não têm vira "?".
-const ocrText = (text) => [...text].map((char) => (winAnsiCode(char) === undefined ? '?' : char)).join('');
-
-// String hexadecimal (<...>): o texto reconhecido na imagem nunca entra cru no conteúdo da página, então um ")"
-// ou uma "\" lida na foto não tem como quebrar o PDF.
-const hexString = (text) => `<${[...text].map((char) => winAnsiCode(char).toString(16).padStart(2, '0')).join('')}>`;
-
-/**
- * Camada de texto invisível (3 Tr) do OCR, em cima da foto: cada palavra na posição em que aparece na imagem.
- * O tamanho da letra sai da altura da linha, e a largura é ajustada com Tz para a seleção cair em cima da palavra.
- * Entre as palavras da mesma linha vai um espaço, esticado até a próxima, para copiar e colar sair com espaços.
- * @param {import('./ocr.js').OcrWord[]} words medidas de 0 a 1 relativas à imagem
- * @param {{x: number, y: number, w: number, h: number}} box posição da imagem na página
- */
-function ocrLayer(words, box, fontName) {
-  const clamp = (v) => Math.min(1, Math.max(0, v));
-  const ops = ['BT', '3 Tr'];
-  let tf = '';
-  let tz = '100';
-  words.forEach((word, i) => {
-    const next = word.last ? null : words[i + 1];
-    const text = ocrText(word.text) + (next ? ' ' : '');
-    const size = Math.max(1, word.size * box.h);
-    const x0 = clamp(word.x0);
-    const end = clamp(next ? Math.max(word.x1, next.x0) : word.x1);
-    const natural = textWidth(text, OCR_FONT, size);
-    const scale = natural > 0 ? Math.min(1000, Math.max(1, (100 * (end - x0) * box.w) / natural)) : 100;
-    const font = `${fontName} ${num(size)} Tf`;
-    if (font !== tf) ops.push((tf = font));
-    if (num(scale) !== tz) ops.push(`${(tz = num(scale))} Tz`);
-    ops.push(`1 0 0 1 ${num(box.x + x0 * box.w)} ${num(box.y + (1 - clamp(word.baseline)) * box.h)} Tm ${hexString(text)} Tj`);
-  });
-  ops.push('ET');
-  return ops.join('\n');
-}
-
 // Data no formato do PDF, com o fuso do aparelho: D:20261016093000-03'00'.
 export function pdfDate(date) {
   const pad = (v) => String(v).padStart(2, '0');
@@ -203,7 +166,7 @@ export function buildPdf(pages, options = {}) {
 export function buildPdfToSign(pages, signature) {
   if (!(signature?.reserve > 0) || !(signature.time instanceof Date)) throw new Error('Assinatura sem espaço ou sem hora');
   if (signature.pdfa && signature.stamp) throw new Error('PDF/A com carimbo visível precisa de fonte embutida');
-  return assemble(pages, signature, { pdfa: signature.pdfa });
+  return assemble(pages, signature, { pdfa: signature.pdfa, fonts: signature.fonts });
 }
 
 // Área visível e giro de uma página de buildPdf, para posicionar o carimbo.
@@ -246,7 +209,7 @@ export function fillSignature({ bytes, contents }, der) {
   return bytes;
 }
 
-function assemble(pages, signature, { pdfa = false } = {}) {
+function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
   if (!pages.length) throw new Error('Nenhuma página para gerar');
 
   const chunks = [];
@@ -318,6 +281,14 @@ function assemble(pages, signature, { pdfa = false } = {}) {
   const stampIndex = signature?.stamp ? stampPageIndex(signature.stamp.page, pages.length) : 0;
   const stamp = signature?.stamp ? buildStamp({ ...signature.stamp, time: signature.time }, pageGeometry(pages[stampIndex])) : null;
   const appearanceId = stamp ? nextId++ : 0;
+  // PDF/A com página de Word: cada fonte vai embutida (pdfa-fonts.js), com o descritor, o programa da fonte e o
+  // mapa para Unicode.
+  const embedded = new Map();
+  if (pdfa && fonts) {
+    for (const font of fontIds.keys()) {
+      if (fonts.has(font)) embedded.set(font, { font: fonts.get(font), descriptor: nextId++, file: nextId++, unicode: nextId++ });
+    }
+  }
 
   // Página copiada pode usar recursos de versões mais novas do formato (transparência, JPEG 2000…). A assinatura
   // no padrão PAdES (/ETSI.CAdES.detached) também é do PDF 1.7 em diante.
@@ -369,7 +340,7 @@ function assemble(pages, signature, { pdfa = false } = {}) {
     const { x, y, w, h } = page.box;
     const ocr = page.ocr?.length ? fontNames.get(OCR_FONT) : null;
     let content = `q ${num(w)} 0 0 ${num(h)} ${num(x)} ${num(y)} cm /Im0 Do Q`;
-    if (ocr) content += `\n${ocrLayer(page.ocr, page.box, ocr)}`; // só ASCII, como o das páginas de texto
+    if (ocr) content += `\n${ocrLayer(page.ocr, { box: [x, y, x + w, y + h], width: w, height: h }, ocr)}`; // só ASCII
     const font = ocr ? ` /Font << ${ocr} ${fontIds.get(OCR_FONT)} 0 R >>` : '';
 
     object(id,
@@ -380,7 +351,20 @@ function assemble(pages, signature, { pdfa = false } = {}) {
   });
 
   for (const [font, id] of fontIds) {
-    object(id, `<< /Type /Font /Subtype /Type1 /BaseFont /${font} /Encoding /WinAnsiEncoding >>`);
+    const embed = embedded.get(font);
+    if (!embed) {
+      object(id, `<< /Type /Font /Subtype /Type1 /BaseFont /${font} /Encoding /WinAnsiEncoding >>`);
+      continue;
+    }
+    const { font: data, descriptor, file, unicode } = embed;
+    const d = data.descriptor;
+    object(id, `<< /Type /Font /Subtype /TrueType /BaseFont /${data.baseFont} /FirstChar ${data.firstChar} /LastChar ${data.lastChar}`
+      + ` /Widths [${data.widths.join(' ')}] /Encoding /WinAnsiEncoding /FontDescriptor ${descriptor} 0 R /ToUnicode ${unicode} 0 R >>`);
+    object(descriptor, `<< /Type /FontDescriptor /FontName /${data.baseFont} /Flags ${d.flags} /FontBBox [${d.bbox.join(' ')}]`
+      + ` /ItalicAngle ${num(d.italicAngle)} /Ascent ${d.ascent} /Descent ${d.descent} /CapHeight ${d.capHeight} /StemV ${d.stemV}`
+      + ` /FontFile2 ${file} 0 R >>`);
+    object(file, `<< /Length ${data.program.length} /Length1 ${data.length1} /Filter /FlateDecode >>\nstream\n`, data.program, '\nendstream');
+    object(unicode, `<< /Length ${data.toUnicode.length} >>\nstream\n${data.toUnicode}\nendstream`);
   }
   for (const [jpeg, id] of imageIds) object(id, ...imageObject(jpeg));
   for (const [source, base] of sources) {

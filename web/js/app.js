@@ -65,6 +65,7 @@ const loadOcr = lazy('./ocr.js'); // OCR: o motor (vendor/tesseract) só carrega
 const loadSigning = lazy('./sign.js'); // assinatura: PKCS#12, certificado e CMS
 const loadAppend = lazy('./pdf-append.js'); // assinar um PDF que já existe sem reescrever o arquivo
 const loadCrypt = lazy('./pdf-crypt.js'); // proteger o PDF gerado com senha
+const loadPdfaFonts = lazy('./pdfa-fonts.js'); // PDF/A com página de Word: as fontes embutidas (vendor/liberation)
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -470,7 +471,8 @@ function renderPages() {
   // Filtro, tamanho, margem e qualidade só valem para fotos: documento do Word e PDF seguem o próprio arquivo.
   const hasPhotos = state.pages.some(isPhoto);
   for (const control of [els.filterAll, els.pageSize, els.margin, els.quality]) control.closest('.field').hidden = !hasPhotos;
-  els.ocrField.hidden = !hasPhotos; // OCR só nas fotos: Word e PDF já têm texto (PDF escaneado fica para depois)
+  // OCR nas fotos e nas páginas de PDF escaneado (as de PDF que já têm texto são puladas); o Word já tem texto.
+  els.ocrField.hidden = !hasPhotos && !state.pages.some((page) => page.kind === 'pdf');
   updatePdfaOption();
   els.documentNote.hidden = state.pages.every(isPhoto);
   els.pdfCompress.closest('.field').hidden = !state.pages.some((page) => page.kind === 'pdf');
@@ -557,7 +559,7 @@ els.pages.addEventListener('click', async (event) => {
     case 'rotate':
       page.rotation = (page.rotation + 90) % 360;
       if (page.redactions?.length) page.redactions = rotateRedactions(page.redactions, 90);
-      page.ocr = null;
+      page.ocr = null; // o OCR lê a página de pé: com outro giro, lê de novo
       await refreshThumb(page);
       renderPages();
       if (focusLost()) els.pages.children[state.pages.indexOf(page)]?.querySelector('[data-action="rotate"]')?.focus();
@@ -722,10 +724,11 @@ els.filterAll.addEventListener('change', async () => {
 
 for (const select of [els.pageSize, els.margin, els.quality, els.ocr]) select.addEventListener('change', discardPdf);
 
-// PDF/A: só com fotos (Word e PDF ainda não cumprem o padrão) e sem senha (o PDF/A não permite criptografia).
-// O motivo de estar indisponível aparece logo abaixo da opção.
+// PDF/A: com fotos e páginas de Word (que levam as fontes embutidas), sem página de outro PDF (que vem como está, com
+// fontes e cores que o app não converte) e sem senha (o PDF/A não permite criptografia). O motivo de estar
+// indisponível aparece logo abaixo da opção.
 function pdfaUnavailable() {
-  if (state.pages.some((page) => !isPhoto(page))) return 'Por enquanto, o PDF/A é só para fotos: com páginas de Word ou de PDF na lista, a opção fica indisponível.';
+  if (state.pages.some((page) => page.kind === 'pdf')) return 'O PDF/A não vale para páginas de outro PDF: com elas na lista, a opção fica indisponível.';
   if (els.protect.checked) return 'O PDF/A não permite senha: desligue "Proteger o PDF com senha" para usar.';
   return '';
 }
@@ -846,9 +849,12 @@ function discardPdf() {
 
 const nextFrame = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-// O que muda o resultado do OCR de uma foto: recorte, filtro, rotação e tarjas. A qualidade não (as posições do
-// texto são guardadas relativas à imagem).
-const ocrKey = (page) => JSON.stringify([page.quad, page.filter, page.rotation, page.redactions ?? []]);
+// O que muda o resultado do OCR: recorte, filtro, rotação e tarjas (a qualidade não: as posições do texto são
+// guardadas relativas à imagem). O OCR lê a página como ela aparece no app, com o giro escolhido: é assim que a
+// pessoa deixa o texto de pé, também numa página de PDF que o scanner gravou deitada.
+const ocrKey = (page) => (page.kind === 'pdf'
+  ? JSON.stringify(['pdf', page.rotation, page.redactions ?? []])
+  : JSON.stringify([page.quad, page.filter, page.rotation, page.redactions ?? []]));
 
 class Cancelled extends Error {}
 
@@ -885,9 +891,11 @@ async function generate({ signer, stamp = null, append = null } = {}) {
   const size = els.pageSize.value;
 
   const list = [...state.pages]; // retrato da lista: o PDF sai igual ao que estava na tela
-  // OCR: só nas fotos, e só nas que ainda não têm o texto reconhecido com o recorte, o filtro e a rotação de agora.
-  const useOcr = els.ocr.checked && list.some(isPhoto);
-  const toRead = useOcr ? list.filter((page) => isPhoto(page) && page.ocr?.key !== ocrKey(page)) : [];
+  // OCR: nas fotos e nas páginas de PDF (as que já têm texto são puladas), e só nas que ainda não foram lidas com o
+  // recorte, o filtro, a rotação e as tarjas de agora (ocrKey).
+  const readable = (page) => isPhoto(page) || page.kind === 'pdf';
+  const useOcr = els.ocr.checked && list.some(readable);
+  const toRead = useOcr ? list.filter((page) => readable(page) && page.ocr?.key !== ocrKey(page)) : [];
   let ocr = null; // motor do OCR: um só, encerrado no fim
   let cancelled = false;
   if (toRead.length) {
@@ -900,6 +908,19 @@ async function generate({ signer, stamp = null, append = null } = {}) {
   }
   const stopIfCancelled = () => {
     if (cancelled) throw new Cancelled();
+  };
+  // O motor do OCR liga na primeira página que precisa dele (página de PDF que já tem texto não precisa).
+  const engine = async () => {
+    if (!ocr) {
+      announce('Preparando o reconhecimento de texto (na primeira vez, o app baixa uns 5 MB)…');
+      const { startOcr } = await loadOcr().catch(() => {
+        throw ocrError('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.');
+      });
+      stopIfCancelled();
+      ocr = await startOcr();
+      stopIfCancelled();
+    }
+    return ocr;
   };
 
   let ok = false;
@@ -925,9 +946,16 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       await nextFrame();
       stopIfCancelled();
       if (page.kind === 'pdf') {
+        if (toRead.includes(page)) {
+          announce(`Reconhecendo o texto: página ${toRead.indexOf(page) + 1} de ${toRead.length}…`);
+          page.ocr = { key: ocrKey(page), ...(await recognizePdfPage(engine, page)) };
+          stopIfCancelled();
+        }
         // Com tarja, a página vira imagem (com os pixels sob a tarja pintados); sem, é copiada mais abaixo, junto
-        // com as outras páginas do mesmo PDF.
-        pages.push(page.redactions?.length ? await rasterizePdfPage(page, quality) : null);
+        // com as outras páginas do mesmo PDF (com a camada do OCR, se ela foi lida).
+        const built = page.redactions?.length ? await rasterizePdfPage(page, quality) : null;
+        if (built && useOcr && page.ocr?.words.length) built.ocr = page.ocr.words;
+        pages.push(built);
         continue;
       }
       if (isDocument(page)) {
@@ -945,20 +973,12 @@ async function generate({ signer, stamp = null, append = null } = {}) {
         });
         layout = layoutPage(canvas.width, canvas.height, size, margin);
         if (toRead.includes(page)) {
-          if (!ocr) {
-            announce('Preparando o reconhecimento de texto (na primeira vez, o app baixa uns 5 MB)…');
-            const { startOcr } = await loadOcr().catch(() => {
-              throw Object.assign(new Error('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.'), { name: 'OcrError' });
-            });
-            stopIfCancelled();
-            ocr = await startOcr();
-            stopIfCancelled();
-          }
+          const reader = await engine();
           announce(`Reconhecendo o texto: página ${toRead.indexOf(page) + 1} de ${toRead.length}…`);
           // O OCR lê a foto já tarjada; o que ele achar sobre uma tarja (a borda da caixa, ruído) também sai.
           page.ocr = {
             key: ocrKey(page),
-            words: filterWords(await recognizePage(ocr, image, canvas, page, layout), page.redactions),
+            words: filterWords(await recognizePage(reader, image, canvas, page, layout), page.redactions),
             size: { width: canvas.width, height: canvas.height },
           };
         }
@@ -971,11 +991,24 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), ...layout, ...(words?.length ? { ocr: words } : {}) });
       canvas.width = canvas.height = 0; // devolve a memória do canvas na hora
     }
-    // O motor do OCR ocupa centenas de MB: sai da memória assim que as fotos terminam.
+    // O motor do OCR ocupa centenas de MB: sai da memória assim que as páginas terminam.
     ocr?.terminate();
     ocr = null;
     els.cancel.hidden = true;
     state.cancel = null;
+
+    // PDF/A com página de Word: as fontes vão embutidas, só com as letras usadas (as mesmas para todos os arquivos).
+    let fonts = null;
+    if (pdfa && list.some(isDocument)) {
+      announce('Preparando as fontes do PDF/A…');
+      const { embedFonts } = await loadPdfaFonts().catch(() => {
+        throw fontError();
+      });
+      fonts = await embedFonts(pages.filter(Boolean)).catch((err) => {
+        if (!(err instanceof TypeError) && err?.name !== 'TrueTypeError') throw err;
+        throw fontError();
+      });
+    }
 
     const tools = list.some((page) => page.kind === 'pdf') ? await loadPdfTools() : null;
     const crypt = password && !signer ? await loadCrypt() : null; // com assinatura, quem protege é o sign.js
@@ -1015,6 +1048,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       const pagesOf = (compressed) => {
         const copies = new Map([...wanted].map(([doc, indices]) => [doc, tools.copyPages(doc, indices, {
           replace: compressed ? replacements.get(doc) : undefined,
+          ocr: useOcr ? scannedWords(list, doc) : undefined,
         })]));
         return group.map((i) => {
           const page = list[i];
@@ -1025,11 +1059,11 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       };
       // Comprimido só fica se diminuir; senão, vai a versão sem recomprimir.
       let chosen = pagesOf(false);
-      let bytes = buildPdf(chosen, { pdfa });
+      let bytes = buildPdf(chosen, { pdfa, fonts });
       let before = null;
       if (wanted.size && replacements.size) {
         const smallPages = pagesOf(true);
-        const small = buildPdf(smallPages, { pdfa });
+        const small = buildPdf(smallPages, { pdfa, fonts });
         if (small.length < bytes.length) {
           before = bytes.length;
           bytes = small;
@@ -1044,7 +1078,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       // cifrado antes de ser assinado (a assinatura cobre o arquivo cifrado).
       if (signer) {
         announce(groups.length === 1 ? 'Assinando o PDF…' : `Assinando o PDF ${g + 1} de ${groups.length}…`);
-        bytes = await signer.sign(chosen, new Date(), { password, pdfa, stamp });
+        bytes = await signer.sign(chosen, new Date(), { password, pdfa, stamp, fonts });
       } else if (password) {
         announce(groups.length === 1 ? 'Protegendo o PDF com a senha…' : `Protegendo o PDF ${g + 1} de ${groups.length} com a senha…`);
         bytes = (await crypt.protectPdf(bytes, password)).bytes;
@@ -1060,18 +1094,25 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     const kept = !notSmaller ? '' : notSmaller === files.length && files.length === 1
       ? ' Comprimir não diminuiu este PDF (o tamanho está no texto e nas fontes, ou as imagens já eram leves): ficou sem recomprimir.'
       : ` ${notSmaller === 1 ? 'Um arquivo não diminuiu' : `${notSmaller} arquivos não diminuíram`} com a compressão e ${notSmaller === 1 ? 'ficou' : 'ficaram'} sem recomprimir.`;
-    const blank = useOcr ? list.filter((page) => isPhoto(page) && !page.ocr?.words.length).length : 0;
-    const read = !useOcr ? '' : blank === 0
-      ? ' O texto das fotos foi reconhecido: dá para buscar e copiar no PDF.'
-      : ` Não achei texto impresso em ${blank === 1 ? 'uma das fotos' : `${blank} das fotos`}.`;
+    // Páginas lidas pelo OCR: as fotos e as de PDF que não tinham texto (as escaneadas).
+    const scanned = list.filter((page) => isPhoto(page) || (page.kind === 'pdf' && !page.ocr?.hasText));
+    const readKind = scanned.every(isPhoto) ? 'fotos' : 'páginas';
+    const blank = useOcr ? scanned.filter((page) => !page.ocr?.words.length).length : 0;
+    const withText = useOcr ? list.filter((page) => page.kind === 'pdf' && page.ocr?.hasText).length : 0;
+    const read = (!useOcr || !scanned.length ? '' : blank === 0
+      ? ` O texto ${readKind === 'fotos' ? 'das fotos' : 'das páginas escaneadas'} foi reconhecido: dá para buscar e copiar no PDF.`
+      : ` Não achei texto impresso em ${blank === 1 ? `uma das ${readKind}` : `${blank} das ${readKind}`}.`)
+      + (!withText ? '' : withText === 1 ? ' Uma página de PDF já tinha texto e ficou como estava.' : ` ${withText} páginas de PDF já tinham texto e ficaram como estavam.`);
     const locked = !password ? '' : files.length === 1
       ? ' Ele só abre com a senha que você escolheu.'
       : ' Eles só abrem com a senha que você escolheu.';
     const redacted = list.filter((page) => page.redactions?.length);
     const rasterized = list.map((page, i) => (page.kind === 'pdf' && page.redactions?.length ? i + 1 : 0)).filter(Boolean);
+    // Com o OCR, a página tarjada que virou imagem ganha o texto reconhecido (sem o que estava sob as tarjas).
+    const asImage = useOcr ? 'o texto vem do OCR, sem o que estava sob as tarjas' : null;
     const covered = !redacted.length ? '' : ` Tarjas conferidas: não sobrou texto embaixo delas.${!rasterized.length ? '' : rasterized.length === 1
-      ? ` A página ${rasterized[0]}, de PDF, saiu como imagem: o texto dela não fica selecionável.`
-      : ` As páginas ${rasterized.join(', ')}, de PDF, saíram como imagem: o texto delas não fica selecionável.`}`;
+      ? ` A página ${rasterized[0]}, de PDF, saiu como imagem: ${asImage ?? 'o texto dela não fica selecionável'}.`
+      : ` As páginas ${rasterized.join(', ')}, de PDF, saíram como imagem: ${asImage ?? 'o texto delas não fica selecionável'}.`}`;
     announce(ready + locked + covered + kept + read, 'success');
     ok = true;
   } catch (err) {
@@ -1079,7 +1120,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       announce('Cancelado. Nenhum PDF foi gerado.');
     } else {
       // Erros do OCR e da assinatura já vêm com a explicação; os outros, com a mensagem técnica.
-      const known = ['SignError', 'OcrError', 'RedactionError'].includes(err?.name);
+      const known = ['SignError', 'OcrError', 'RedactionError', 'FontError'].includes(err?.name);
       if (!known) console.error(err);
       announce(known ? err.message : `Algo deu errado ao gerar o PDF: ${err.message}`, 'error');
     }
@@ -1127,6 +1168,45 @@ async function recognizePage(ocr, image, canvas, page, layout) {
 els.cancel.addEventListener('click', () => state.cancel?.());
 
 const redactionError = (message) => Object.assign(new Error(message), { name: 'RedactionError' });
+const ocrError = (message) => Object.assign(new Error(message), { name: 'OcrError' });
+const fontError = () => Object.assign(new Error('Não deu para carregar as fontes do PDF/A. Confira a conexão e tente de novo.'), { name: 'FontError' });
+
+// Página de PDF: a que já tem texto (o PDF.js acha texto nela) fica como está; a escaneada, só com imagem, é
+// desenhada pelo PDF.js na resolução do OCR e lida como aparece no app (com o /Rotate dela e o giro escolhido).
+// Página tarjada vira imagem: é lida sempre, com as tarjas pintadas, e o que o OCR achar sob uma tarja sai.
+// @returns {Promise<{words: object[], hasText: boolean}>} words: medidas na página como aparece no app
+async function recognizePdfPage(engine, page) {
+  const tools = await loadPdfTools();
+  const number = state.pages.indexOf(page) + 1;
+  const redacted = !!page.redactions?.length;
+  if (!redacted) {
+    const { items } = await tools.pdfPageTextItems(page.doc, page.index).catch(() => {
+      throw ocrError(`Não deu para ler a página ${number} (do PDF ${page.name}) para reconhecer o texto. Confira a conexão e tente de novo.`);
+    });
+    if (items.length) return { words: [], hasText: true };
+  }
+  const { canvas, real } = await tools.drawPdfPage(page.doc, { index: page.index, ...page.size }, {
+    maxSide: OCR_SIDE, rotation: page.rotation, number: page.number,
+  });
+  try {
+    if (!real) throw ocrError(`Não deu para desenhar a página ${number} (do PDF ${page.name}) para reconhecer o texto. Confira a conexão e tente de novo.`);
+    if (redacted) paintRedactions(canvas.getContext('2d'), page.redactions, canvas.width, canvas.height);
+    // Resolução do desenho, em pontos por polegada: a largura da página como aparece, em pontos.
+    const width = page.rotation % 180 !== 0 ? page.size.height : page.size.width;
+    const reader = await engine();
+    const words = await reader.recognize(canvas, { dpi: canvas.width / (width / 72) });
+    return { words: redacted ? filterWords(words, page.redactions) : words, hasText: false };
+  } finally {
+    canvas.width = canvas.height = 0;
+  }
+}
+
+// Palavras do OCR das páginas escaneadas de um PDF da lista (sem tarja: as tarjadas viram imagem), por página, com
+// o giro do app em que foram lidas.
+function scannedWords(list, doc) {
+  return new Map(list.filter((page) => page.kind === 'pdf' && page.doc === doc && !page.redactions?.length && page.ocr?.words.length)
+    .map((page) => [page.index, { words: page.ocr.words, rotation: page.rotation }]));
+}
 
 // Página de PDF com tarja: desenhada pelo PDF.js na qualidade escolhida, com os pixels sob as tarjas pintados,
 // e entra no PDF como foto. Sem o desenho de verdade (só o cartão), não dá para tarjar: nada sai.
@@ -1390,13 +1470,23 @@ function findInDocument(page) {
   return findInPieces(pieces, { width, height }).map((found) => ({ ...found, rect: toRotatedRects([found.rect], page.rotation)[0] }));
 }
 
-async function findInPdfPage(page) {
+async function findInPdfPage(page, startEngine) {
   const tools = await loadPdfTools();
   const { items, width, height } = await tools.pdfPageTextItems(page.doc, page.index);
+  if (!items.length) return findInScannedPage(page, startEngine, { width, height });
   const pieces = items.map((item) => ({ str: item.str, xs: charPositions(item.str, item.x0, item.x1, item.family), y0: item.y0, y1: item.y1 }));
   // A posição de cada letra é estimada: a tarja ganha uma margem maior.
   return findInPieces(pieces, { width, height })
     .map((found) => ({ ...found, rect: toRotatedRects([padRect(found.rect, { width, height }, 0.3)], page.rotation)[0] }));
+}
+
+// Página de PDF escaneada (sem texto): lida pelo OCR como aparece no app, como as fotos, e o resultado fica
+// guardado para gerar o PDF. As caixas já saem na página como aparece, que é onde as tarjas são marcadas.
+async function findInScannedPage(page, startEngine, { width, height }) {
+  if (page.ocr?.key !== ocrKey(page)) page.ocr = { key: ocrKey(page), ...(await recognizePdfPage(startEngine, page)) };
+  const size = page.rotation % 180 !== 0 ? { width: height, height: width } : { width, height };
+  const pieces = page.ocr.words.map((word) => ({ str: word.text, xs: charPositions(word.text, word.x0, word.x1), y0: word.y0, y1: word.y1 }));
+  return findInPieces(pieces, size).map((found) => ({ ...found, rect: padRect(found.rect, size, 0.3) }));
 }
 
 // Foto: o texto do OCR (já tarjado). Sem ele, o reconhecimento roda agora e fica guardado para gerar o PDF.
@@ -1434,7 +1524,8 @@ async function findData() {
   const toRead = list.filter((page) => isPhoto(page) && page.ocr?.key !== ocrKey(page));
   let ocr = null;
   let cancelled = false;
-  if (toRead.length) {
+  // Páginas de PDF sem texto (escaneadas) também passam pelo OCR: com elas na lista, dá para cancelar.
+  if (toRead.length || list.some((page) => page.kind === 'pdf' && page.ocr?.key !== ocrKey(page))) {
     els.cancel.hidden = false;
     state.cancel = () => {
       cancelled = true;
@@ -1444,7 +1535,7 @@ async function findData() {
   }
   const startEngine = async () => {
     if (ocr) return ocr;
-    announce('Preparando o reconhecimento de texto das fotos (na primeira vez, o app baixa uns 5 MB)…');
+    announce('Preparando o reconhecimento de texto (na primeira vez, o app baixa uns 5 MB)…');
     const { startOcr } = await loadOcr().catch(() => {
       throw Object.assign(new Error('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.'), { name: 'OcrError' });
     });
@@ -1464,7 +1555,7 @@ async function findData() {
       await nextFrame();
       let found;
       try {
-        found = isDocument(page) ? findInDocument(page) : page.kind === 'pdf' ? await findInPdfPage(page) : await findInPhoto(page, startEngine);
+        found = isDocument(page) ? findInDocument(page) : page.kind === 'pdf' ? await findInPdfPage(page, startEngine) : await findInPhoto(page, startEngine);
       } catch (err) {
         if (cancelled || err instanceof Cancelled || err?.name === 'OcrCancelled' || err?.name === 'OcrError') throw err;
         unreadable.push(i + 1); // ex.: página de PDF que o PDF.js não consegue ler
@@ -1546,9 +1637,10 @@ els.findApply.addEventListener('click', async () => {
   if (!chosen.length) return;
   const touched = new Set();
   for (const { page, rects } of chosen) {
-    const valid = page.ocr?.key === ocrKey(page);
+    const valid = isPhoto(page) && page.ocr?.key === ocrKey(page);
     page.redactions = [...(page.redactions ?? []), ...rects];
-    // O texto do OCR continua valendo, sem o que ficou sob as tarjas novas: não precisa reconhecer de novo.
+    // Foto: o texto do OCR continua valendo, sem o que ficou sob as tarjas novas, e não precisa reconhecer de novo.
+    // Página de PDF tarjada vira imagem (já girada): o texto é lido de novo nela.
     if (valid) page.ocr = { ...page.ocr, key: ocrKey(page), words: filterWords(page.ocr.words, page.redactions) };
     touched.add(page);
   }
@@ -1594,13 +1686,13 @@ function resetSigning() {
 }
 
 // Assinar sem reescrever: a lista é um PDF só, inteiro e na ordem, e nada do que foi escolhido muda o arquivo (giro,
-// tarja, compressão, senha, dividir). Aí a assinatura entra no fim do arquivo, e as que ele já tinha continuam
-// valendo. O PDF/A não vale para páginas de PDF, e o OCR só lê fotos: nenhum dos dois mexe aqui.
+// tarja, compressão, OCR, senha, dividir). Aí a assinatura entra no fim do arquivo, e as que ele já tinha continuam
+// valendo. O PDF/A não vale para páginas de PDF.
 function unchangedPdf() {
   const doc = state.pages[0]?.doc;
   if (!doc || state.pages.length !== doc.pages.length) return null;
   const same = state.pages.every((page, i) => page.kind === 'pdf' && page.doc === doc && page.index === i && !page.rotation && !page.redactions?.length);
-  if (!same || els.pdfCompress.value !== 'none' || els.protect.checked) return null;
+  if (!same || els.pdfCompress.value !== 'none' || els.protect.checked || els.ocr.checked) return null;
   let groups;
   try {
     groups = outputGroups(state.pages.length);
@@ -1634,7 +1726,7 @@ async function prepareSignOptions() {
       ? 'Este PDF já tem assinatura. A sua entra no fim do arquivo, e as que ele tem continuam valendo. O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos).'
       : 'O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos): a sua assinatura entra no fim do arquivo, sem mudar nada nele.';
   } else if (signedSources.size) {
-    mode = 'O PDF vai ser montado de novo, e as assinaturas que ele já tinha deixam de valer. Para manter, assine o PDF sozinho, sem mudar nada nele (sem juntar, girar, tarjar nem comprimir).';
+    mode = 'O PDF vai ser montado de novo, e as assinaturas que ele já tinha deixam de valer. Para manter, assine o PDF sozinho, sem mudar nada nele (sem juntar, girar, tarjar, comprimir nem ligar o OCR).';
   }
   els.signMode.hidden = !mode;
   els.signMode.firstElementChild.textContent = mode;

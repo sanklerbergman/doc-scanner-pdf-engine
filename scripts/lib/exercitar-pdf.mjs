@@ -1,5 +1,6 @@
-// O que o app faz com um PDF, sem o navegador: abrir (com os avisos), juntar, dividir, comprimir e acrescentar
-// uma assinatura sem reescrever o arquivo (só a estrutura, com o espaço reservado: a chave não muda nada nela).
+// O que o app faz com um PDF, sem o navegador: abrir (com os avisos), juntar, dividir, comprimir, acrescentar a
+// camada do OCR (com palavras simuladas) e acrescentar uma assinatura sem reescrever o arquivo (só a estrutura, com
+// o espaço reservado: a chave não muda nada nela).
 // Cada PDF gerado é reaberto pelo próprio leitor e, se pedido, passa pelo qpdf --check.
 // Usado pela varredura (varrer-pdfs.mjs) e pelo fuzzing (fuzz-pdf.mjs), sempre dentro de um Worker com tempo e
 // memória limitados (isolar.mjs): um PDF que trava o leitor derruba só o Worker dele.
@@ -23,9 +24,15 @@ const encode = async () => ({ data: SMALL_JPEG, width: 16, height: 24 });
 
 class OutputError extends Error {}
 
+// Palavras de um OCR simulado: passam pela camada de texto invisível das páginas escaneadas.
+const WORDS = [
+  { text: 'Texto', x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.14, baseline: 0.135, size: 0.04, last: false },
+  { text: '(reconhecido)', x0: 0.32, y0: 0.1, x1: 0.6, y1: 0.14, baseline: 0.135, size: 0.04, last: true },
+];
+
 // Copia as páginas (girando uma sim, outra não, como o app permite), monta o PDF e reabre com o leitor.
-async function rebuild(doc, indices, replace) {
-  const copy = copyPages(doc, indices, { replace });
+async function rebuild(doc, indices, replace, ocr) {
+  const copy = copyPages(doc, indices, { replace, ocr });
   const out = buildPdf(indices.map((index, i) => ({ copy: { source: copy, page: copy.pages.get(index) }, rotation: (i % 2) * 90 })));
   let again;
   try {
@@ -37,8 +44,13 @@ async function rebuild(doc, indices, replace) {
   return out;
 }
 
+// Limites dos leitores de PDF (ISO 32000-1, anexo C): número de objeto e de geração.
+const MAX_OBJECT = 8388607;
+
 // Assinar sem reescrever, quando o PDF permite: o original continua no começo, e o PDF com a assinatura acrescentada
-// (com carimbo na última página) reabre inteiro, sem precisar de reparo, e com a assinatura reconhecida.
+// (com carimbo na última página) reabre inteiro, sem precisar de reparo, e com a assinatura reconhecida. Cada objeto
+// do trecho acrescentado tem número e geração válidos e é o que o leitor acha por aquele número (a tabela xref nova
+// aponta para ele). O resto do arquivo é o original, com os defeitos que ele tiver.
 async function append(doc) {
   if (appendBlocker(doc)) return null;
   const { bytes } = buildAppendToSign(doc, {
@@ -54,6 +66,12 @@ async function append(doc) {
   if (again.repaired) throw new OutputError('o PDF com a assinatura acrescentada só abre com reparo');
   if (again.pages.length !== doc.pages.length) throw new OutputError(`o PDF com a assinatura acrescentada tem ${again.pages.length} páginas, e não ${doc.pages.length}`);
   if (!again.isSigned()) throw new OutputError('a assinatura acrescentada não é reconhecida');
+  const tail = new TextDecoder('latin1').decode(bytes.subarray(doc.bytes.length));
+  for (const [header, num, gen] of tail.matchAll(/^(\d+) (\d+) obj$/gm)) {
+    if (Number(num) < 1 || Number(num) >= MAX_OBJECT || Number(gen) > 65535) throw new OutputError(`objeto acrescentado inválido: ${header}`);
+    const offset = doc.bytes.length + tail.indexOf(`${header}\n`);
+    if (again.entries.get(Number(num))?.offset !== offset) throw new OutputError(`a xref nova não aponta para ${header}`);
+  }
   return bytes;
 }
 
@@ -84,10 +102,12 @@ export async function exercise(bytes) {
     stage = 'comprimir';
     const replace = await compressObjects(doc, all, { encode });
     outputs.push(await rebuild(doc, all, replace));
+    stage = 'OCR';
+    outputs.push(await rebuild(doc, all, undefined, new Map(all.map((i) => [i, { words: WORDS, rotation: (i % 2) * 90 }]))));
     stage = 'assinar sem reescrever';
     const signed = await append(doc);
     if (signed) outputs.push(signed);
-    return done({ status: 'ok', pages: doc.pages.length });
+    return done({ status: 'ok', pages: doc.pages.length, appended: signed ? outputs.length - 1 : -1 });
   } catch (err) {
     if (stage === 'abrir' && err instanceof PdfError) return done({ status: 'recusado', message: err.message });
     const message = err instanceof OutputError ? err.message : `${err?.name}: ${err?.message}`;
@@ -118,14 +138,21 @@ export function qpdfCheck(bytes, qpdf) {
 // ele): aí, dado de stream ou conteúdo de página com defeito também conta como herdado.
 const CONTENT = /error decoding stream data|input stream is complete|\(content, offset|content stream/;
 
+// O PDF com a assinatura acrescentada guarda o original byte a byte, com os defeitos dele: o qpdf os descreve de
+// outro jeito (e passa a conferir o formulário, que antes nem existia). Nele só conta erro (status 2) que a entrada
+// não tinha; a estrutura do trecho acrescentado é conferida à parte (append).
 export function newQpdfProblems(result) {
   if (!result.qpdf) return [];
+  const appended = result.appended ?? -1;
   const kinds = (check) => new Set(check.text
     .filter((line) => !/^qpdf: |re-processed without filtering/.test(line))
     .map((line) => line.replace(/^(WARNING|ERROR): arquivo\.pdf[^:]*:\s*/, '$1: ').replace(/decode: .*$/, 'decode').replace(/\d+/g, 'N').trim()));
   const input = kinds(result.qpdf.input);
   const damaged = result.qpdf.input.status !== 0;
-  return result.qpdf.outputs.flatMap((out) => [...kinds(out)].filter((kind) => !input.has(kind) && !(damaged && CONTENT.test(kind))));
+  return result.qpdf.outputs.flatMap((out, i) => {
+    if (i === appended) return out.status === 2 && result.qpdf.input.status !== 2 ? out.text.slice(0, 3) : [];
+    return [...kinds(out)].filter((kind) => !input.has(kind) && !(damaged && CONTENT.test(kind)));
+  });
 }
 
 // Dentro do Worker: recebe {path} ou {bytes} e devolve o resultado. Com qpdf, confere o arquivo de entrada e os

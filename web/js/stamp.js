@@ -5,6 +5,7 @@
 // Só o nome vai no carimbo: no e-CPF e no e-CNPJ o número vem depois do ":" no nome do certificado e fica de fora
 // (displayName, em x509.js). O texto entra como string hexadecimal, então nenhum caractere do nome quebra o PDF.
 import { textWidth, winAnsiCode } from './fonts.js';
+import { visibleToPdf, uprightMatrix } from './geometry.js';
 
 // Os seis lugares, com o nome que aparece na tela (e para leitores de tela).
 export const STAMP_POSITIONS = {
@@ -101,18 +102,10 @@ export function placeStamp({ box, rotate }, position, { width: w, height: h }) {
   const marginY = Math.max(0, Math.min(MARGIN, (pageH - h) / 2));
   const u = column === 'left' ? marginX : column === 'center' ? (pageW - w) / 2 : pageW - w - marginX;
   const v = row === 'top' ? marginY : pageH - h - marginY;
-  // (u, v): página como aparece, origem em cima à esquerda, v para baixo → coordenadas do PDF.
-  const toPdf = (pu, pv) => {
-    if (rotate === 90) return [x1 + pv, y1 + pu];
-    if (rotate === 180) return [x2 - pu, y1 + pv];
-    if (rotate === 270) return [x2 - pv, y2 - pu];
-    return [x1 + pu, y2 - pv];
-  };
-  const [ax, ay] = toPdf(u, v);
-  const [bx, by] = toPdf(u + w, v + h);
+  const [ax, ay] = visibleToPdf(box, rotate, u, v);
+  const [bx, by] = visibleToPdf(box, rotate, u + w, v + h);
   const rect = [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
-  const matrix = { 90: [0, 1, -1, 0, 0, 0], 180: [-1, 0, 0, -1, 0, 0], 270: [0, -1, 1, 0, 0, 0] }[rotate] ?? [1, 0, 0, 1, 0, 0];
-  return { rect, matrix, visible: { x: u, y: v, w, h } };
+  return { rect, matrix: uprightMatrix(rotate), visible: { x: u, y: v, w, h } };
 }
 
 /**

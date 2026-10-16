@@ -240,3 +240,25 @@ test('o openssl cms -verify confere as duas assinaturas da coassinatura com a ca
   first.discard();
   second.discard();
 });
+
+test('estrutura danificada que o leitor ainda abre: o app monta um PDF novo em vez de acrescentar', async () => {
+  const objects = (extra = {}) => ({
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 595 842] >>',
+    ...textPageObjects('Danificado'),
+    ...extra,
+  });
+  const cases = {
+    '/Size menor que o maior objeto': makeRawPdf(objects(), { trailer: '/Root 1 0 R /Size 3' }).bytes,
+    'referência com outra geração': makeRawPdf(objects(), { trailer: '/Root 1 7 R' }).bytes,
+    'geração impossível': makeRawPdf(objects(), { trailer: '/Root 1 99999999999 R' }).bytes,
+    'página sem MediaBox': makeRawPdf(objects({ 2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' })).bytes,
+  };
+  for (const [name, bytes] of Object.entries(cases)) {
+    const doc = await openPdf(bytes);
+    assert.equal(doc.repaired, false, `${name}: abre sem reparo`);
+    assert.equal(appendBlocker(doc)?.kind, 'rewrite', name);
+  }
+  // O mesmo PDF, sem defeito, recebe a assinatura no fim.
+  assert.equal(appendBlocker(await openPdf(makeRawPdf(objects()).bytes)), null);
+});

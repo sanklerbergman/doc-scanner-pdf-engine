@@ -1,4 +1,5 @@
-// PDF/A-2b (fotos): identificação do padrão (XMP), perfil sRGB (icc.js) e /ID tirado do conteúdo.
+// PDF/A-2b: identificação do padrão (XMP), perfil sRGB (icc.js), /ID tirado do conteúdo e, nas páginas de Word, as
+// fontes embutidas (subconjunto das Liberation, pdfa-fonts.js e ttf.js).
 // Conferência independente: o veraPDF (validador de referência do PDF/A), quando a variável VERAPDF aponta o
 // programa (verapdf ou verapdf.bat). Sem ele, esse teste é pulado; o resto roda sempre.
 import { test } from 'node:test';
@@ -14,6 +15,10 @@ import { openCertificate, verifySignedPdf } from '../web/js/sign.js';
 import { readPkcs12 } from '../web/js/pkcs12.js';
 import { readCertificate } from '../web/js/x509.js';
 import { buildPdf, qpdfCheck } from './helpers/qpdf.js';
+import { embedFonts, usedCharacters } from '../web/js/pdfa-fonts.js';
+import { openPdf } from '../web/js/pdf-reader.js';
+import { readTrueType } from '../web/js/ttf.js';
+import { inflate } from '../web/js/inflate.js';
 
 const fixture = (name) => new Uint8Array(readFileSync(new URL(`./fixtures/${name}`, import.meta.url)));
 const latin1 = (bytes) => Buffer.from(bytes).toString('latin1');
@@ -27,6 +32,17 @@ const PAGES = [
   { jpeg: fixture('rgb-40x30.jpg'), ...layoutPage(40, 30, 'a4', 18), ocr: WORDS },
   { jpeg: fixture('gray-16x24.jpg'), ...layoutPage(16, 24, 'letter', 0) },
 ];
+
+// Página de Word com as três famílias, em estilos diferentes, e acentos e símbolos da WinAnsi.
+const WORD = {
+  width: 595.28, height: 841.89, items: [
+    { type: 'text', x: 72, y: 100, text: 'Contrato de locação — cláusula 1ª', font: 'Times-Bold', size: 14 },
+    { type: 'text', x: 72, y: 130, text: 'R$ 1.500,00 (mil e quinhentos reais), “aspas” e €', font: 'Times-Roman', size: 11, wordSpacing: 0.4 },
+    { type: 'text', x: 72, y: 150, text: 'Helvetica em itálico: ação', font: 'Helvetica-Oblique', size: 11 },
+    { type: 'text', x: 72, y: 170, text: 'Código 0123', font: 'Courier', size: 10 },
+    { type: 'line', x1: 72, x2: 520, y: 180, width: 0.5 },
+  ],
+};
 
 test('PDF/A desligado: o PDF sai igual ao de sempre', () => {
   const plain = buildPdf(PAGES);
@@ -104,17 +120,72 @@ test('PDF/A assinado: o catálogo leva a assinatura e a identificação, e a ass
   signer.discard();
 });
 
-test('veraPDF (perfil PDF/A-2B): fotos, fotos com a camada do OCR e PDF assinado', async (t) => {
+test('letras usadas: por fonte, no Word e, na Helvetica, também as da camada do OCR', () => {
+  const used = usedCharacters([WORD, ...PAGES]);
+  assert.deepEqual([...used.keys()].sort(), ['Courier', 'Helvetica-Oblique', 'Times-Bold', 'Times-Roman']);
+  assert.ok(used.get('Times-Bold').has('ª') && used.get('Times-Bold').has('—'));
+  // A Helvetica só aparece no OCR (texto invisível): continua sem embutir.
+  assert.equal(used.has('Helvetica'), false);
+  const withHelvetica = { ...WORD, items: [...WORD.items, { type: 'text', x: 72, y: 200, text: 'Sem serifa', font: 'Helvetica', size: 11 }] };
+  const both = usedCharacters([withHelvetica, ...PAGES]).get('Helvetica');
+  for (const char of 'Sem serifaContrato ação nº 1') assert.ok(both.has(char), `"${char}"`);
+});
+
+test('PDF/A com Word: TrueType embutida (subconjunto), larguras da própria fonte, ToUnicode e o resto igual', async () => {
+  const fonts = await embedFonts([WORD]);
+  const bytes = buildPdf([WORD], { pdfa: true, fonts });
+  const text = latin1(bytes);
+  assert.equal(text.match(/\/Subtype \/TrueType/g).length, 4);
+  assert.doesNotMatch(text, /\/Subtype \/Type1/, 'nenhuma fonte sem embutir no texto visível');
+  const doc = await openPdf(bytes);
+  const fontsOf = doc.resolve(doc.resolve(doc.pages[0].attrs.Resources).get('Font'));
+  for (const ref of fontsOf.values()) {
+    const font = doc.resolve(ref);
+    const name = font.get('BaseFont').value;
+    assert.match(name, /^[A-Z]{6}\+Liberation(Sans|Serif|Mono)/);
+    assert.equal(font.get('Encoding').value, 'WinAnsiEncoding');
+    const descriptor = doc.resolve(font.get('FontDescriptor'));
+    assert.equal(descriptor.get('FontName').value, name);
+    assert.equal(descriptor.get('Flags') & 32, 32, 'não simbólica');
+    // O /Widths bate com a fonte embutida, código a código.
+    const file = doc.resolve(descriptor.get('FontFile2'));
+    const program = await inflate(file.data, 'deflate', 10 * 1024 * 1024);
+    assert.equal(program.length, file.dict.get('Length1'));
+    const ttf = readTrueType(program);
+    const first = font.get('FirstChar');
+    font.get('Widths').forEach((width, i) => {
+      const code = first + i;
+      const char = new TextDecoder('windows-1252').decode(Uint8Array.of(code));
+      const glyph = ttf.glyphOf(char.codePointAt(0));
+      assert.equal(width, glyph ? ttf.width(char.codePointAt(0)) : 0, `${name}, código ${code}`);
+    });
+    const unicode = latin1(doc.resolve(font.get('ToUnicode')).data);
+    assert.match(unicode, /beginbfchar/);
+  }
+  assert.match(latin1(doc.resolve(doc.resolve(fontsOf.get('F1')).get('ToUnicode')).data), /<AA> <00AA>/, 'ª (código AA)');
+  // O mesmo documento dá o mesmo PDF (a tag do subconjunto sai do conteúdo).
+  assert.deepEqual(buildPdf([WORD], { pdfa: true, fonts: await embedFonts([WORD]) }), bytes);
+  // Sem PDF/A, as fontes passadas são ignoradas: o PDF sai como sempre.
+  assert.deepEqual(buildPdf([WORD], { fonts }), buildPdf([WORD]));
+});
+
+test('veraPDF (perfil PDF/A-2B): fotos, OCR, Word com as fontes embutidas e PDF assinado', async (t) => {
   const verapdf = process.env.VERAPDF;
   if (!verapdf) {
     t.skip('VERAPDF não definido: a conferência com o veraPDF é pulada');
     return;
   }
   const signer = await openCertificate(fixture('certificados/titular-aes.pfx'), 'senha-de-teste');
+  const withHelvetica = { ...WORD, items: [...WORD.items, { type: 'text', x: 72, y: 200, text: 'Sem serifa', font: 'Helvetica', size: 11 }] };
+  const mixed = [withHelvetica, ...PAGES]; // Word e foto com OCR dividindo a Helvetica, que vai embutida
+  const fonts = await embedFonts(mixed);
   const files = {
     'fotos.pdf': buildPdf(PAGES.map(({ ocr, ...page }) => page), { pdfa: true }),
     'ocr.pdf': buildPdf(PAGES, { pdfa: true }),
     'assinado.pdf': await signer.sign(PAGES, new Date(), { pdfa: true }),
+    'word.pdf': buildPdf([WORD], { pdfa: true, fonts: await embedFonts([WORD]) }),
+    'word-fotos-ocr.pdf': buildPdf(mixed, { pdfa: true, fonts }),
+    'word-assinado.pdf': await signer.sign(mixed, new Date(), { pdfa: true, fonts }),
   };
   signer.discard();
   const dir = mkdtempSync(join(tmpdir(), 'verapdf-'));

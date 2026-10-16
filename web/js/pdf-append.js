@@ -62,6 +62,35 @@ export function changePermission(doc) {
   return levels.length ? Math.min(...levels) : null;
 }
 
+// Limites dos leitores de PDF (ISO 32000-1, anexo C): número de objeto e de geração.
+const MAX_OBJECT = 8388607;
+const validGeneration = (gen) => Number.isInteger(gen) && gen >= 0 && gen <= 65535;
+
+// Geração de um objeto, pelo cabeçalho dele ("12 0 obj"); o de dentro de object stream é sempre 0.
+function generationOf(doc, num) {
+  const entry = doc.entries.get(num);
+  if (entry?.type === 2) return 0;
+  return entry?.type === 1 ? doc.parseObjectAt(entry.offset)?.gen : undefined;
+}
+
+// A atualização aponta para a estrutura do original (/Prev, números e gerações dos objetos regravados). Ela só é
+// acrescentada quando essa estrutura está limpa: /Size coerente, a tabela xref mais nova com geração válida, cada
+// objeto que pode ser regravado com a mesma geração na referência e no cabeçalho, e toda página com MediaBox. Um PDF
+// danificado que o leitor ainda abre fica para o caminho de sempre (o PDF novo), que conserta essas coisas.
+function sound(doc) {
+  const size = doc.trailer.get('Size');
+  let max = 0;
+  for (const num of doc.entries.keys()) if (num > max) max = num;
+  if (!Number.isInteger(size) || size <= max || size > MAX_OBJECT) return false;
+  if (isName(doc.trailer.get('Type'), 'XRef') && !validGeneration(doc.parseObjectAt(doc.startxref)?.gen)) return false;
+  if (doc.pages.some((page) => page.guessed)) return false;
+  const catalog = doc.catalog();
+  const form = catalog.get('AcroForm');
+  const refs = [doc.trailer.get('Root'), form, doc.resolve(form)?.get?.('Fields')];
+  for (const page of doc.pages) refs.push(page.ref, page.node.get('Annots'));
+  return refs.every((ref) => !(ref instanceof PdfRef) || (validGeneration(ref.gen) && generationOf(doc, ref.num) === ref.gen));
+}
+
 /**
  * O que impede acrescentar a assinatura no fim do PDF. null: dá para acrescentar.
  * - locked: o autor certificou o PDF sem permitir alterações (/DocMDP 1). Uma assinatura nova desfaria a
@@ -74,7 +103,7 @@ export function appendBlocker(doc) {
   if (doc.security) {
     return { kind: 'rewrite', message: 'Este PDF tinha senha ou restrições: o app monta um PDF novo para assinar, e as assinaturas que ele já tinha deixam de valer.' };
   }
-  if (doc.repaired || typeof doc.startxref !== 'number' || !(doc.trailer.get('Root') instanceof PdfRef) || doc.pages.some((page) => !page.ref)) {
+  if (doc.repaired || typeof doc.startxref !== 'number' || !(doc.trailer.get('Root') instanceof PdfRef) || doc.pages.some((page) => !page.ref) || !sound(doc)) {
     return { kind: 'rewrite', message: 'A estrutura deste PDF está danificada: o app monta um PDF novo para assinar, e as assinaturas que ele já tinha deixam de valer.' };
   }
   if (changePermission(doc) === 1) {

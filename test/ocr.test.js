@@ -142,3 +142,68 @@ test('readWords: palavras do Tesseract em medidas relativas à imagem, com a lin
   assert.ok(Math.abs(words[2].baseline - (255 - 10) / 2000) < 1e-9);
   assert.deepEqual(readWords(null, 10, 10), []);
 });
+
+// ---------- PDF escaneado ----------
+
+// Duas páginas com os mesmos recursos (objeto 6): a primeira girada 90° e com a CropBox deslocada. A fonte /OCR já
+// existe nos recursos, então a camada usa outro nome.
+const scannedPdf = () => openPdf(makeRawPdf({
+  1: '<< /Type /Catalog /Pages 2 0 R >>',
+  2: '<< /Type /Pages /Kids [3 0 R 7 0 R] /Count 2 >>',
+  3: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] /CropBox [50 60 550 760] /Rotate 90 /Resources 6 0 R /Contents 4 0 R >>',
+  4: { data: 'q 500 0 0 700 50 60 cm /Im0 Do Q', deflate: true },
+  5: { dict: '/Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8', data: 'x' },
+  6: '<< /XObject << /Im0 5 0 R >> /Font << /OCR 8 0 R >> >>',
+  7: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] /Resources 6 0 R /Contents 4 0 R >>',
+  8: '<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>',
+}).bytes);
+
+test('PDF escaneado: a camada entra só na página lida, com recursos próprios e o conteúdo original intacto', async () => {
+  const doc = await scannedPdf();
+  const copy = copyPages(doc, [0, 1], { ocr: new Map([[0, { words: WORDS, rotation: 0 }]]) });
+  const pdf = buildPdf([0, 1].map((i) => ({ copy: { source: copy, page: copy.pages.get(i) } })));
+  const again = await openPdf(pdf);
+  const fonts = (i) => again.resolve(again.resolve(again.pages[i].attrs.Resources).get('Font'));
+  // A página lida ganhou a Helvetica com outro nome; a outra continua com os recursos de antes.
+  assert.deepEqual([...fonts(0).keys()], ['OCR', 'OCR1']);
+  assert.equal(again.resolve(fonts(0).get('OCR1')).get('BaseFont').value, 'Helvetica');
+  assert.equal(again.resolve(fonts(0).get('OCR1')).get('Encoding').value, 'WinAnsiEncoding');
+  assert.deepEqual([...fonts(1).keys()], ['OCR']);
+  // Conteúdo: o original entre q e Q, e a camada invisível depois.
+  const contents = again.resolve(again.pages[0].node.get('Contents'));
+  assert.equal(contents.length, 3);
+  assert.equal(latin1(again.resolve(contents[0]).data), 'q');
+  const layer = latin1(again.resolve(contents[2]).data);
+  assert.match(layer, /^Q\nBT\n3 Tr\n\/OCR1 20 Tf/, 'altura da linha: 4% dos 500 pontos visíveis');
+  assert.equal(again.resolve(again.pages[1].node.get('Contents')) instanceof Array, false, 'a outra página não muda');
+});
+
+test('PDF escaneado com /Rotate: o texto fica de pé e em cima da palavra, na página como ela aparece', async () => {
+  const doc = await scannedPdf();
+  const copy = copyPages(doc, [0], { ocr: new Map([[0, { words: WORDS, rotation: 0 }]]) });
+  const layer = latin1(buildPdf([{ copy: { source: copy, page: copy.pages.get(0) } }]));
+  // Página visível de 700 × 500 (girada): "Contrato" em 10% da largura e linha de base em 13,5% da altura.
+  // Na página girada 90°, x do PDF = 50 + 0,135 × 500 e y = 60 + 0,1 × 700; a matriz deixa o texto de pé.
+  assert.ok(layer.includes('0 1 -1 0 117.5 130 Tm <436f6e747261746f20> Tj'), layer.match(/BT\n3 Tr[\s\S]*?ET/)?.[0]);
+  for (const [, x, y] of layer.matchAll(/0 1 -1 0 (-?[\d.]+) (-?[\d.]+) Tm/g)) {
+    assert.ok(x >= 50 && x <= 550 && y >= 60 && y <= 760, `${x} ${y} dentro da área visível`);
+  }
+});
+
+test('PDF escaneado girado no app: o texto vai com o giro total (o do PDF mais o do app), lido de pé', async () => {
+  const doc = await scannedPdf();
+  // A pessoa girou mais 90° no app: a página aparece com 180°, de 500 × 700, e o OCR leu assim.
+  const copy = copyPages(doc, [0], { ocr: new Map([[0, { words: WORDS, rotation: 90 }]]) });
+  const layer = latin1(buildPdf([{ copy: { source: copy, page: copy.pages.get(0) }, rotation: 90 }]));
+  assert.match(layer, /\/Rotate 180/);
+  // 180°: x do PDF = 550 − 0,1 × 500 e y = 60 + 0,135 × 700; a matriz vira o texto de cabeça para baixo no PDF.
+  assert.ok(layer.includes('-1 0 0 -1 500 154.5 Tm <436f6e747261746f20> Tj'), layer.match(/BT\n3 Tr[\s\S]*?ET/)?.[0]);
+  assert.match(layer, /\/OCR1 28 Tf/, 'altura da linha: 4% dos 700 pontos visíveis');
+});
+
+test('PDF escaneado: sem palavras (ou sem OCR), a página copiada sai igual', async () => {
+  const doc = await scannedPdf();
+  const plain = buildPdf([{ copy: { source: copyPages(doc, [0]), page: copyPages(doc, [0]).pages.get(0) } }]);
+  const copy = copyPages(doc, [0], { ocr: new Map([[0, { words: [], rotation: 0 }], [1, { words: WORDS, rotation: 0 }]]) });
+  assert.deepEqual(buildPdf([{ copy: { source: copy, page: copy.pages.get(0) } }]), plain);
+});
