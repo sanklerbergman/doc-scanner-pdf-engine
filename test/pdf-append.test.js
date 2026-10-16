@@ -14,14 +14,16 @@ import { openPdf } from '../web/js/pdf-reader.js';
 import { appendBlocker, buildAppendToSign, changePermission } from '../web/js/pdf-append.js';
 import { readSignedData } from '../web/js/cms.js';
 import { parse, sequence, CONTEXT } from '../web/js/asn1.js';
-import { layoutPage } from '../web/js/pdf.js';
+import { layoutPage, pdfDate } from '../web/js/pdf.js';
 import { makeRawPdf, textPageObjects, samplePdfs } from './helpers/pdf.js';
 import { qpdfCheck } from './helpers/qpdf.js';
 
 const PASSWORD = 'senha-de-teste';
 const fixture = (name) => new Uint8Array(readFileSync(new URL(`./fixtures/${name}`, import.meta.url)));
 const latin1 = (bytes) => Buffer.from(bytes).toString('latin1');
-const TIME = new Date(2026, 9, 16, 14, 32, 5);
+// Hora da assinatura: agora, sem os milissegundos. Os certificados de teste valem a partir do dia em que foram
+// gerados (gerar.sh): uma hora fixa ficaria antes disso em outro fuso (o CI roda em UTC).
+const TIME = new Date(Math.floor(Date.now() / 1000) * 1000);
 
 const PAGES = [
   { jpeg: fixture('rgb-40x30.jpg'), ...layoutPage(40, 30, 'a4', 18) },
@@ -84,7 +86,7 @@ test('coassinatura: a primeira assinatura continua válida depois da segunda, e 
 
   // A segunda assinatura também é só a hora (/M): nada de nome, motivo ou local.
   const update = latin1(two.subarray(one.length));
-  assert.match(update, /\/Filter \/Adobe\.PPKLite \/SubFilter \/ETSI\.CAdES\.detached \/M \(D:20261016143205/);
+  assert.ok(update.includes(`/Filter /Adobe.PPKLite /SubFilter /ETSI.CAdES.detached /M (${pdfDate(TIME)})`));
   assert.doesNotMatch(update, /\/Name|\/Reason|\/Location|\/ContactInfo/);
   first.discard();
   second.discard();
