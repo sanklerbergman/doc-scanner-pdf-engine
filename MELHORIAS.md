@@ -298,7 +298,8 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 - [x] PDF escaneado: a página sem texto ganha a camada, com recursos só dela, e as outras páginas não mudam; com `/Rotate` e CropBox deslocada, o texto fica de pé e em cima da palavra (`test/ocr.test.js`, com o qpdf)
 - [x] No navegador (Chromium e WebKit, Tesseract de verdade), num PDF escaneado de teste: a página com texto é pulada, as escaneadas ganham o texto certo e na posição certa (conferido com o PyMuPDF), inclusive a girada pelo `/Rotate`, a gravada deitada e endireitada no app e a tarjada
 - [x] No navegador: nenhuma requisição na aba Rede e nada no IndexedDB durante o OCR (Playwright, no Chromium e no WebKit, com e sem o service worker)
-- [ ] Teste real no iPhone, no site publicado: tempo por página, memória e seleção do texto no visualizador do iPhone, no Chrome e no Acrobat
+- [x] Teste real no iPhone, no site publicado: validado pelo dono no iPhone 16e, no site publicado, na v3.5.0 (2026-10-16)
+- [ ] Seleção do texto no Acrobat
 
 ### Decisões
 
@@ -416,7 +417,7 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 - [x] Certificados de teste no formato do e-CPF A1 (várias OU, dados da pessoa física no subjectAltName, política no ramo da ICP-Brasil) e um segundo titular, para a coassinatura
 - [ ] Manual, com o certificado de teste: painel de assinaturas do Acrobat Reader. Ele avisa que a identidade é desconhecida (o certificado não é da ICP-Brasil), mas tem que dizer que o documento não foi alterado depois de assinado. Conferir também com `openssl cms -verify` e, se der, com o `pdfsig` (Poppler)
 - [ ] Manual, com um A1 de verdade: `validar.iti.gov.br`, num documento sem nada sensível. Esse envio ao ITI é uma escolha de quem testa, fora do app. Ainda não há um A1 válido para isso (ver perguntas)
-- [ ] Teste real no iPhone, no site publicado: escolher o `.pfx` no app Arquivos e assinar
+- [x] Teste real no iPhone, no site publicado: escolher o `.pfx` no app Arquivos e assinar, validado pelo dono no iPhone 16e, no site publicado, na v3.5.0 (2026-10-16)
 
 ### Decisões
 
@@ -510,7 +511,7 @@ O que falta no PDF de hoje para ele ser PDF/A-2b:
 - [ ] Subconjunto TrueType: as letras usadas estão lá, as larguras batem com as da fonte original, e o arquivo abre no fontTools (`ttx`)
 - [x] **veraPDF** (validador de referência, código aberto, roda em Java), perfil PDF/A-2B: fotos, fotos com OCR e PDF assinado, no `npm test` quando a variável `VERAPDF` aponta o programa (`verapdf --flavour 2b --format xml arquivo.pdf`). Também conferidos os PDFs baixados do app no Chromium e no WebKit. Falta avaliar rodar no CI
 - [ ] Manual: o Acrobat mostra a faixa de "arquivo em conformidade com PDF/A"
-- [ ] Teste real no iPhone, no site publicado: gerar com a opção ligada e abrir no visualizador do iPhone, no Chrome e no Acrobat
+- [x] Teste real no iPhone, no site publicado: validado pelo dono no iPhone 16e, no site publicado, na v3.5.0 (2026-10-16)
 
 ### Decisões
 
@@ -595,7 +596,7 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 - [x] PDF: a página tarjada é só imagem, e nenhum texto dela fica no arquivo (no navegador)
 - [x] Conferência: um PDF montado de propósito com texto sob a tarja é recusado (no Node, a regra; no navegador, com o PDF.js)
 - [x] Padrões: CPF e CNPJ válidos e inválidos, com e sem pontuação, e falsos positivos comuns (número de processo, datas, valores, boleto) (`test/find-data.test.js`)
-- [ ] Teste real no iPhone, no site publicado
+- [x] Teste real no iPhone, no site publicado: validado pelo dono no iPhone 16e, no site publicado, na v3.5.0 (2026-10-16)
 
 ### Decisões
 
@@ -662,7 +663,7 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 - [x] O conteúdo decifrado bate com o `qpdf --decrypt` do mesmo arquivo
 - [x] PDF protegido pelo app: o qpdf e o PDF.js abrem com a senha e recusam a errada; o conteúdo volta igual
 - [x] Varredura com os 994 PDFs de teste do PDF.js: nenhum que abria deixou de abrir, e 13 dos cifrados passaram a abrir sem senha (só restrições ou só anexos). Os que pedem senha abrem com a senha do manifesto do PDF.js
-- [ ] Teste real no iPhone, no site publicado
+- [x] Teste real no iPhone, no site publicado: validado pelo dono no iPhone 16e, no site publicado, na v3.5.0 (2026-10-16)
 
 ### Decisões
 
