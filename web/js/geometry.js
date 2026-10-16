@@ -343,7 +343,7 @@ export function warpPixels(src, srcWidth, srcHeight, quad, width, height) {
 // ---------- Rotação ----------
 // O recorte é guardado nas coordenadas da foto original; a tela de ajuste mostra a foto já girada.
 
-const ROTATE = {
+export const ROTATE = {
   0: ([x, y]) => [x, y],
   90: ([x, y]) => [1 - y, x],
   180: ([x, y]) => [1 - x, 1 - y],

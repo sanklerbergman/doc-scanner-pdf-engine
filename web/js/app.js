@@ -6,6 +6,7 @@ import { setupCamera } from './camera.js';
 import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
 import { parseRanges } from './ranges.js';
+import { paintRedactions, rotateRedactions, toUnrotated, redactLayout, filterWords, textUnderRedactions } from './redact.js';
 
 // O site oficial já proíbe ser embutido em outro pelo cabeçalho frame-ancestors (web/_headers). Esta checagem
 // fica como segunda camada, e protege cópias hospedadas onde não dá para enviar cabeçalhos: o app se recusa a
@@ -319,7 +320,7 @@ async function refreshThumb(page) {
     : isDocument(page)
     ? await drawDocument(page, THUMB_SIDE)
     : await canvasToBlob(renderPage(page.preview, page.preview.width, page.preview.height, {
-      rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: THUMB_SIDE,
+      rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: THUMB_SIDE, redactions: page.redactions,
     }), 'image/jpeg', 0.8);
   if (page.thumbUrl) URL.revokeObjectURL(page.thumbUrl);
   page.thumbUrl = URL.createObjectURL(blob);
@@ -374,13 +375,15 @@ function askPdfPassword(name, wrong) {
 }
 
 // Página de PDF desenhada pelo PDF.js; se não der, um cartão com o formato da folha e o número.
-async function drawPdfPage(page, maxSide) {
+// redact: com as tarjas da página por cima (false na tela de tarjar, que desenha as caixas à parte).
+async function drawPdfPage(page, maxSide, redact = true) {
   const tools = await loadPdfTools();
   const { canvas, real } = await tools.drawPdfPage(page.doc, { index: page.index, ...page.size }, {
     maxSide, rotation: page.rotation, number: page.number,
   });
   page.drawn = real;
   try {
+    if (redact) paintRedactions(canvas.getContext('2d'), page.redactions, canvas.width, canvas.height);
     return await canvasToBlob(canvas, 'image/png');
   } finally {
     canvas.width = canvas.height = 0;
@@ -388,9 +391,10 @@ async function drawPdfPage(page, maxSide) {
 }
 
 // Página de documento desenhada como vai sair no PDF. PNG: texto nítido, sem os borrões do JPEG.
-async function drawDocument(page, maxSide) {
+async function drawDocument(page, maxSide, redact = true) {
   const { drawDocumentPage } = await loadDocuments();
   const canvas = drawDocumentPage(page.layout, { maxSide, rotation: page.rotation });
+  if (redact) paintRedactions(canvas.getContext('2d'), page.redactions, canvas.width, canvas.height);
   try {
     return await canvasToBlob(canvas, 'image/png');
   } finally {
@@ -527,6 +531,7 @@ els.pages.addEventListener('click', async (event) => {
     }
     case 'rotate':
       page.rotation = (page.rotation + 90) % 360;
+      if (page.redactions?.length) page.redactions = rotateRedactions(page.redactions, 90);
       page.ocr = null;
       await refreshThumb(page);
       renderPages();
@@ -553,14 +558,15 @@ els.pages.addEventListener('change', async (event) => {
 
 // ---------- Tela cheia e recorte ----------
 
-async function renderProcessed(page) {
-  if (page.kind === 'pdf') return drawPdfPage(page, VIEW_SIDE);
-  if (isDocument(page)) return drawDocument(page, VIEW_SIDE);
+async function renderProcessed(page, { redact = true } = {}) {
+  if (page.kind === 'pdf') return drawPdfPage(page, VIEW_SIDE, redact);
+  if (isDocument(page)) return drawDocument(page, VIEW_SIDE, redact);
   const image = await decodeFile(page.file);
   let canvas;
   try {
     canvas = await renderPageAsync(image.source, image.width, image.height, {
       rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: VIEW_SIDE,
+      redactions: redact ? page.redactions : null,
     });
   } finally {
     image.release();
@@ -585,11 +591,32 @@ const viewer = setupViewer({
     renderPage(page.preview, page.preview.width, page.preview.height, { rotation: page.rotation }), 'image/jpeg', 0.9),
   detect: (page) => detectQuad(page.preview, page.preview.width, page.preview.height),
   async applyCrop(page, quad) {
+    const changed = JSON.stringify(quad) !== JSON.stringify(page.quad);
     page.quad = quad;
+    page.ocr = null;
+    // As tarjas ficam na foto já recortada: com outro recorte, elas cobririam outro lugar. Saem, com aviso.
+    if (changed && page.redactions?.length) {
+      page.redactions = [];
+      announce(`As tarjas da página ${state.pages.indexOf(page) + 1} foram apagadas porque o recorte mudou: marque de novo.`, 'error');
+    }
+    discardPdf();
+    await refreshThumb(page);
+    renderPages();
+  },
+  renderPlain: (page) => renderProcessed(page, { redact: false }),
+  redactHint: (page) => (page.kind === 'pdf'
+    ? 'Arraste sobre o que esconder. O que fica sob a tarja é apagado, não só coberto. Esta página é de um PDF: com tarja, ela sai como imagem, e o texto dela deixa de ser selecionável.'
+    : 'Arraste sobre o que esconder. O que fica sob a tarja é apagado do PDF, não só coberto.'),
+  async saveRedactions(page, list) {
+    page.redactions = list;
     page.ocr = null;
     discardPdf();
     await refreshThumb(page);
     renderPages();
+    const index = state.pages.indexOf(page) + 1;
+    announce(list.length
+      ? `Página ${index}: ${list.length === 1 ? '1 tarja' : `${list.length} tarjas`}. O que está embaixo vai ser apagado do PDF.`
+      : `Página ${index}: sem tarjas.`);
   },
   // A lista pode ter sido recriada enquanto a tela cheia estava aberta: devolve o foco ao cartão da página.
   onClose(page) {
@@ -769,9 +796,9 @@ function discardPdf() {
 
 const nextFrame = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-// O que muda o resultado do OCR de uma foto: recorte, filtro e rotação. A qualidade não (as posições do texto
-// são guardadas relativas à imagem).
-const ocrKey = (page) => JSON.stringify([page.quad, page.filter, page.rotation]);
+// O que muda o resultado do OCR de uma foto: recorte, filtro, rotação e tarjas. A qualidade não (as posições do
+// texto são guardadas relativas à imagem).
+const ocrKey = (page) => JSON.stringify([page.quad, page.filter, page.rotation, page.redactions ?? []]);
 
 class Cancelled extends Error {}
 
@@ -831,11 +858,14 @@ async function generate({ signer } = {}) {
       await nextFrame();
       stopIfCancelled();
       if (page.kind === 'pdf') {
-        pages.push(null); // copiada mais abaixo, junto com as outras páginas do mesmo PDF
+        // Com tarja, a página vira imagem (com os pixels sob a tarja pintados); sem, é copiada mais abaixo, junto
+        // com as outras páginas do mesmo PDF.
+        pages.push(page.redactions?.length ? await rasterizePdfPage(page, quality) : null);
         continue;
       }
       if (isDocument(page)) {
-        pages.push({ ...page.layout, rotation: page.rotation }); // texto: o PDF desenha direto, sem imagem
+        // Texto: o PDF desenha direto, sem imagem. Com tarja, o texto embaixo sai da página (redact.js).
+        pages.push(page.redactions?.length ? await redactDocumentPage(page) : { ...page.layout, rotation: page.rotation });
         continue;
       }
       const image = await decodeFile(page.file);
@@ -843,7 +873,9 @@ async function generate({ signer } = {}) {
       let layout;
       try {
         // O filtro roda num Web Worker: a página continua respondendo durante a geração.
-        canvas = await renderPageAsync(image.source, image.width, image.height, { rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: quality.maxSide });
+        canvas = await renderPageAsync(image.source, image.width, image.height, {
+          rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: quality.maxSide, redactions: page.redactions,
+        });
         layout = layoutPage(canvas.width, canvas.height, size, margin);
         if (toRead.includes(page)) {
           if (!ocr) {
@@ -856,7 +888,8 @@ async function generate({ signer } = {}) {
             stopIfCancelled();
           }
           announce(`Reconhecendo o texto: página ${toRead.indexOf(page) + 1} de ${toRead.length}…`);
-          page.ocr = { key: ocrKey(page), words: await recognizePage(ocr, image, canvas, page, layout) };
+          // O OCR lê a foto já tarjada; o que ele achar sobre uma tarja (a borda da caixa, ruído) também sai.
+          page.ocr = { key: ocrKey(page), words: filterWords(await recognizePage(ocr, image, canvas, page, layout), page.redactions) };
         }
       } finally {
         image.release();
@@ -883,7 +916,7 @@ async function generate({ signer } = {}) {
       const used = new Map();
       for (const i of new Set(groups.flat())) {
         const page = list[i];
-        if (page.kind !== 'pdf') continue;
+        if (page.kind !== 'pdf' || pages[i]) continue;
         if (!used.has(page.doc)) used.set(page.doc, new Set());
         used.get(page.doc).add(page.index);
       }
@@ -904,7 +937,7 @@ async function generate({ signer } = {}) {
       const wanted = new Map();
       for (const i of group) {
         const page = list[i];
-        if (page.kind !== 'pdf') continue;
+        if (page.kind !== 'pdf' || pages[i]) continue;
         if (!wanted.has(page.doc)) wanted.set(page.doc, []);
         wanted.get(page.doc).push(page.index);
       }
@@ -914,7 +947,7 @@ async function generate({ signer } = {}) {
         })]));
         return group.map((i) => {
           const page = list[i];
-          if (page.kind !== 'pdf') return pages[i];
+          if (pages[i]) return pages[i];
           const source = copies.get(page.doc);
           return { copy: { source, page: source.pages.get(page.index) }, rotation: page.rotation };
         });
@@ -934,6 +967,8 @@ async function generate({ signer } = {}) {
           notSmaller++;
         }
       }
+      // Tarjas: o PDF.js relê o PDF montado, e nenhum texto pode estar sob uma tarja. Se estiver, nada sai.
+      await checkRedactions(bytes, group.map((i) => list[i]), chosen, g + 1, groups.length);
       // Assinar é sempre o último passo: qualquer mudança depois invalidaria a assinatura. Com senha, o PDF é
       // cifrado antes de ser assinado (a assinatura cobre o arquivo cifrado).
       if (signer) {
@@ -961,14 +996,19 @@ async function generate({ signer } = {}) {
     const locked = !password ? '' : files.length === 1
       ? ' Ele só abre com a senha que você escolheu.'
       : ' Eles só abrem com a senha que você escolheu.';
-    announce(ready + locked + kept + read, 'success');
+    const redacted = list.filter((page) => page.redactions?.length);
+    const rasterized = list.map((page, i) => (page.kind === 'pdf' && page.redactions?.length ? i + 1 : 0)).filter(Boolean);
+    const covered = !redacted.length ? '' : ` Tarjas conferidas: não sobrou texto embaixo delas.${!rasterized.length ? '' : rasterized.length === 1
+      ? ` A página ${rasterized[0]}, de PDF, saiu como imagem: o texto dela não fica selecionável.`
+      : ` As páginas ${rasterized.join(', ')}, de PDF, saíram como imagem: o texto delas não fica selecionável.`}`;
+    announce(ready + locked + covered + kept + read, 'success');
     ok = true;
   } catch (err) {
     if (cancelled || err instanceof Cancelled) {
       announce('Cancelado. Nenhum PDF foi gerado.');
     } else {
       // Erros do OCR e da assinatura já vêm com a explicação; os outros, com a mensagem técnica.
-      const known = err?.name === 'SignError' || err?.name === 'OcrError';
+      const known = ['SignError', 'OcrError', 'RedactionError'].includes(err?.name);
       if (!known) console.error(err);
       announce(known ? err.message : `Algo deu errado ao gerar o PDF: ${err.message}`, 'error');
     }
@@ -993,7 +1033,7 @@ async function recognizePage(ocr, image, canvas, page, layout) {
   let temporary = null;
   if (long < OCR_MIN_SIDE && Math.max(image.width, image.height) > long) {
     temporary = await renderPageAsync(image.source, image.width, image.height, {
-      rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: OCR_SIDE,
+      rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: OCR_SIDE, redactions: page.redactions,
     });
   } else if (long > OCR_MAX_SIDE) {
     const scale = OCR_MAX_SIDE / long;
@@ -1014,6 +1054,75 @@ async function recognizePage(ocr, image, canvas, page, layout) {
 }
 
 els.cancel.addEventListener('click', () => state.cancel?.());
+
+const redactionError = (message) => Object.assign(new Error(message), { name: 'RedactionError' });
+
+// Página de PDF com tarja: desenhada pelo PDF.js na qualidade escolhida, com os pixels sob as tarjas pintados,
+// e entra no PDF como foto. Sem o desenho de verdade (só o cartão), não dá para tarjar: nada sai.
+async function rasterizePdfPage(page, quality) {
+  const tools = await loadPdfTools();
+  const { canvas, real } = await tools.drawPdfPage(page.doc, { index: page.index, ...page.size }, {
+    maxSide: quality.maxSide, rotation: page.rotation, number: page.number,
+  });
+  try {
+    if (!real) throw redactionError(`Não deu para desenhar a página ${state.pages.indexOf(page) + 1} (do PDF ${page.name}) para tarjar: o PDF não foi gerado.`);
+    paintRedactions(canvas.getContext('2d'), page.redactions, canvas.width, canvas.height);
+    const jpeg = new Uint8Array(await (await canvasToBlob(canvas, 'image/jpeg', quality.jpeg)).arrayBuffer());
+    const sideways = page.rotation % 180 !== 0;
+    const width = sideways ? page.size.height : page.size.width;
+    const height = sideways ? page.size.width : page.size.height;
+    return { jpeg, width, height, box: { x: 0, y: 0, w: width, h: height } };
+  } finally {
+    canvas.width = canvas.height = 0;
+  }
+}
+
+// Página do Word com tarja: o texto embaixo sai (redact.js), e as imagens embaixo têm os pixels pintados.
+async function redactDocumentPage(page) {
+  const { items, images } = redactLayout(page.layout, toUnrotated(page.redactions, page.rotation));
+  for (const { item, areas } of images) {
+    const bitmap = await createImageBitmap(new Blob([item.jpeg], { type: 'image/jpeg' }), { imageOrientation: 'none' });
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    paintRedactions(ctx, areas, canvas.width, canvas.height);
+    item.jpeg = new Uint8Array(await (await canvasToBlob(canvas, 'image/jpeg', 0.92)).arrayBuffer());
+    canvas.width = canvas.height = 0;
+  }
+  return { ...page.layout, items, rotation: page.rotation };
+}
+
+/**
+ * Conferência das tarjas no PDF montado: o PDF.js lê o texto das páginas tarjadas, e nada pode estar sob uma
+ * tarja. Sem o PDF.js (sem rede e sem cache), não dá para conferir, e o PDF também não sai.
+ * @param {object[]} sources as páginas da lista, na ordem do arquivo
+ * @param {object[]} built as páginas que foram para o buildPdf (para a posição da imagem nas fotos)
+ */
+async function checkRedactions(bytes, sources, built, file, files) {
+  const checks = sources.map((page, n) => [n, page]).filter(([, page]) => page.redactions?.length);
+  if (!checks.length) return;
+  announce(files === 1 ? 'Conferindo as tarjas…' : `Conferindo as tarjas do PDF ${file} de ${files}…`);
+  let texts;
+  try {
+    texts = await (await loadPdfTools()).pdfTextBoxes(bytes, checks.map(([n]) => n));
+  } catch {
+    throw redactionError('Não deu para conferir as tarjas (o leitor de PDF não carregou). Confira a conexão e tente de novo: o PDF não foi gerado.');
+  }
+  for (const [n, page] of checks) {
+    // Foto e página de PDF tarjada: as tarjas ficam na imagem, que fica dentro da página (com margem).
+    const { box, width, height } = built[n];
+    const rects = !box ? page.redactions : page.redactions.map((rect) => ({
+      x0: (box.x + rect.x0 * box.w) / width, x1: (box.x + rect.x1 * box.w) / width,
+      y0: (height - box.y - box.h + rect.y0 * box.h) / height, y1: (height - box.y - box.h + rect.y1 * box.h) / height,
+    }));
+    if (textUnderRedactions(texts.get(n) ?? [], rects).length) {
+      throw redactionError(`A conferência achou texto sob uma tarja na página ${state.pages.indexOf(page) + 1}: o PDF não foi gerado. Avise a gente, por favor.`);
+    }
+  }
+}
 
 // "1,2 MB" ou, quando comprimiu, "1,2 MB (antes 4,8 MB, −75%)".
 function sizeText(size, before) {

@@ -2,6 +2,7 @@
 // Redesenhar a foto num canvas também descarta os metadados EXIF (GPS, modelo do celular etc.).
 import { applyFilter } from './filters.js';
 import { detectDocument, quadSize, warpPixels } from './geometry.js';
+import { paintRedactions } from './redact.js';
 
 export { applyFilter };
 
@@ -147,6 +148,7 @@ function drawPage(source, width, height, { rotation = 0, filter = 'original', ma
 }
 
 // Versão síncrona, na thread principal: usada nas miniaturas (imagem pequena, rápido).
+// options.redactions: tarjas (redact.js), pintadas por último, por cima do filtro: os pixels embaixo somem.
 export function renderPage(source, width, height, options = {}) {
   const { canvas, ctx } = drawPage(source, width, height, options);
   const filter = options.filter ?? 'original';
@@ -155,6 +157,7 @@ export function renderPage(source, width, height, options = {}) {
     applyFilter(pixels, filter);
     ctx.putImageData(pixels, 0, 0);
   }
+  paintRedactions(ctx, options.redactions, canvas.width, canvas.height);
   return canvas;
 }
 
@@ -163,7 +166,10 @@ export function renderPage(source, width, height, options = {}) {
 export async function renderPageAsync(source, width, height, options = {}) {
   const { canvas, ctx } = drawPage(source, width, height, options);
   const filter = options.filter ?? 'original';
-  if (filter === 'original') return canvas;
+  if (filter === 'original') {
+    paintRedactions(ctx, options.redactions, canvas.width, canvas.height);
+    return canvas;
+  }
 
   const { width: w, height: h } = canvas;
   let pixels;
@@ -178,6 +184,7 @@ export async function renderPageAsync(source, width, height, options = {}) {
     applyFilter(pixels, filter);
   }
   ctx.putImageData(pixels, 0, 0);
+  paintRedactions(ctx, options.redactions, w, h);
   return canvas;
 }
 

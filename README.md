@@ -15,6 +15,7 @@ Feito pela comunidade, para a comunidade.
 - Tamanho A4, Carta ou igual à imagem; margem e qualidade ajustáveis
 - Baixar ou compartilhar o PDF (no celular)
 - Abre **documentos do Word (.docx)**: o PDF sai com texto de verdade (selecionável e pesquisável), com títulos, listas, negrito e itálico, tabelas, imagens, cabeçalho e rodapé (com "Página X de Y"), no tamanho de página e nas margens do documento. As páginas podem ser misturadas com fotos
+- **Tarja de verdade**: na tela cheia da página, marque o que esconder (CPF, endereço, conta, assinatura). O que fica sob a tarja é apagado do PDF, não só coberto: nas fotos, os pixels são pintados; no Word, o texto embaixo sai da página; a página de outro PDF tarjada vira imagem. Antes de entregar, o app relê o PDF novo e confere que não sobrou texto sob nenhuma tarja
 - Abre **PDFs com senha** (contracheques, extratos, faturas): o app pede a senha, que só é usada no aparelho e não fica guardada. PDF que só tem restrições do autor abre direto. O PDF novo sai sem senha, a não ser que você ligue "Proteger o PDF com senha"
 - **Protege o PDF gerado com senha** (AES-256): quem receber precisa da senha para abrir. O app não guarda a senha nem tem como recuperá-la
 - **Junta, separa e comprime PDFs**: abra um ou mais PDFs, reordene, remova ou misture as páginas com fotos e documentos, e gere um PDF só, um por página ou um por intervalo (ex.: 1-3, 4-10). Dá para ver cada página antes e conferir, numa prévia, os arquivos que vão sair. As páginas vão como estão no original, com o texto selecionável; links, formulários, scripts, metadados e o conteúdo de camadas ocultas ficam de fora. Para diminuir PDFs escaneados ou de fotos, as imagens podem ser recomprimidas, com o "antes → depois" do tamanho. Avisa quando o PDF tem assinatura digital, que deixa de valer no arquivo novo
@@ -42,7 +43,8 @@ Dá para conferir: F12 → aba **Rede** enquanto gera um PDF. As únicas requisi
 - Nenhuma política de navegador impede o próprio site de ser alterado por quem controla o repositório ou a conta do Cloudflare. A proteção contra isso é o código ser aberto, com o histórico de mudanças público, e a publicação sair só da branch `main`, depois dos testes.
 - Extensões instaladas no navegador ficam fora de qualquer política da página: uma extensão com permissão para ler sites vê o que aparece na tela. Para documentos sensíveis, use um navegador sem extensões ou uma janela anônima, onde elas costumam vir desligadas.
 - Quem hospeda uma cópia modificada pode trocar qualquer coisa, inclusive a chave Pix, e pode não enviar os cabeçalhos. Numa cópia falsa, o certificado digital e a senha poderiam ser roubados: só assine em https://scanner.sankler.com.br/, o endereço oficial.
-- O texto do OCR fica escondido no PDF, mas continua lá: uma tarja feita depois, em outro programa, cobre a imagem e não apaga o texto que está embaixo. Para tarjar, gere o PDF sem o OCR.
+- O texto do OCR fica escondido no PDF, mas continua lá: uma tarja feita depois, em outro programa, cobre a imagem e não apaga o texto que está embaixo. Para tarjar, use a tarja do próprio app (o OCR roda na foto já tarjada) ou gere o PDF sem o OCR.
+- A tarja apaga o que está no PDF novo, mas não alcança cópias do documento que já existem (o arquivo original, um e-mail enviado antes).
 - A assinatura sai no nível básico (PAdES B-B), com a hora do relógio do aparelho: carimbo do tempo e dados de revogação exigem rede.
 
 Achou uma falha de segurança? Veja [SECURITY.md](SECURITY.md).

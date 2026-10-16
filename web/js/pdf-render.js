@@ -83,6 +83,63 @@ export async function renderPdfPage(key, bytes, index, { maxSide, rotation = 0 }
   }
 }
 
+/**
+ * Texto de páginas de um PDF, lido pelo PDF.js, com a posição como a página aparece na tela (de 0 a 1, origem no
+ * canto superior esquerdo, já com o /Rotate): a conferência das tarjas (redact.js). Inclui texto invisível
+ * (camada do OCR).
+ * Usa um worker só para isso, encerrado no fim: ao fechar um documento, o PDF.js destrói o worker dele, e o das
+ * miniaturas não pode ir junto. Esse worker também nasce de um blob, com a política da página.
+ * @param {Uint8Array} bytes o PDF gerado pelo app
+ * @param {number[]} indices páginas, a partir de 0
+ * @returns {Promise<Map<number, Array<{str: string, x0: number, y0: number, x1: number, y1: number}>>>}
+ */
+export async function pageTexts(bytes, indices) {
+  const url = new URL('../vendor/pdfjs/pdf.worker.min.js', import.meta.url).href;
+  const entry = URL.createObjectURL(new Blob([`import ${JSON.stringify(url)};`], { type: 'text/javascript' }));
+  const port = new Worker(entry, { type: 'module' });
+  const broken = new Promise((_, reject) => {
+    port.addEventListener('error', (event) => {
+      event.preventDefault();
+      reject(new Error('O worker do PDF.js não carregou.'));
+    }, { once: true });
+  });
+  broken.catch(() => {});
+  const worker = new pdfjs.PDFWorker({ port });
+  const task = pdfjs.getDocument({
+    data: bytes.slice(), worker, useWasm: false, enableXfa: false, useSystemFonts: true, stopAtErrors: true,
+    verbosity: pdfjs.VerbosityLevel.ERRORS,
+  });
+  try {
+    const doc = await Promise.race([task.promise, broken]);
+    const out = new Map();
+    for (const index of indices) {
+      const page = await doc.getPage(index + 1);
+      try {
+        const viewport = page.getViewport({ scale: 1 });
+        const { items } = await page.getTextContent();
+        out.set(index, items.filter((item) => item.str?.trim()).map((item) => {
+          const [, , c, d, e, f] = item.transform;
+          const height = item.height || Math.hypot(c, d);
+          // Caixa do trecho: da linha de base um pouco para baixo até perto do tamanho da letra para cima.
+          const corners = [[e, f - height * 0.2], [e + item.width, f + height * 0.8]]
+            .map(([x, y]) => viewport.convertToViewportPoint(x, y));
+          const xs = corners.map(([x]) => x / viewport.width);
+          const ys = corners.map(([, y]) => y / viewport.height);
+          return { str: item.str, x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+        }));
+      } finally {
+        page.cleanup();
+      }
+    }
+    return out;
+  } finally {
+    await task.destroy().catch(() => {});
+    worker.destroy();
+    port.terminate();
+    URL.revokeObjectURL(entry);
+  }
+}
+
 // Libera a memória dos PDFs (ao limpar a lista).
 export function releaseAll() {
   for (const promise of documents.values()) promise.then((doc) => doc.destroy()).catch(() => {});

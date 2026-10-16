@@ -151,6 +151,11 @@ export function drawDocumentPage(page, { maxSide, rotation = 0 }) {
   }
   for (const item of page.items) {
     if (item.type === 'rect' || item.type === 'image') continue;
+    if (item.type === 'redaction') {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(item.x, item.y, item.w, item.h);
+      continue;
+    }
     if (item.type === 'line') {
       ctx.strokeStyle = cssColor(item.color);
       ctx.lineWidth = item.width;

@@ -108,6 +108,11 @@ function textContent(page, fontNames, imageNames) {
     const y2 = num(page.height - (item.y2 ?? item.y));
     ops.push(`${num(item.width)} w ${num(item.x1)} ${y1} m ${num(item.x2)} ${y2} l S`);
   }
+  // Tarjas: caixas pretas por cima de tudo. O texto que estava embaixo já saiu da página (redact.js).
+  for (const item of page.items) {
+    if (item.type !== 'redaction') continue;
+    ops.push(`q 0 0 0 rg ${num(item.x)} ${num(page.height - item.y - item.h)} ${num(item.w)} ${num(item.h)} re f Q`);
+  }
   return ops.join('\n');
 }
 
@@ -164,8 +169,9 @@ export function pdfDate(date) {
  *   (origem no canto inferior esquerdo) e ocr = palavras reconhecidas (ocr.js), que viram texto invisível;
  * - texto: {width, height, items, rotation?}, com items vindos de layout.js: {type: 'text', x, y, text, font,
  *   size, color?, wordSpacing?, rise?}, {type: 'line', x1, x2, y (ou y1 e y2), width, color?}, {type: 'rect', x, y,
- *   w, h, color} e {type: 'image', jpeg, x, y, w, h}, origem no canto superior esquerdo e y do texto na linha
- *   de base. A mesma imagem (o mesmo Uint8Array) usada em várias páginas é gravada uma vez só.
+ *   w, h, color}, {type: 'image', jpeg, x, y, w, h} e {type: 'redaction', x, y, w, h} (tarja, desenhada por cima
+ *   de tudo), origem no canto superior esquerdo e y do texto na linha de base. A mesma imagem (o mesmo
+ *   Uint8Array) usada em várias páginas é gravada uma vez só.
  *   rotation (0, 90, 180 ou 270) vira /Rotate.
  * - copiada: {copy: {source, page}, rotation?}, com source = {objects} e page = descritor de copyPages
  *   (pdf-reader.js). Páginas do mesmo source compartilham os objetos (fontes, imagens), gravados uma vez só.

@@ -402,6 +402,24 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .viewer-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 8px 12px 14px; background: var(--surface); }
 .viewer-actions .btn { flex: 1 1 140px; max-width: 260px; }
 
+/* Tarjas: a página do tamanho da tela; as caixas ficam por cima, quase opacas, para ainda dar para ver a borda
+   do que está sendo coberto. No PDF a tarja é preta e apaga o que está embaixo. */
+.redact { position: relative; flex: none; touch-action: none; cursor: crosshair; }
+.redact img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; box-shadow: 0 0 0 1px var(--border); }
+.redact-boxes { position: absolute; inset: 0; pointer-events: none; }
+.redact-box {
+  position: absolute; box-sizing: border-box; background: rgb(0 0 0 / 82%); border: 2px solid #f97066;
+  pointer-events: auto;
+}
+.redact-box:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.redact-preview { pointer-events: none; background: rgb(0 0 0 / 55%); border-style: dashed; }
+/* Remover: alvo de 32 px no canto da tarja, sem depender do tamanho dela. */
+.redact-remove {
+  position: absolute; top: -14px; right: -14px; width: 28px; height: 28px; padding: 0;
+  border: 2px solid #fff; border-radius: 50%; background: #b42318; color: #fff;
+  font: 700 18px/1 system-ui, sans-serif; cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
+}
+
 .crop { position: relative; flex: none; touch-action: none; }
 .crop img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; }
 .crop-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }

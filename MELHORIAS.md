@@ -536,16 +536,17 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 
 #### Fase 1: tarja manual em fotos e documentos do Word
 
-- [ ] Na tela cheia da página, "Tarjar": arrastar retângulos, ver a lista de tarjas da página e desfazer
-- [ ] Foto: pintar os pixels antes de gerar o JPEG
-- [ ] Word: tirar da distribuição do texto os trechos sob a tarja e desenhar a caixa
-- [ ] A miniatura mostra as tarjas
+- [x] Na tela cheia da página, "Tarjar": arrastar retângulos, ver as tarjas da página e desfazer. Pelo teclado, "Nova tarja" cria uma no meio da página, as setas movem, Shift e setas mudam o tamanho e Delete remove
+- [x] Foto: pintar os pixels antes de gerar o JPEG. Com o OCR ligado, o reconhecimento roda na foto já tarjada, e o que ele achar sobre a tarja também sai
+- [x] Word: tirar da distribuição do texto os trechos sob a tarja (letra por letra) e desenhar a caixa por cima de tudo. Imagem do documento sob a tarja tem os pixels pintados
+- [x] A miniatura mostra as tarjas
+- [x] As tarjas giram junto com a página; mudar o recorte de uma foto apaga as tarjas dela, com aviso (elas cobririam outro lugar)
 
 #### Fase 2: páginas de PDF e conferência
 
-- [ ] Página de PDF com tarja vira imagem, na resolução da qualidade escolhida
-- [ ] Conferência do PDF novo: nenhum texto dentro das áreas tarjadas
-- [ ] Aviso de que a página tarjada perde o texto selecionável
+- [x] Página de PDF com tarja vira imagem, na resolução da qualidade escolhida
+- [x] Conferência do PDF novo: nenhum texto dentro das áreas tarjadas. O PDF.js relê o PDF montado (com um worker só para isso, encerrado no fim), antes de assinar ou proteger com senha; se não carregar, o PDF também não sai
+- [x] Aviso de que a página tarjada perde o texto selecionável
 
 #### Fase 3: busca automática
 
@@ -562,10 +563,10 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 
 ### Testes
 
-- [ ] Foto: os pixels sob a tarja têm só a cor da tarja
-- [ ] Word: o texto sob a tarja não está no PDF, nem depois de descompactar
-- [ ] PDF: a página tarjada é só imagem, e nenhum texto dela fica no arquivo
-- [ ] Conferência: um PDF montado de propósito com texto sob a tarja é recusado
+- [x] Foto: os pixels sob a tarja têm só a cor da tarja (no navegador, Chromium e WebKit)
+- [x] Word: o texto sob a tarja não está no PDF, nem depois de descompactar (`test/redact.test.js`)
+- [x] PDF: a página tarjada é só imagem, e nenhum texto dela fica no arquivo (no navegador)
+- [x] Conferência: um PDF montado de propósito com texto sob a tarja é recusado (no Node, a regra; no navegador, com o PDF.js)
 - [ ] Padrões: CPF e CNPJ válidos e inválidos, com e sem pontuação, e falsos positivos comuns (número de processo, datas)
 - [ ] Teste real no iPhone, no site publicado
 
@@ -573,11 +574,12 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 
 - **Página de PDF vira imagem:** é o caminho sem chance de sobrar texto. O preço é perder o texto selecionável na página tarjada, e o app avisa.
 - **Sem biblioteca nova.**
-- **Versão:** a decidir.
+- **Só a caixa preta, sem texto** ("tarjado" ou parecido): é o padrão em documentos enviados a processos e órgãos públicos. Dá para mudar se o dono preferir.
+- **Uma letra do Word sai quando a tarja cobre pelo menos 20% da altura dela**; encostar na linha de cima ou de baixo não tira nada. A conferência acusa texto com 30% ou mais da altura sob a tarja.
+- **Versão:** a tarja manual e a conferência (fases 1 e 2) saem na v3.2.0; a busca automática (fase 3), na v3.3.0.
 
 ### Perguntas em aberto
 
-- A tarja leva algum texto, como "tarjado", ou fica só a caixa?
 - Vale, no futuro, tarjar editando o conteúdo do PDF, para preservar o texto da página?
 
 ## Abrir PDF com senha

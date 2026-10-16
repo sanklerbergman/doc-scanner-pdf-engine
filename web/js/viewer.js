@@ -1,6 +1,7 @@
-// Tela cheia de uma página: mostra como ela vai sair no PDF e deixa ajustar o recorte
-// arrastando os quatro cantos sobre a foto original.
+// Tela cheia de uma página: mostra como ela vai sair no PDF, deixa ajustar o recorte arrastando os quatro
+// cantos sobre a foto original e marcar tarjas (retângulos que apagam o que está embaixo, redact.js).
 import { FULL_QUAD, fromRotated, toRotated, isConvex, isFullFrame } from './geometry.js';
+import { normalizeRect } from './redact.js';
 
 const $ = (selector) => document.querySelector(selector);
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
@@ -16,9 +17,15 @@ const START_INSET = 0.04; // sem recorte ainda: os cantos começam um pouco para
  * @param {(page) => number[][] | null} deps.detect cantos do papel nas coordenadas da foto, ou null
  * @param {(page, quad: number[][] | null) => Promise<void>} deps.applyCrop grava o recorte e atualiza a miniatura
  * @param {(page, delta: number) => {page, label: string} | null} deps.step página vizinha (delta -1 ou +1), ou null
+ * @param {(page) => Promise<Blob>} deps.renderPlain página como vai sair no PDF, mas sem as tarjas (para editá-las)
+ * @param {(page) => string} deps.redactHint texto de ajuda das tarjas para a página
+ * @param {(page, list: object[]) => Promise<void>} deps.saveRedactions grava as tarjas e atualiza a miniatura
  * @param {(page) => void} deps.onClose chamado ao fechar, para devolver o foco ao cartão da página
  */
-export function setupViewer({ renderProcessed, canCrop, viewHint = () => null, renderOriginal, detect, applyCrop, step, onClose }) {
+export function setupViewer({
+  renderProcessed, canCrop, viewHint = () => null, renderOriginal, detect, applyCrop, step, renderPlain, redactHint,
+  saveRedactions, onClose,
+}) {
   const dialog = $('#viewer');
   const title = $('#viewer-title');
   const stage = $('#viewer-stage');
@@ -33,12 +40,23 @@ export function setupViewer({ renderProcessed, canCrop, viewHint = () => null, r
   const applyButton = $('#crop-apply');
   const prevButton = $('#viewer-prev');
   const nextButton = $('#viewer-next');
+  const cropButton = $('#viewer-crop');
+  const redact = $('#redact');
+  const redactImage = $('#redact-image');
+  const redactBoxes = $('#redact-boxes');
+  const redactPreview = $('#redact-preview');
+  const redactActions = $('#viewer-redact-actions');
+  const redactAdd = $('#redact-add');
+  const redactUndo = $('#redact-undo');
+  const redactApply = $('#redact-apply');
 
   let page = null;
   let label = '';
   let points = FULL_QUAD; // cantos sobre a foto girada, de 0 a 1
+  let marks = []; // tarjas em edição, de 0 a 1 na página como aparece
   let token = 0; // invalida renderizações que terminam depois de a pessoa já ter mudado de tela
-  const urls = { view: '', crop: '' };
+  const urls = { view: '', crop: '', redact: '' };
+  const editing = () => !crop.hidden || !redact.hidden; // recorte ou tarjas: sem trocar de página
 
   function setUrl(kind, img, blob) {
     if (urls[kind]) URL.revokeObjectURL(urls[kind]);
@@ -60,7 +78,10 @@ export function setupViewer({ renderProcessed, canCrop, viewHint = () => null, r
     title.textContent = label;
     crop.hidden = true;
     cropActions.hidden = true;
-    viewActions.hidden = !canCrop(page);
+    redact.hidden = true;
+    redactActions.hidden = true;
+    viewActions.hidden = false;
+    cropButton.hidden = !canCrop(page);
     updateNav(true);
     image.hidden = false;
     stage.classList.remove('zoomed');
@@ -96,7 +117,9 @@ export function setupViewer({ renderProcessed, canCrop, viewHint = () => null, r
     if (mine !== token) return;
     crop.hidden = false;
     cropActions.hidden = false;
-    hint.textContent = 'Arraste os quatro cantos até as bordas do papel.';
+    hint.textContent = page.redactions?.length
+      ? 'Arraste os quatro cantos até as bordas do papel. Mudar o recorte apaga as tarjas desta página.'
+      : 'Arraste os quatro cantos até as bordas do papel.';
     fitCrop();
     drawPoints();
     handles[0].focus();
@@ -153,6 +176,176 @@ export function setupViewer({ renderProcessed, canCrop, viewHint = () => null, r
     });
   });
 
+  // ---------- Tarjas ----------
+  // Arrastar sobre a página marca um retângulo. Pelo teclado: "Nova tarja" cria uma no meio da página, as setas
+  // movem, Shift e setas mudam o tamanho, e Delete remove. Nada muda na página até "Aplicar tarjas".
+
+  async function showRedact() {
+    const mine = ++token;
+    title.textContent = `Tarjas: ${label}`;
+    updateNav(false);
+    image.hidden = true;
+    viewActions.hidden = true;
+    stage.classList.remove('zoomed');
+    hint.textContent = 'Preparando a página…';
+    let blob;
+    try {
+      blob = await renderPlain(page);
+    } catch (err) {
+      console.error(err);
+      if (mine === token) hint.textContent = 'Não deu para preparar a página para tarjar.';
+      return;
+    }
+    if (mine !== token) return;
+    marks = (page.redactions ?? []).map((rect) => ({ ...rect }));
+    setUrl('redact', redactImage, blob);
+    await redactImage.decode().catch(() => {});
+    if (mine !== token) return;
+    redact.hidden = false;
+    redactActions.hidden = false;
+    hint.textContent = redactHint(page);
+    fitRedact();
+    drawMarks();
+    redactAdd.focus();
+  }
+
+  // A área das tarjas tem exatamente o tamanho da página na tela, como a do recorte.
+  function fitRedact() {
+    if (redact.hidden || !redactImage.naturalWidth) return;
+    const margin = 8;
+    const scale = Math.min((stage.clientWidth - margin * 2) / redactImage.naturalWidth, (stage.clientHeight - margin * 2) / redactImage.naturalHeight);
+    redact.style.width = `${Math.max(40, redactImage.naturalWidth * scale)}px`;
+    redact.style.height = `${Math.max(40, redactImage.naturalHeight * scale)}px`;
+  }
+
+  const place = (element, { x0, y0, x1, y1 }) => {
+    element.style.left = `${x0 * 100}%`;
+    element.style.top = `${y0 * 100}%`;
+    element.style.width = `${(x1 - x0) * 100}%`;
+    element.style.height = `${(y1 - y0) * 100}%`;
+  };
+
+  // Recria as caixas. focus: posição da tarja que recebe o foco (a recém-criada ou a que mexeu pelo teclado).
+  function drawMarks(focus = -1) {
+    redactBoxes.replaceChildren(...marks.map((mark, i) => {
+      const box = document.createElement('div');
+      box.className = 'redact-box';
+      box.tabIndex = 0;
+      box.dataset.index = i;
+      box.setAttribute('role', 'group');
+      box.setAttribute('aria-label', `Tarja ${i + 1}: as setas movem, Shift e setas mudam o tamanho, Delete remove`);
+      place(box, mark);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'redact-remove';
+      remove.dataset.index = i;
+      remove.textContent = '×';
+      remove.setAttribute('aria-label', `Remover a tarja ${i + 1}`);
+      box.append(remove);
+      return box;
+    }));
+    redactUndo.disabled = !marks.length;
+    if (focus >= 0) redactBoxes.children[focus]?.focus();
+  }
+
+  function removeMark(index) {
+    marks.splice(index, 1);
+    drawMarks(Math.min(index, marks.length - 1));
+    if (!marks.length) redactAdd.focus();
+    hint.textContent = marks.length ? `Tarja removida. Ficam ${marks.length}.` : 'Tarja removida. Nenhuma tarja nesta página.';
+  }
+
+  let drawing = null; // {id, x, y}: ponto onde o dedo (ou o mouse) começou a arrastar
+  const pointIn = (event) => {
+    const box = redact.getBoundingClientRect();
+    return { x: (event.clientX - box.left) / box.width, y: (event.clientY - box.top) / box.height };
+  };
+  redact.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('.redact-remove') || drawing) return;
+    event.preventDefault();
+    redact.setPointerCapture(event.pointerId);
+    const { x, y } = pointIn(event);
+    drawing = { id: event.pointerId, x, y };
+    place(redactPreview, { x0: x, y0: y, x1: x, y1: y });
+    redactPreview.hidden = false;
+  });
+  redact.addEventListener('pointermove', (event) => {
+    if (drawing?.id !== event.pointerId) return;
+    const { x, y } = pointIn(event);
+    place(redactPreview, { x0: Math.min(x, drawing.x), y0: Math.min(y, drawing.y), x1: Math.max(x, drawing.x), y1: Math.max(y, drawing.y) });
+  });
+  redact.addEventListener('pointerup', (event) => {
+    if (drawing?.id !== event.pointerId) return;
+    const { x, y } = pointIn(event);
+    const rect = normalizeRect({ x0: drawing.x, y0: drawing.y, x1: x, y1: y });
+    drawing = null;
+    redactPreview.hidden = true;
+    if (!rect) return; // toque sem arrastar
+    marks.push(rect);
+    drawMarks();
+    hint.textContent = `${marks.length === 1 ? '1 tarja marcada' : `${marks.length} tarjas marcadas`}. Toque em "Aplicar tarjas" quando terminar.`;
+  });
+  redact.addEventListener('pointercancel', () => {
+    drawing = null;
+    redactPreview.hidden = true;
+  });
+
+  redactBoxes.addEventListener('click', (event) => {
+    const remove = event.target.closest('.redact-remove');
+    if (remove) removeMark(Number(remove.dataset.index));
+  });
+  redactBoxes.addEventListener('keydown', (event) => {
+    const box = event.target.closest('.redact-box');
+    if (!box || event.target !== box) return;
+    const index = Number(box.dataset.index);
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      removeMark(index);
+      return;
+    }
+    const step = 0.01;
+    const move = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key];
+    if (!move) return;
+    event.preventDefault();
+    const mark = marks[index];
+    let next;
+    if (event.shiftKey) {
+      next = normalizeRect({ ...mark, x1: mark.x1 + move[0], y1: mark.y1 + move[1] });
+    } else {
+      // Move sem sair da página e sem mudar o tamanho.
+      const dx = Math.min(1 - mark.x1, Math.max(-mark.x0, move[0]));
+      const dy = Math.min(1 - mark.y1, Math.max(-mark.y0, move[1]));
+      next = { x0: mark.x0 + dx, y0: mark.y0 + dy, x1: mark.x1 + dx, y1: mark.y1 + dy };
+    }
+    if (next) marks[index] = next;
+    drawMarks(index);
+  });
+
+  redactAdd.addEventListener('click', () => {
+    marks.push({ x0: 0.3, y0: 0.45, x1: 0.7, y1: 0.55 });
+    drawMarks(marks.length - 1);
+    hint.textContent = 'Tarja criada no meio da página: use as setas para mover e Shift e setas para mudar o tamanho.';
+  });
+  redactUndo.addEventListener('click', () => {
+    if (!marks.length) return;
+    marks.pop();
+    drawMarks();
+    hint.textContent = marks.length ? 'Última tarja desfeita.' : 'Última tarja desfeita. Nenhuma tarja nesta página.';
+  });
+  $('#redact-cancel').addEventListener('click', showView);
+  redactApply.addEventListener('click', async () => {
+    redactApply.disabled = true;
+    hint.textContent = 'Aplicando as tarjas…';
+    try {
+      await saveRedactions(page, marks.map((mark) => ({ ...mark })));
+    } finally {
+      redactApply.disabled = false;
+    }
+    showView();
+  });
+  $('#viewer-redact').addEventListener('click', showRedact);
+  new ResizeObserver(fitRedact).observe(stage);
+
   // ---------- Anterior / próxima ----------
 
   // As setas encostam nas bordas da página exibida, sem sair da tela (no celular, ficam nas bordas da tela).
@@ -175,7 +368,7 @@ export function setupViewer({ renderProcessed, canCrop, viewHint = () => null, r
   }
 
   function go(delta) {
-    if (!page || !crop.hidden) return;
+    if (!page || editing()) return;
     const next = step(page, delta);
     if (!next) return;
     page = next.page;
@@ -188,7 +381,7 @@ export function setupViewer({ renderProcessed, canCrop, viewHint = () => null, r
   prevButton.addEventListener('click', () => go(-1));
   nextButton.addEventListener('click', () => go(1));
   dialog.addEventListener('keydown', (event) => {
-    if (!crop.hidden || event.target.matches('select, input')) return;
+    if (editing() || event.target.matches('select, input')) return;
     if (event.key === 'ArrowLeft') go(-1);
     else if (event.key === 'ArrowRight') go(1);
     else return;
@@ -253,8 +446,13 @@ export function setupViewer({ renderProcessed, canCrop, viewHint = () => null, r
     token++;
     setUrl('view', image, null);
     setUrl('crop', cropImage, null);
+    setUrl('redact', redactImage, null);
     image.removeAttribute('src');
     cropImage.removeAttribute('src');
+    redactImage.removeAttribute('src');
+    redact.hidden = true;
+    redactActions.hidden = true;
+    marks = [];
     const closed = page;
     page = null;
     setTimeout(() => onClose(closed), 0); // depois de o navegador devolver o foco por conta própria

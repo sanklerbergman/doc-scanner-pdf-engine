@@ -79,6 +79,23 @@ async function encodeJpeg({ jpeg, pixels }, { maxSide, jpeg: level }) {
   }
 }
 
+/**
+ * Texto das páginas de um PDF gerado, lido pelo PDF.js: a conferência das tarjas. Sem o PDF.js (sem rede e sem
+ * cache), dá erro, e quem chama não entrega o PDF.
+ * @param {Uint8Array} bytes
+ * @param {number[]} indices
+ */
+export async function pdfTextBoxes(bytes, indices) {
+  renderer ??= import('./pdf-render.js');
+  try {
+    const { pageTexts } = await renderer;
+    return await pageTexts(bytes, indices);
+  } catch (err) {
+    renderer = undefined;
+    throw err;
+  }
+}
+
 // Libera a memória dos PDFs abertos no PDF.js (ao limpar a lista).
 export async function releasePdfPreviews() {
   if (renderer) (await renderer.catch(() => null))?.releaseAll();
