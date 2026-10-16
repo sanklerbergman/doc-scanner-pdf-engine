@@ -371,6 +371,8 @@ A parte que importa, que é **assinar com a chave privada, é feita pelo própri
 
 #### Fase 3: política da ICP-Brasil e cadeia
 
+**Adiada** (decisão do dono, 2026-10-16): só começa depois que alguém com um A1 real testar as fases 1 e 2 no validador do ITI. Sem esse teste, não dá para saber se a política AD-RB é exigida, e a fase inteira seria conferida só com certificado de teste.
+
 - [ ] Identificador da política de assinatura da ICP-Brasil (AD-RB), se o validador do ITI exigir isso para mostrar a assinatura como conforme (ver perguntas)
 - [ ] Certificados raiz da ICP-Brasil embutidos (são públicos), para avisar quando o certificado não é da ICP-Brasil ou a cadeia está incompleta. A revogação continua sem consulta
 - [ ] ECDSA, se aparecer certificado A1 com curva elíptica
@@ -419,7 +421,7 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 - **Assinar sem reescrever é automático** (decidido em 2026-10-16): quando a lista é um PDF só, inteiro, na ordem, sem giro, tarja, compressão, senha nova nem divisão. Se algo mudou, o app monta um PDF novo, como antes, e avisa que as assinaturas que o PDF tinha deixam de valer. PDF assinado e pesado não liga mais a compressão sozinho.
 - **PDF com senha ou com a xref danificada:** o app monta um PDF novo para assinar (acrescentar num arquivo cifrado exigiria cifrar os objetos novos com a chave dele) e avisa que as assinaturas anteriores deixam de valer.
 - **PDF certificado (com permissão de assinar):** a assinatura entra sem carimbo. O Acrobat aceita um campo visível novo depois da certificação, mas outros validadores (o pyHanko, por exemplo) dão a certificação como violada, e não se sabe de que lado fica o do ITI.
-- **Sem A1 real:** as fases 2 e 3 são feitas e conferidas só com os certificados de teste (decidido em 2026-10-16). Quem tiver um A1 testa depois, no próprio aparelho, e conta o resultado.
+- **Sem A1 real:** a fase 2 foi feita e conferida só com os certificados de teste, e a fase 3 fica adiada (decidido em 2026-10-16). Quem tiver um A1 testa depois, no próprio aparelho, e conta o resultado.
 - **Versão:** sai na v3.0.0, junto com o OCR.
 
 ### Perguntas em aberto
