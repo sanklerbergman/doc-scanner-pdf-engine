@@ -262,3 +262,19 @@ test('estrutura danificada que o leitor ainda abre: o app monta um PDF novo em v
   // O mesmo PDF, sem defeito, recebe a assinatura no fim.
   assert.equal(appendBlocker(await openPdf(makeRawPdf(objects()).bytes)), null);
 });
+
+test('arquivo que não termina na tabela xref que o leitor usou (atualização cortada): o app monta um PDF novo', async () => {
+  const { bytes: base } = makeRawPdf({
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 595 842] >>',
+    ...textPageObjects('Cortado'),
+  });
+  // Uma atualização que começou a ser gravada e parou antes da tabela xref: o leitor abre pela tabela anterior.
+  const cut = new Uint8Array([...base, ...new TextEncoder().encode('3 0 obj\n<< /Type /Page /Parent 2 0 R /Rotate 90 >>\nendobj\n')]);
+  const doc = await openPdf(cut);
+  assert.equal(doc.repaired, false);
+  assert.equal(appendBlocker(doc)?.kind, 'rewrite');
+  // Espaço e bytes nulos depois do %%EOF não atrapalham.
+  assert.equal(appendBlocker(await openPdf(new Uint8Array([...base, 0x0d, 0x0a, 0x20, 0x00, 0x00]))), null);
+  assert.equal(appendBlocker(await openPdf(fixture('assinados/assinado.pdf'))), null);
+});

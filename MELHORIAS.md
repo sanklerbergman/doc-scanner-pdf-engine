@@ -372,7 +372,7 @@ A parte que importa, que é **assinar com a chave privada, é feita pelo própri
   - [x] regrava só o que precisa apontar para o campo novo (a página ou a lista `/Annots`, e o catálogo, o formulário ou a lista `/Fields`), com o mesmo número; a tabela xref nova é do mesmo tipo da última do original (clássica ou em stream), com `/Prev`
   - [x] nome do campo sem repetir os que já existem ("Assinatura", "Assinatura 2"…)
   - [x] conferência antes de entregar: o original continua byte a byte no começo, e o PDF assinado reabre com as mesmas páginas e sem reparo
-  - [x] só acrescenta em estrutura limpa: `/Size` coerente, geração válida e igual na referência e no objeto que vai ser regravado, e toda página com MediaBox. PDF danificado que o leitor ainda abre vai pelo caminho de sempre (o PDF novo), que conserta essas coisas (achado do fuzzing com o qpdf)
+  - [x] só acrescenta em estrutura limpa: o arquivo termina na tabela xref que o leitor usou (sem uma atualização cortada depois dela), `/Size` coerente, geração válida e igual na referência e no objeto que vai ser regravado, e toda página com MediaBox. PDF danificado que o leitor ainda abre vai pelo caminho de sempre (o PDF novo), que conserta essas coisas (achado do fuzzing com o qpdf)
 - [x] Respeitar o `/DocMDP`: se o PDF foi certificado sem permitir alterações, recusar e explicar o motivo. Vale a permissão mais restritiva, inclusive a de `/FieldMDP` com `/P` (PDF 2.0)
 
 #### Fase 3: política da ICP-Brasil e cadeia

@@ -78,6 +78,10 @@ function generationOf(doc, num) {
 // objeto que pode ser regravado com a mesma geração na referência e no cabeçalho, e toda página com MediaBox. Um PDF
 // danificado que o leitor ainda abre fica para o caminho de sempre (o PDF novo), que conserta essas coisas.
 function sound(doc) {
+  // O arquivo termina na tabela que o leitor usou: depois do "startxref N" só vem o %%EOF (e espaço). Se vier mais
+  // coisa, como uma atualização cortada no meio, acrescentar no fim esconderia essa parte.
+  const end = new TextDecoder('latin1').decode(doc.bytes.subarray(doc.startxrefAt ?? doc.bytes.length));
+  if (!/^startxref\s+\d+\s*%%EOF[\s\x00]*$/.test(end)) return false;
   const size = doc.trailer.get('Size');
   let max = 0;
   for (const num of doc.entries.keys()) if (num > max) max = num;

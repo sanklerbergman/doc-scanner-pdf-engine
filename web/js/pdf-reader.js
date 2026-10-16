@@ -265,6 +265,7 @@ class PdfDocument {
     this.trailer = new PdfDict();
     this.security = null; // PDF com senha, depois de aberto: {hadPassword, restricted}
     this.startxref = null; // posição da tabela xref mais nova (para acrescentar uma atualização no fim)
+    this.startxrefAt = null; // posição da palavra "startxref" que aponta para ela
     this.repaired = false; // xref quebrada: os objetos foram achados varrendo o arquivo
   }
 
@@ -313,6 +314,7 @@ class PdfDocument {
     if (!last) return false;
     let offset = Number(last[1]);
     this.startxref = offset;
+    this.startxrefAt = Math.max(0, bytes.length - 2048) + last.index;
     const seen = new Set();
     let first = true;
     while (offset !== undefined && offset !== null && !seen.has(offset)) {
