@@ -163,6 +163,7 @@
         <div class="field field-wide check-field">
           <label class="check"><input id="protect" type="checkbox" aria-describedby="protect-note"> Proteger o PDF com senha</label>
           <p id="protect-note" class="field-note">Quem receber o PDF vai precisar da senha para abrir. O app não guarda a senha e não tem como recuperá-la: anote num lugar seguro.</p>
+          <p id="protect-blocked" class="field-note field-blocked" hidden>Indisponível com o PDF/A, que não permite senha.</p>
           <div id="protect-inputs" class="protect-inputs" hidden>
             <label class="field">
               <span>Senha</span>
@@ -173,6 +174,12 @@
               <input id="protect-confirm" type="password" autocomplete="off" spellcheck="false" maxlength="100">
             </label>
           </div>
+        </div>
+        <!-- PDF/A-2b (js/pdf.js e js/icc.js): só com fotos, por enquanto, e sem senha. -->
+        <div class="field field-wide check-field">
+          <label class="check"><input id="pdfa" type="checkbox" aria-describedby="pdfa-note pdfa-blocked"> PDF/A (tribunais e arquivamento)</label>
+          <p id="pdfa-note" class="field-note">Formato de arquivamento (PDF/A-2b) que alguns tribunais pedem no processo eletrônico. Na tela, o PDF fica igual; dentro do arquivo vão a identificação do padrão e o perfil de cor.</p>
+          <p id="pdfa-blocked" class="field-note field-blocked" hidden></p>
         </div>
         <label class="field field-wide">
           <span>Nome do arquivo</span>

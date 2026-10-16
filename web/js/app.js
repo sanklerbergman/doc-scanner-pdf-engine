@@ -138,13 +138,16 @@ const els = {
   findList: $('#find-list'),
   findApply: $('#find-apply'),
   findCancel: $('#find-cancel'),
+  pdfa: $('#pdfa'),
+  pdfaBlocked: $('#pdfa-blocked'),
+  protectBlocked: $('#protect-blocked'),
 };
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
 const lockedWhileBusy = [
   'filterAll', 'pageSize', 'margin', 'quality', 'fileName', 'clear', 'pickFiles', 'takePhoto', 'undo', 'qualityTipApply',
   'outputMode', 'ranges', 'pdfCompress', 'compressTipToggle', 'ocr', 'sign', 'protect', 'protectPassword', 'protectConfirm',
-  'findData',
+  'findData', 'pdfa',
 ].map((key) => els[key]);
 
 // compressChosen: a pessoa já mexeu na opção de comprimir (aí o app não liga nem desliga sozinho).
@@ -456,6 +459,7 @@ function renderPages() {
   const hasPhotos = state.pages.some(isPhoto);
   for (const control of [els.filterAll, els.pageSize, els.margin, els.quality]) control.closest('.field').hidden = !hasPhotos;
   els.ocrField.hidden = !hasPhotos; // OCR só nas fotos: Word e PDF já têm texto (PDF escaneado fica para depois)
+  updatePdfaOption();
   els.documentNote.hidden = state.pages.every(isPhoto);
   els.pdfCompress.closest('.field').hidden = !state.pages.some((page) => page.kind === 'pdf');
   updateCompressTip();
@@ -706,9 +710,33 @@ els.filterAll.addEventListener('change', async () => {
 
 for (const select of [els.pageSize, els.margin, els.quality, els.ocr]) select.addEventListener('change', discardPdf);
 
+// PDF/A: só com fotos (Word e PDF ainda não cumprem o padrão) e sem senha (o PDF/A não permite criptografia).
+// O motivo de estar indisponível aparece logo abaixo da opção.
+function pdfaUnavailable() {
+  if (state.pages.some((page) => !isPhoto(page))) return 'Por enquanto, o PDF/A é só para fotos: com páginas de Word ou de PDF na lista, a opção fica indisponível.';
+  if (els.protect.checked) return 'O PDF/A não permite senha: desligue "Proteger o PDF com senha" para usar.';
+  return '';
+}
+
+function updatePdfaOption() {
+  const reason = pdfaUnavailable();
+  if (reason && els.pdfa.checked) els.pdfa.checked = false;
+  if (!state.busy) els.pdfa.disabled = !!reason;
+  els.pdfaBlocked.hidden = !reason;
+  els.pdfaBlocked.textContent = reason;
+  if (!state.busy) els.protect.disabled = els.pdfa.checked;
+  els.protectBlocked.hidden = !els.pdfa.checked;
+}
+
+els.pdfa.addEventListener('change', () => {
+  discardPdf();
+  updatePdfaOption();
+});
+
 // Proteger com senha: os campos só aparecem com a opção ligada; desligar apaga o que foi digitado.
 els.protect.addEventListener('change', () => {
   discardPdf();
+  updatePdfaOption();
   els.protectInputs.hidden = !els.protect.checked;
   if (els.protect.checked) els.protectPassword.focus();
   else els.protectPassword.value = els.protectConfirm.value = '';
@@ -835,6 +863,7 @@ async function generate({ signer } = {}) {
     signer?.discard();
     return;
   }
+  const pdfa = els.pdfa.checked && !pdfaUnavailable();
   setBusy(true);
   discardPdf();
   const quality = QUALITY[els.quality.value];
@@ -968,11 +997,11 @@ async function generate({ signer } = {}) {
       };
       // Comprimido só fica se diminuir; senão, vai a versão sem recomprimir.
       let chosen = pagesOf(false);
-      let bytes = buildPdf(chosen);
+      let bytes = buildPdf(chosen, { pdfa });
       let before = null;
       if (wanted.size && replacements.size) {
         const smallPages = pagesOf(true);
-        const small = buildPdf(smallPages);
+        const small = buildPdf(smallPages, { pdfa });
         if (small.length < bytes.length) {
           before = bytes.length;
           bytes = small;
@@ -987,7 +1016,7 @@ async function generate({ signer } = {}) {
       // cifrado antes de ser assinado (a assinatura cobre o arquivo cifrado).
       if (signer) {
         announce(groups.length === 1 ? 'Assinando o PDF…' : `Assinando o PDF ${g + 1} de ${groups.length}…`);
-        bytes = await signer.sign(chosen, new Date(), { password });
+        bytes = await signer.sign(chosen, new Date(), { password, pdfa });
       } else if (password) {
         announce(groups.length === 1 ? 'Protegendo o PDF com a senha…' : `Protegendo o PDF ${g + 1} de ${groups.length} com a senha…`);
         bytes = (await crypt.protectPdf(bytes, password)).bytes;
@@ -996,7 +1025,7 @@ async function generate({ signer } = {}) {
       files.push({ file: new File([bytes], name, { type: 'application/pdf' }), before });
     }
     state.output = files.map(({ file, before }) => ({ file, before, url: URL.createObjectURL(file) }));
-    showResult(groups, signer, !!password);
+    showResult(groups, signer, !!password, pdfa);
     if (password) els.protectPassword.value = els.protectConfirm.value = ''; // a senha não fica nos campos
     const what = signer ? (files.length === 1 ? 'PDF assinado.' : `${files.length} PDFs assinados.`) : (files.length === 1 ? 'PDF pronto.' : `${files.length} PDFs prontos.`);
     const ready = `${what} ${files.length === 1 ? 'Ele só existe' : 'Eles só existem'} aqui no seu aparelho até você baixar.`;
@@ -1144,7 +1173,7 @@ function sizeText(size, before) {
   return `${formatBytes(size)} (antes ${formatBytes(before)}, −${Math.round((1 - size / before) * 100)}%)`;
 }
 
-function showResult(groups, signer, locked) {
+function showResult(groups, signer, locked, pdfa) {
   const files = state.output;
   const total = files.reduce((sum, { file }) => sum + file.size, 0);
   const totalBefore = files.some(({ before }) => before) ? files.reduce((sum, { file, before }) => sum + (before ?? file.size), 0) : null;
@@ -1155,9 +1184,10 @@ function showResult(groups, signer, locked) {
     : (single ? 'PDF pronto' : `${files.length} PDFs prontos`);
   const signed = signer ? ` · ${single ? 'assinado' : 'assinados'} por ${signer.name}` : '';
   const withPassword = locked ? ' · com senha' : '';
+  const archive = pdfa ? ' · PDF/A-2b' : '';
   els.resultInfo.textContent = single
-    ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}${signed}${withPassword}`
-    : `${sizeText(total, totalBefore)} no total${signed}${withPassword}`;
+    ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}${signed}${withPassword}${archive}`
+    : `${sizeText(total, totalBefore)} no total${signed}${withPassword}${archive}`;
   els.download.hidden = !single;
   els.download.href = files[0].url;
   els.download.download = files[0].file.name;

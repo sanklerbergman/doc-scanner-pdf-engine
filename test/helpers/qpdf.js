@@ -76,9 +76,9 @@ export function qpdfShow(args, bytes) {
   }
 }
 
-/** O buildPdf do app, com o PDF conferido pelo qpdf. */
-export function buildPdf(pages) {
-  const out = build(pages);
+/** O buildPdf do app (com as mesmas opções), com o PDF conferido pelo qpdf. */
+export function buildPdf(pages, options) {
+  const out = build(pages, options);
   qpdfCheck(out);
   return out;
 }

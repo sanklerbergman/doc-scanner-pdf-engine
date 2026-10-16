@@ -447,13 +447,13 @@ O que falta no PDF de hoje para ele ser PDF/A-2b:
 
 #### Fase 1: fotos
 
-- [ ] `icc.js`: perfil sRGB (ICC v2, matriz e curva)
-- [ ] `pdf.js`: opção `pdfa` em `buildPdf`, com XMP mínimo, `/ID` e `/OutputIntents`
-- [ ] Interface:
-  - [ ] opção "PDF/A (tribunais e arquivamento)", desligada por padrão
-  - [ ] indisponível, com o motivo, quando a lista tem página de PDF ou de Word (Word entra na fase 2)
-  - [ ] o resumo do PDF pronto mostra "PDF/A-2b"
-- [ ] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`
+- [x] `icc.js`: perfil sRGB (ICC v2, matriz e curva)
+- [x] `pdf.js`: opção `pdfa` em `buildPdf`, com XMP mínimo, `/ID` e `/OutputIntents`. O `/ID` é o MD5 do conteúdo (`md5.js`, que saiu do `pdf-crypt.js` para o `pdf.js` usar sem dependência circular)
+- [x] Interface:
+  - [x] opção "PDF/A (tribunais e arquivamento)", desligada por padrão
+  - [x] indisponível, com o motivo, quando a lista tem página de PDF ou de Word (Word entra na fase 2), e quando "Proteger o PDF com senha" está ligado (o PDF/A não permite criptografia); com o PDF/A ligado, a senha fica indisponível
+  - [x] o resumo do PDF pronto mostra "PDF/A-2b"
+- [x] Novos arquivos em `APP_FILES` e aumento da versão de `CACHE` no `web/sw.js`
 
 #### Fase 2: documentos do Word
 
@@ -465,8 +465,8 @@ O que falta no PDF de hoje para ele ser PDF/A-2b:
 
 #### Fase 3: junto com a v3.0.0
 
-- [ ] PDF/A com a camada do OCR
-- [ ] PDF/A com a assinatura (widget com `/F 4`), conferindo que o arquivo continua PDF/A depois de assinado
+- [x] PDF/A com a camada do OCR (nas fotos): a Helvetica sem embutir passa, porque só desenha texto invisível (`3 Tr`); conferido no veraPDF
+- [x] PDF/A com a assinatura (o widget já tem a flag de impressão: `/F 132` = Print + Locked), conferindo no veraPDF que o arquivo continua PDF/A depois de assinado
 
 ### Segurança e privacidade
 
@@ -478,12 +478,12 @@ O que falta no PDF de hoje para ele ser PDF/A-2b:
 
 ### Testes
 
-- [ ] PDF sem a opção continua idêntico byte a byte
-- [ ] Com a opção: catálogo com `/Metadata` e `/OutputIntents`, trailer com `/ID`, e XMP só com `pdfaid`
-- [ ] `/ID` igual para o mesmo conteúdo e diferente quando o conteúdo muda
-- [ ] Perfil ICC: tamanho no cabeçalho, assinatura `acsp` e tags obrigatórias
+- [x] PDF sem a opção continua idêntico byte a byte
+- [x] Com a opção: catálogo com `/Metadata` e `/OutputIntents`, trailer com `/ID`, e XMP só com `pdfaid` (`test/pdfa.test.js`)
+- [x] `/ID` igual para o mesmo conteúdo e diferente quando o conteúdo muda
+- [x] Perfil ICC: tamanho no cabeçalho, assinatura `acsp` e tags obrigatórias
 - [ ] Subconjunto TrueType: as letras usadas estão lá, as larguras batem com as da fonte original, e o arquivo abre no fontTools (`ttx`)
-- [ ] **veraPDF** (validador de referência, código aberto, roda em Java), perfil PDF/A-2B, em todos os PDFs de teste. Para começar, manual, com o comando anotado; depois avaliar rodar no CI
+- [x] **veraPDF** (validador de referência, código aberto, roda em Java), perfil PDF/A-2B: fotos, fotos com OCR e PDF assinado, no `npm test` quando a variável `VERAPDF` aponta o programa (`verapdf --flavour 2b --format xml arquivo.pdf`). Também conferidos os PDFs baixados do app no Chromium e no WebKit. Falta avaliar rodar no CI
 - [ ] Manual: o Acrobat mostra a faixa de "arquivo em conformidade com PDF/A"
 - [ ] Teste real no iPhone, no site publicado: gerar com a opção ligada e abrir no visualizador do iPhone, no Chrome e no Acrobat
 
@@ -492,7 +492,8 @@ O que falta no PDF de hoje para ele ser PDF/A-2b:
 - **PDF/A-2b:** é o nível mais aceito e o que o app consegue garantir para fotos e Word.
 - **Desligado por padrão:** a maioria não precisa, e no Word as fontes aumentam o arquivo.
 - **Liberation em vez de outra família livre:** é a que tem as larguras das fontes que o app já usa, então o documento quebra as linhas do mesmo jeito. As fontes entram em `web/vendor/`, o que pela regra 4 do CONTRIBUTING precisa de conversa antes; este plano é essa conversa, e o pedido veio do dono do projeto.
-- **Versão:** a decidir.
+- **Versão:** a fase 1 (fotos), com o OCR e a assinatura, sai na v3.4.0.
+- **PDF/A e senha não se combinam:** o PDF/A proíbe criptografia; com um ligado, o outro fica indisponível, com o motivo.
 
 ### Perguntas em aberto
 

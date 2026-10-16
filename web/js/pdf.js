@@ -5,8 +5,11 @@
 //   (Helvetica, Times e Courier, codificação WinAnsi), sem embutir fonte;
 // - copiada de outro PDF (juntar e dividir): os objetos vêm prontos do pdf-reader.js, renumerados aqui.
 // Nenhum metadado é gravado (sem /Info, sem datas, sem "Producer"). A única data possível é a hora da assinatura
-// (/M), e só quando a pessoa assina (buildPdfToSign).
+// (/M), e só quando a pessoa assina (buildPdfToSign). Com a opção PDF/A, entra só a identificação do padrão (XMP com
+// pdfaid), o perfil de cor sRGB e o /ID, tirado do próprio conteúdo.
 import { textWidth, winAnsiCode } from './fonts.js';
+import { srgbProfile } from './icc.js';
+import { md5 } from './md5.js';
 
 const encoder = new TextEncoder();
 
@@ -176,10 +179,12 @@ export function pdfDate(date) {
  * - copiada: {copy: {source, page}, rotation?}, com source = {objects} e page = descritor de copyPages
  *   (pdf-reader.js). Páginas do mesmo source compartilham os objetos (fontes, imagens), gravados uma vez só.
  * Medidas em pontos (1/72 pol.).
+ * @param {{pdfa?: boolean}} [options] pdfa: PDF/A-2b (arquivamento e tribunais). Só para fotos: páginas de texto
+ *   (fontes não embutidas) e copiadas de outro PDF não cumprem o padrão, e quem chama não liga a opção com elas
  * @returns {Uint8Array}
  */
-export function buildPdf(pages) {
-  return assemble(pages).bytes;
+export function buildPdf(pages, options = {}) {
+  return assemble(pages, null, options).bytes;
 }
 
 /**
@@ -187,14 +192,28 @@ export function buildPdf(pages) {
  * dicionário /Sig com o /ByteRange já preenchido e o /Contents em zeros, para o cms.js preencher (fillSignature).
  * Sem /Name, /Reason, /Location nem /ContactInfo: só a hora da assinatura (/M), que faz parte do padrão.
  * @param {object[]} pages as mesmas de buildPdf
- * @param {{reserve: number, time: Date}} signature reserve: bytes reservados para o CMS
+ * @param {{reserve: number, time: Date, pdfa?: boolean}} signature reserve: bytes reservados para o CMS; pdfa: como
+ *   em buildPdf
  * @returns {{bytes: Uint8Array, byteRange: number[], contents: {at: number, length: number}}} contents: posição
  *   e tamanho (em dígitos hexadecimais) do espaço da assinatura, entre o < e o >
  */
 export function buildPdfToSign(pages, signature) {
   if (!(signature?.reserve > 0) || !(signature.time instanceof Date)) throw new Error('Assinatura sem espaço ou sem hora');
-  return assemble(pages, signature);
+  return assemble(pages, signature, { pdfa: signature.pdfa });
 }
+
+// Identificação do PDF/A-2b (XMP): só a parte e o nível do padrão. Sem autor, título, datas nem programa.
+// O começo do pacote leva a marca de ordem dos bytes (U+FEFF), em UTF-8, como o XMP pede.
+const XMP = '<?xpacket begin="\ufeff" id="W5M0MpCehiHzreSzNTczkc9d"?>\n'
+  + '<x:xmpmeta xmlns:x="adobe:ns:meta/">\n'
+  + ' <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
+  + '  <rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/">\n'
+  + '   <pdfaid:part>2</pdfaid:part>\n'
+  + '   <pdfaid:conformance>B</pdfaid:conformance>\n'
+  + '  </rdf:Description>\n'
+  + ' </rdf:RDF>\n'
+  + '</x:xmpmeta>\n'
+  + '<?xpacket end="w"?>';
 
 // Bytes que a assinatura cobre: o arquivo todo, menos o /Contents (com o < e o >).
 export function signedRanges(bytes, byteRange) {
@@ -214,7 +233,7 @@ export function fillSignature({ bytes, contents }, der) {
   return bytes;
 }
 
-function assemble(pages, signature) {
+function assemble(pages, signature, { pdfa = false } = {}) {
   if (!pages.length) throw new Error('Nenhuma página para gerar');
 
   const chunks = [];
@@ -277,7 +296,9 @@ function assemble(pages, signature) {
   }
   const parts = (list, base) => list.map((part) => (part?.ref !== undefined ? `${base + part.ref} 0 R` : part));
 
-  // Assinatura: campo (widget) e dicionário /Sig, os dois últimos objetos.
+  // PDF/A: identificação (XMP) e perfil de cor. Depois, a assinatura: campo (widget) e dicionário /Sig.
+  const metadataId = pdfa ? nextId++ : 0;
+  const iccId = pdfa ? nextId++ : 0;
   const widgetId = signature ? nextId++ : 0;
   const sigId = signature ? nextId++ : 0;
 
@@ -286,9 +307,11 @@ function assemble(pages, signature) {
   push(sources.size || signature ? '%PDF-1.7\n' : '%PDF-1.4\n');
   push(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a])); // marca de arquivo binário
 
-  object(1, signature
-    ? `<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [${widgetId} 0 R] /SigFlags 3 >> >>`
-    : '<< /Type /Catalog /Pages 2 0 R >>');
+  const pdfaCatalog = pdfa
+    ? ` /Metadata ${metadataId} 0 R /OutputIntents [<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier`
+      + ` (sRGB IEC61966-2.1) /Info (sRGB IEC61966-2.1) /DestOutputProfile ${iccId} 0 R >>]`
+    : '';
+  object(1, `<< /Type /Catalog /Pages 2 0 R${pdfaCatalog}${signature ? ` /AcroForm << /Fields [${widgetId} 0 R] /SigFlags 3 >>` : ''} >>`);
   object(2, `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`);
 
   pages.forEach((page, i) => {
@@ -347,6 +370,13 @@ function assemble(pages, signature) {
     source.objects.forEach((list, i) => object(base + i, ...parts(list, base)));
   }
 
+  if (pdfa) {
+    const xmp = encoder.encode(XMP);
+    object(metadataId, `<< /Type /Metadata /Subtype /XML /Length ${xmp.length} >>\nstream\n`, xmp, '\nendstream');
+    const icc = srgbProfile();
+    object(iccId, `<< /N 3 /Length ${icc.length} >>\nstream\n`, icc, '\nendstream');
+  }
+
   // Campo de assinatura invisível (/Rect zerado), que só imprime e não se mexe (/F 132 = Print + Locked).
   let byteRangeAt = 0;
   let contentsAt = 0;
@@ -367,11 +397,19 @@ function assemble(pages, signature) {
   let xref = `xref\n0 ${count}\n0000000000 65535 f \n`;
   for (let id = 1; id < count; id++) xref += `${String(offsets[id]).padStart(10, '0')} 00000 n \n`;
   push(xref);
-  push(`trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
+  const joined = () => {
+    const out = new Uint8Array(length);
+    let pos = 0;
+    for (const chunk of chunks) { out.set(chunk, pos); pos += chunk.length; }
+    return out;
+  };
+  // PDF/A: /ID no trailer, o MD5 de tudo o que vem antes dele. O mesmo conteúdo dá o mesmo /ID, que não identifica
+  // nem o aparelho nem a hora.
+  const hash = pdfa ? [...md5(joined())].map((b) => b.toString(16).padStart(2, '0')).join('') : '';
+  const id = pdfa ? ` /ID [<${hash}> <${hash}>]` : '';
+  push(`trailer\n<< /Size ${count} /Root 1 0 R${id} >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
 
-  const out = new Uint8Array(length);
-  let pos = 0;
-  for (const chunk of chunks) { out.set(chunk, pos); pos += chunk.length; }
+  const out = joined();
   if (!signature) return { bytes: out };
   return { bytes: out, ...finishSignature(out, { byteRangeAt, contentsAt, reserve: signature.reserve }) };
 }
