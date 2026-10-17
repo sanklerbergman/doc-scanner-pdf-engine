@@ -210,14 +210,19 @@ export async function startOcr({ workers = 1 } = {}) {
 // Página torta. Medido com o Tesseract do app (Chromium e WebKit), num documento nítido: girado 3°, sai de 42% a
 // 64% do texto; de 5° a 12°, de 0 a 52% (com 5°, menos de 25%), quase sempre com nota alta, e o aviso de confiança
 // baixa não pega. O app mede a inclinação antes (textSkew, uns 20 ms):
-// - página reta (abaixo de 2,5°): lida como está, como antes. Com rotateAuto em toda página, o Tesseract endireitava
+// - página reta (abaixo de 2°): lida como está, como antes. Com rotateAuto em toda página, o Tesseract endireitava
 //   também a foto quase reta, e a leitura ficava uns 10% mais lenta e às vezes pior (foto difícil: de 92% para 63%);
+// - pouco torta (de 2° a 3°): lida dos dois jeitos, e fica a leitura com mais texto bom. Lendo como está, o Tesseract
+//   ainda acerta quase tudo, mas já perde linhas inteiras (PDF escaneado a 2,5°: as linhas do CPF e do CEP sumiram);
+//   endireitando, às vezes piora. Assim, nunca sai pior que antes;
 // - torta: lida com rotateAuto, que mede o ângulo melhor que o app (numa foto difícil girada 3°: 99% contra 76%). Com
 //   7° ou mais, às vezes ele não acha linha nenhuma e não endireita; aí vai de novo, com o ângulo do app, que leu
 //   tudo até 15°;
 // - sem linhas para medir (ruído, sombra, figura grande): rotateAuto, como reserva (nessas, girada 5°, ele leu de
 //   1,4 a 3,5 vezes mais palavras).
 // As palavras voltam medidas na imagem original (readWords).
+const LITTLE_TILT = (3 * Math.PI) / 180;
+
 async function readLevel(canvas, recognize) {
   const { width, height } = canvas;
   const read = async (image, turn) => {
@@ -228,6 +233,11 @@ async function readLevel(canvas, recognize) {
   const angle = textSkew(image.subarray(image.length - width * height), width, height);
   if (angle === 0) return read(image, {});
   if (angle === null) return read(image, { rotateAuto: true });
+  if (Math.abs(angle) < LITTLE_TILT) {
+    const plain = await read(image.slice(), {});
+    const turned = await read(image, { rotateAuto: true });
+    return goodText(turned) > goodText(plain) ? turned : plain;
+  }
   // Vai uma cópia da imagem: se precisar da segunda leitura, ela ainda está aqui (sem ler o canvas de novo).
   const words = await read(image.slice(), { rotateAuto: true });
   if (words.some((word) => word.angle)) return words;

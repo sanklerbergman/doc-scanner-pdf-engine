@@ -97,8 +97,9 @@ export function findSensitive(text) {
 
 /**
  * Acha os dados no texto de uma página e devolve a área de cada um, para virar tarja.
- * @param {Array<{str: string, xs: number[], y0: number, y1: number}>} pieces trechos de texto, com a posição de
- *   cada caractere (xs: str.length + 1 valores, de 0 a 1) e a altura da linha (de 0 a 1), com o texto em pé
+ * @param {Array<{str: string, xs: number[], y0: number, y1: number, line?: number}>} pieces trechos de texto, com a
+ *   posição de cada caractere (xs: str.length + 1 valores, de 0 a 1) e a altura da linha (de 0 a 1), com o texto em
+ *   pé. line: a linha do trecho, quando quem chama já sabe (as palavras do OCR); sem ela, a linha sai da altura
  * @param {{width: number, height: number}} size tamanho da página (qualquer unidade), para medir os espaços
  * @returns {Array<{type: string, value: string, rect: {x0: number, y0: number, x1: number, y1: number}}>}
  */
@@ -107,13 +108,17 @@ export function findInPieces(pieces, { width, height }) {
   const sorted = pieces.filter((piece) => piece.str).sort((a, b) => (a.y0 + a.y1) - (b.y0 + b.y1) || a.xs[0] - b.xs[0]);
   for (const piece of sorted) {
     const middle = (piece.y0 + piece.y1) / 2;
-    const line = lines.find((item) => middle > item.y0 && middle < item.y1);
+    // Na página um pouco torta (2°), as palavras da mesma linha descem ao longo dela e não se encontram pela altura:
+    // aí vale a linha que o OCR leu.
+    const line = piece.line !== undefined
+      ? lines.find((item) => item.id === piece.line)
+      : lines.find((item) => item.id === undefined && middle > item.y0 && middle < item.y1);
     if (line) {
       line.pieces.push(piece);
       line.y0 = Math.min(line.y0, piece.y0);
       line.y1 = Math.max(line.y1, piece.y1);
     } else {
-      lines.push({ y0: piece.y0, y1: piece.y1, pieces: [piece] });
+      lines.push({ id: piece.line, y0: piece.y0, y1: piece.y1, pieces: [piece] });
     }
   }
   const out = [];
@@ -126,7 +131,8 @@ export function findInPieces(pieces, { width, height }) {
     for (const piece of line.pieces) {
       if (previous) {
         const gap = (piece.xs[0] - previous.xs[previous.xs.length - 1]) * width;
-        const lineHeight = (line.y1 - line.y0) * height;
+        // Na linha do OCR, a altura é a das duas palavras: a da linha torta inteira vai além da altura das letras.
+        const lineHeight = (line.id === undefined ? line.y1 - line.y0 : Math.max(piece.y1 - piece.y0, previous.y1 - previous.y0)) * height;
         // O OCR às vezes parte um número na pontuação ("123.456" e ".789-09"), com um vão entre as palavras: perto
         // assim, número e pontuação continuam juntos, sem espaço.
         const split = gap < lineHeight * 1.5 && (/\d$/.test(previous.str) && /^[.\/-]\d/.test(piece.str) || /\d[.\/-]$/.test(previous.str) && /^\d/.test(piece.str));

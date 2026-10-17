@@ -425,10 +425,11 @@ export function unskewRect(rect, angle, { width, height }) {
 
 const SKEW_SIDE = 1000; // lado maior da imagem reduzida
 const SKEW_MAX = (15 * Math.PI) / 180;
-// Abaixo de 2,5°, a página é lida como está: o Tesseract lê bem assim (documento girado 2°: o mesmo acerto da página
-// reta), e endireitar pouco pode piorar (foto difícil, com faixa escura e carimbo, medida em 1,3° a 1,9°: de 92% das
-// palavras certas para 63% a 87%).
-const SKEW_MIN = (2.5 * Math.PI) / 180;
+// Abaixo de 2°, a página é lida como está: o Tesseract lê bem assim, e endireitar pouco pode piorar (foto difícil,
+// com faixa escura e carimbo: de 92% das palavras certas para 63% a 87%). Nas 56 imagens de teste e em 10 fotos de
+// documento, nenhuma página reta mediu 2° ou mais (a mais torta, 1,8°; a difícil, 1,0°). Com 2,5°, o Tesseract já
+// perde linhas lendo como está (ocr.js lê dos dois jeitos de 2° a 3°).
+const SKEW_MIN = (2 * Math.PI) / 180;
 const SKEW_POINTS = 60000; // pontos na conta, no máximo
 // Contraste da projeção (a do melhor ângulo contra a mediana dos outros). Com 1,5, nas 56 imagens de teste e em
 // documentos girados de -15° a 15°, nenhuma página reta saiu com ângulo, e as tortas saíram com o ângulo certo; sem

@@ -178,8 +178,10 @@ test('textSkew: mede a inclinação das linhas de texto, no sentido do giro que 
   assert.ok(Math.abs(degrees(textSkew(tiltedPage(7, { noise: 120 }), 800, 1100)) + 7) < 0.15);
 });
 
-test('textSkew: página reta (menos de 2,5°) dá 0; em branco ou sem linhas de texto, null (não dá para medir)', () => {
-  for (const tilt of [0, 1, 2, -2]) assert.equal(textSkew(tiltedPage(tilt), 800, 1100), 0, `${tilt}°`);
+test('textSkew: página reta (menos de 2°) dá 0; em branco ou sem linhas de texto, null (não dá para medir)', () => {
+  for (const tilt of [0, 1, 1.8, -1.8]) assert.equal(textSkew(tiltedPage(tilt), 800, 1100), 0, `${tilt}°`);
+  // A partir de 2°, já mede (de 2° a 3°, o OCR lê dos dois jeitos).
+  for (const tilt of [2.5, -2.5]) assert.ok(Math.abs(degrees(textSkew(tiltedPage(tilt), 800, 1100)) + tilt) < 0.15, `${tilt}°`);
   assert.equal(textSkew(new Uint8Array(800 * 1100).fill(250), 800, 1100), null);
   // Ruído sem linhas (textura, foto ruim): nenhum ângulo se destaca.
   const noise = new Uint8Array(800 * 1100);

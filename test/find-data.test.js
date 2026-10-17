@@ -93,6 +93,25 @@ test('número que o OCR partiu na pontuação, com um vão entre as palavras, co
   assert.deepEqual(findInPieces([piece('529982', 0.1, 0.01), piece('24725', 0.17, 0.01)], size), []);
 });
 
+test('palavras do OCR numa linha um pouco torta: a linha que o OCR leu junta o CPF, mesmo descendo ao longo dela', () => {
+  const size = { width: 1000, height: 1000 };
+  // Linha torta 2°: cada palavra uns 0,02 abaixo da anterior, mais que a altura das letras (0,02). Pela altura, "CPF:",
+  // "529.982" e ".247-25" ficam em linhas diferentes; e a linha de baixo começa mais acima do que acaba esta.
+  const tilted = [
+    { ...piece('Nome', 0.1, 0.01, 0.1, 0.12), line: 0 }, { ...piece('CPF:', 0.3, 0.01, 0.12, 0.14), line: 0 },
+    { ...piece('529.982', 0.5, 0.01, 0.14, 0.16), line: 0 }, { ...piece('.247-25', 0.58, 0.01, 0.16, 0.18), line: 0 },
+    { ...piece('Outra', 0.1, 0.01, 0.15, 0.17), line: 1 },
+  ];
+  const found = findInPieces(tilted, size);
+  assert.deepEqual(found.map((r) => `${r.type}:${r.value}`), ['cpf:529.982.247-25']);
+  assert.deepEqual([found[0].rect.y0, found[0].rect.y1], [0.14, 0.18], 'a área vai só da altura das palavras do CPF');
+  // Sem a linha do OCR, pela altura, o CPF não se junta (como antes).
+  assert.deepEqual(findInPieces(tilted.map(({ line, ...rest }) => rest), size), []);
+  // O vão entre as palavras é medido pela altura delas, não pela da linha torta inteira: "CPF" e o número continuam
+  // separados por um espaço (colados, "CPF529.982.247-25" não seria achado).
+  assert.equal(findInPieces([{ ...piece('CPF', 0.1, 0.01, 0.1, 0.12), line: 0 }, { ...piece('529.982.247-25', 0.14, 0.01, 0.13, 0.15), line: 0 }], size)[0]?.value, '529.982.247-25');
+});
+
 test('margem da tarja: cresce em volta, proporcional à altura, sem sair da página', () => {
   const rect = padRect({ x0: 0.5, y0: 0.1, x1: 0.6, y1: 0.12 }, { width: 1000, height: 1000 }, 0.5);
   assert.ok(Math.abs(rect.y0 - 0.09) < 1e-9 && Math.abs(rect.y1 - 0.13) < 1e-9 && Math.abs(rect.x0 - 0.49) < 1e-9);

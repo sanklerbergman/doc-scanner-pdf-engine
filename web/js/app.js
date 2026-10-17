@@ -1542,9 +1542,12 @@ function charPositions(text, x0, x1, family = 'sans-serif') {
 // como a caixa reta que a envolve: a tarja fica maior que o dado, mas cobre tudo.
 function findInWords(words, size) {
   const angle = words.find((word) => word.angle)?.angle ?? 0;
+  let line = 0; // a linha que o OCR leu (a última palavra dela tem last)
   const pieces = words.map((word) => {
     const at = word.angle ? word.straight : word;
-    return { str: word.text, xs: charPositions(word.text, at.x0, at.x1), y0: at.y0, y1: at.y1 };
+    const piece = { str: word.text, xs: charPositions(word.text, at.x0, at.x1), y0: at.y0, y1: at.y1, line };
+    if (word.last) line++;
+    return piece;
   });
   return findInPieces(pieces, size).map((found) => ({ ...found, rect: unskewRect(padRect(found.rect, size, 0.3), angle, size) }));
 }
