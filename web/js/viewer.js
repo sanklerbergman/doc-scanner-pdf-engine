@@ -1,7 +1,9 @@
 // Tela cheia de uma página: mostra como ela vai sair no PDF, deixa ajustar o recorte arrastando os quatro
-// cantos sobre a foto original e marcar tarjas (retângulos que apagam o que está embaixo, redact.js).
+// cantos sobre a foto original, marcar tarjas (retângulos que apagam o que está embaixo, redact.js) e copiar o
+// texto da página para a área de transferência.
 import { FULL_QUAD, fromRotated, toRotated, isConvex, isFullFrame } from './geometry.js';
 import { normalizeRect } from './redact.js';
+import { wordCount } from './page-text.js';
 
 const $ = (selector) => document.querySelector(selector);
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
@@ -20,11 +22,14 @@ const START_INSET = 0.04; // sem recorte ainda: os cantos começam um pouco para
  * @param {(page) => Promise<Blob>} deps.renderPlain página como vai sair no PDF, mas sem as tarjas (para editá-las)
  * @param {(page) => string} deps.redactHint texto de ajuda das tarjas para a página
  * @param {(page, list: object[]) => Promise<void>} deps.saveRedactions grava as tarjas e atualiza a miniatura
+ * @param {(page, options: {signal: AbortSignal, progress: (message: string) => void}) => Promise<string>} deps.copyText
+ *   texto da página, sem o que está sob as tarjas (o OCR roda na hora se precisar; signal cancela)
+ * @param {(page) => boolean} deps.canCopy false enquanto o app gera o PDF
  * @param {(page) => void} deps.onClose chamado ao fechar, para devolver o foco ao cartão da página
  */
 export function setupViewer({
   renderProcessed, canCrop, viewHint = () => null, renderOriginal, detect, applyCrop, step, renderPlain, redactHint,
-  saveRedactions, onClose,
+  saveRedactions, copyText, canCopy, onClose,
 }) {
   const dialog = $('#viewer');
   const title = $('#viewer-title');
@@ -49,12 +54,14 @@ export function setupViewer({
   const redactAdd = $('#redact-add');
   const redactUndo = $('#redact-undo');
   const redactApply = $('#redact-apply');
+  const copyButton = $('#viewer-copy');
 
   let page = null;
   let label = '';
   let points = FULL_QUAD; // cantos sobre a foto girada, de 0 a 1
   let marks = []; // tarjas em edição, de 0 a 1 na página como aparece
   let token = 0; // invalida renderizações que terminam depois de a pessoa já ter mudado de tela
+  let copying = null; // AbortController da cópia do texto em andamento (o OCR pode levar segundos)
   const urls = { view: '', crop: '', redact: '' };
   const editing = () => !crop.hidden || !redact.hidden; // recorte ou tarjas: sem trocar de página
 
@@ -62,6 +69,14 @@ export function setupViewer({
     if (urls[kind]) URL.revokeObjectURL(urls[kind]);
     urls[kind] = blob ? URL.createObjectURL(blob) : '';
     if (blob) img.src = urls[kind];
+  }
+
+  // Nova tela (outra página, recorte, tarjas ou fechar): o que ainda estava carregando não vale mais, e a cópia do
+  // texto em andamento é cancelada (o OCR para na hora).
+  function nextToken() {
+    copying?.abort();
+    copying = null;
+    return ++token;
   }
 
   // startInCrop: abre direto no ajuste do recorte (botão "Ajustar recorte" do cartão).
@@ -74,7 +89,7 @@ export function setupViewer({
   }
 
   async function showView() {
-    const mine = ++token;
+    const mine = nextToken();
     title.textContent = label;
     crop.hidden = true;
     cropActions.hidden = true;
@@ -82,6 +97,7 @@ export function setupViewer({
     redactActions.hidden = true;
     viewActions.hidden = false;
     cropButton.hidden = !canCrop(page);
+    copyButton.hidden = !canCopy(page) || !clipboardWorks();
     updateNav(true);
     image.hidden = false;
     stage.classList.remove('zoomed');
@@ -92,15 +108,16 @@ export function setupViewer({
       const blob = await renderProcessed(page);
       if (mine !== token) return;
       setUrl('view', image, blob);
-      hint.textContent = viewHint(page) ?? 'É assim que a página vai sair no PDF. Toque na imagem para ampliar.';
+      // Com a cópia do texto em andamento, o aviso dela continua na tela.
+      if (!copying) hint.textContent = viewHint(page) ?? 'É assim que a página vai sair no PDF. Toque na imagem para ampliar.';
     } catch (err) {
       console.error(err);
-      if (mine === token) hint.textContent = 'Mostrando a miniatura (não deu para carregar em alta qualidade).';
+      if (mine === token && !copying) hint.textContent = 'Mostrando a miniatura (não deu para carregar em alta qualidade).';
     }
   }
 
   async function showCrop() {
-    const mine = ++token;
+    const mine = nextToken();
     title.textContent = `Recorte: ${label}`;
     updateNav(false); // no meio do recorte, trocar de página perderia os cantos arrastados
     image.hidden = true;
@@ -181,7 +198,7 @@ export function setupViewer({
   // movem, Shift e setas mudam o tamanho, e Delete remove. Nada muda na página até "Aplicar tarjas".
 
   async function showRedact() {
-    const mine = ++token;
+    const mine = nextToken();
     title.textContent = `Tarjas: ${label}`;
     updateNav(false);
     image.hidden = true;
@@ -346,6 +363,65 @@ export function setupViewer({
   $('#viewer-redact').addEventListener('click', showRedact);
   new ResizeObserver(fitRedact).observe(stage);
 
+  // ---------- Copiar o texto ----------
+  // O texto vai só para a área de transferência do aparelho: nunca para o console nem para o HTML da página.
+
+  const clipboardWorks = () => !!(navigator.clipboard?.write || navigator.clipboard?.writeText);
+
+  // O Safari só deixa escrever na área de transferência durante o toque, e o OCR leva segundos: o ClipboardItem
+  // recebe a promessa do texto, e o navegador espera por ela sem perder o toque (o Chromium também). Sem
+  // ClipboardItem, o texto vai pelo writeText depois de pronto.
+  function writeClipboard(text) {
+    if (typeof ClipboardItem === 'function' && navigator.clipboard?.write) {
+      const blob = text.then((value) => new Blob([value], { type: 'text/plain' }));
+      blob.catch(() => {}); // quem explica o erro do texto é o aviso da cópia
+      try {
+        return navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]);
+      } catch {
+        // ClipboardItem que não aceita promessa: vai pelo writeText
+      }
+    }
+    return text.then((value) => navigator.clipboard.writeText(value));
+  }
+
+  copyButton.addEventListener('click', async () => {
+    if (!page || copying || !canCopy(page)) return;
+    const mine = token;
+    const target = page;
+    const job = new AbortController();
+    copying = job;
+    const say = (message) => {
+      if (mine === token) hint.textContent = message;
+    };
+    say('Copiando o texto…');
+    // Tudo dentro do toque: o pedido do texto começa e a escrita na área de transferência já fica esperando por ele.
+    const text = copyText(target, { signal: job.signal, progress: say });
+    let blocked = false;
+    try {
+      await writeClipboard(text);
+    } catch {
+      blocked = true; // se o texto falhou, a escrita falha junto; o motivo vem abaixo
+    }
+    const result = await text.then((value) => ({ value }), (error) => ({ error }));
+    if (mine !== token) return; // fechou a tela ou trocou de página: a cópia foi cancelada
+    copying = null;
+    if (result.error) {
+      const known = ['CopyError', 'OcrError'].includes(result.error?.name);
+      if (!known) console.error(result.error);
+      hint.textContent = known ? result.error.message : 'Não deu para ler o texto desta página.';
+      return;
+    }
+    if (blocked) {
+      hint.textContent = 'O navegador não liberou a área de transferência. Toque em "Copiar texto" de novo.';
+      return;
+    }
+    const count = wordCount(result.value);
+    const words = count === 1 ? '1 palavra' : `${count} palavras`;
+    hint.textContent = target.redactions?.length
+      ? `Texto copiado (${words}), sem o que está sob as tarjas. Ele não sai do aparelho.`
+      : `Texto copiado (${words}). Ele não sai do aparelho.`;
+  });
+
   // ---------- Anterior / próxima ----------
 
   // As setas encostam nas bordas da página exibida, sem sair da tela (no celular, ficam nas bordas da tela).
@@ -443,7 +519,7 @@ export function setupViewer({
 
   new ResizeObserver(fitCrop).observe(stage);
   dialog.addEventListener('close', () => {
-    token++;
+    nextToken();
     setUrl('view', image, null);
     setUrl('crop', cropImage, null);
     setUrl('redact', redactImage, null);

@@ -8,6 +8,7 @@ import { CONFIG } from './config.js';
 import { parseRanges } from './ranges.js';
 import { paintRedactions, rotateRedactions, toUnrotated, toRotatedRects, redactLayout, filterWords, textUnderRedactions } from './redact.js';
 import { findInPieces, padRect, TYPE_LABELS } from './find-data.js';
+import { plainText, linesText, documentText } from './page-text.js';
 import { textWidth } from './fonts.js';
 import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex } from './stamp.js';
 
@@ -645,6 +646,8 @@ const viewer = setupViewer({
       ? `Página ${index}: ${list.length === 1 ? '1 tarja' : `${list.length} tarjas`}. O que está embaixo vai ser apagado do PDF.`
       : `Página ${index}: sem tarjas.`);
   },
+  copyText: pageText,
+  canCopy: () => !state.busy, // gerando o PDF ou procurando dados, o OCR e as páginas estão em uso
   // A lista pode ter sido recriada enquanto a tela cheia estava aberta: devolve o foco ao cartão da página.
   onClose(page) {
     const index = state.pages.indexOf(page);
@@ -1493,33 +1496,47 @@ async function findInPdfPage(page, startEngine) {
 // Página de PDF escaneada (sem texto): lida pelo OCR como aparece no app, como as fotos, e o resultado fica
 // guardado para gerar o PDF. As caixas já saem na página como aparece, que é onde as tarjas são marcadas.
 async function findInScannedPage(page, startEngine, { width, height }) {
-  if (page.ocr?.key !== ocrKey(page)) page.ocr = { key: ocrKey(page), ...(await recognizePdfPage(startEngine, page)) };
+  await ensureOcr(page, startEngine);
   const size = page.rotation % 180 !== 0 ? { width: height, height: width } : { width, height };
   const pieces = page.ocr.words.map((word) => ({ str: word.text, xs: charPositions(word.text, word.x0, word.x1), y0: word.y0, y1: word.y1 }));
   return findInPieces(pieces, size).map((found) => ({ ...found, rect: padRect(found.rect, size, 0.3) }));
 }
 
+// Texto do OCR da foto ou da página de PDF com o recorte, o filtro, o giro e as tarjas de agora (ocrKey). Sem ele,
+// o reconhecimento roda agora e fica guardado em page.ocr: gerar o PDF depois não lê de novo. Usado pela busca de
+// dados e pelo "Copiar texto" da tela cheia.
+async function ensureOcr(page, startEngine) {
+  const key = ocrKey(page);
+  if (page.ocr?.key !== key) {
+    page.ocr = { key, ...(page.kind === 'pdf' ? await recognizePdfPage(startEngine, page) : await recognizePhoto(page, startEngine)) };
+  }
+  return page.ocr;
+}
+
+// Foto: desenhada na resolução do OCR, já tarjada, e lida; o que o OCR achar sobre uma tarja também sai.
+async function recognizePhoto(page, startEngine) {
+  const ocr = await startEngine();
+  const image = await decodeFile(page.file);
+  let canvas;
+  try {
+    canvas = await renderPageAsync(image.source, image.width, image.height, {
+      rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: OCR_SIDE, redactions: page.redactions,
+    });
+  } finally {
+    image.release();
+  }
+  try {
+    // Sem a página do PDF ainda, a resolução é estimada como a de uma folha A4.
+    const words = await ocr.recognize(canvas, { dpi: Math.max(canvas.width, canvas.height) / 11.69 });
+    return { words: filterWords(words, page.redactions), size: { width: canvas.width, height: canvas.height } };
+  } finally {
+    canvas.width = canvas.height = 0;
+  }
+}
+
 // Foto: o texto do OCR (já tarjado). Sem ele, o reconhecimento roda agora e fica guardado para gerar o PDF.
 async function findInPhoto(page, startEngine) {
-  if (page.ocr?.key !== ocrKey(page)) {
-    const ocr = await startEngine();
-    const image = await decodeFile(page.file);
-    let canvas;
-    try {
-      canvas = await renderPageAsync(image.source, image.width, image.height, {
-        rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: OCR_SIDE, redactions: page.redactions,
-      });
-    } finally {
-      image.release();
-    }
-    try {
-      // Sem a página do PDF ainda, a resolução é estimada como a de uma folha A4.
-      const words = await ocr.recognize(canvas, { dpi: Math.max(canvas.width, canvas.height) / 11.69 });
-      page.ocr = { key: ocrKey(page), words: filterWords(words, page.redactions), size: { width: canvas.width, height: canvas.height } };
-    } finally {
-      canvas.width = canvas.height = 0;
-    }
-  }
+  await ensureOcr(page, startEngine);
   const size = page.ocr.size ?? { width: 1, height: 1.414 };
   const pieces = page.ocr.words.map((word) => ({ str: word.text, xs: charPositions(word.text, word.x0, word.x1), y0: word.y0, y1: word.y1 }));
   return findInPieces(pieces, size).map((found) => ({ ...found, rect: padRect(found.rect, size, 0.3) }));
@@ -1661,6 +1678,77 @@ els.findApply.addEventListener('click', async () => {
   announce(`${total === 1 ? '1 tarja adicionada' : `${total} tarjas adicionadas`} em ${touched.size === 1 ? '1 página' : `${touched.size} páginas`}. Confira em tela cheia: dá para ajustar ou remover cada uma.`);
   els.findData.focus();
 });
+
+// ---------- Copiar o texto da página (tela cheia) ----------
+// O texto sai como a página vai para o PDF: Word, pelo layout (sem o que está sob as tarjas); PDF com texto, pelo
+// PDF.js; foto, página escaneada e página de PDF tarjada (que vira imagem), pelo OCR, que roda agora se precisar e
+// fica guardado para gerar o PDF. A área de transferência fica com a tela cheia (viewer.js). O texto só passa pela
+// memória: nada no console.
+
+const copyError = (message) => Object.assign(new Error(message), { name: 'CopyError' });
+let copyDone = Promise.resolve(); // fim da cópia anterior, com o motor dela já fora da memória
+const COPY_WAIT_MS = 20000; // quanto, no máximo, uma cópia espera o motor da anterior (cancelada) desligar
+
+/**
+ * @param {object} page
+ * @param {{signal: AbortSignal, progress: (message: string) => void}} options signal: fechar a tela ou trocar de
+ *   página cancela o OCR; progress: aviso de andamento na tela cheia
+ * @returns {Promise<string>} o texto, nunca vazio (sem texto, dá erro CopyError com a explicação)
+ */
+async function pageText(page, { signal, progress }) {
+  if (isDocument(page)) {
+    const text = documentText(page.layout, page.redactions?.length ? toUnrotated(page.redactions, page.rotation) : []);
+    if (!text) throw copyError('Esta página não tem texto.');
+    return text;
+  }
+  const previous = copyDone;
+  let finish;
+  copyDone = new Promise((resolve) => { finish = resolve; });
+  let ocr = null;
+  const cancel = () => ocr?.cancel();
+  signal.addEventListener('abort', cancel);
+  const aborted = new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+  const startEngine = async () => {
+    if (ocr) return ocr;
+    progress('Reconhecendo o texto desta página (na primeira vez, o app baixa uns 5 MB). Fechar a tela cancela.');
+    // Um motor por vez na memória: espera o da cópia anterior (cancelada) desligar, mas não para sempre.
+    await Promise.race([previous, aborted, new Promise((resolve) => setTimeout(resolve, COPY_WAIT_MS))]);
+    if (signal.aborted) throw new Cancelled();
+    const { startOcr } = await loadOcr().catch(() => {
+      throw ocrError('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.');
+    });
+    if (signal.aborted) throw new Cancelled();
+    ocr = await startOcr();
+    if (signal.aborted) throw new Cancelled();
+    return ocr;
+  };
+  try {
+    const { words, hasText } = await ensureOcr(page, startEngine).catch((err) => {
+      // PDF que o PDF.js não leu: o título da tela cheia já diz qual é a página, e o aviso curto cabe na dica.
+      if (err?.name === 'OcrError' && /\(do PDF /.test(err.message)) {
+        throw copyError('Não deu para ler esta página para reconhecer o texto. Confira a conexão e tente de novo.');
+      }
+      throw err;
+    });
+    // Página de PDF com texto (e sem tarja: a tarjada é sempre lida pelo OCR): o texto do próprio PDF.
+    if (hasText && !page.redactions?.length) {
+      const tools = await loadPdfTools();
+      const { items, width, height } = await tools.pdfPageTextItems(page.doc, page.index).catch(() => {
+        throw copyError('Não deu para ler o texto desta página. Confira a conexão e tente de novo.');
+      });
+      const text = linesText(items, { width, height });
+      if (!text) throw copyError('Esta página não tem texto.');
+      return text;
+    }
+    const text = plainText(words);
+    if (!text) throw copyError('Não achei texto impresso nesta página.');
+    return text;
+  } finally {
+    signal.removeEventListener('abort', cancel);
+    ocr?.terminate(); // o motor ocupa centenas de MB: sai da memória no fim, dê certo ou não
+    finish();
+  }
+}
 
 // ---------- Assinar com certificado digital (A1) ----------
 // Dois passos na mesma janela: escolher o .pfx e digitar a senha; depois, conferir titular e validade e confirmar.

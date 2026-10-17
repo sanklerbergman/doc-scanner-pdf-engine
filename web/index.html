@@ -44,6 +44,7 @@
     <symbol id="i-redact" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 12h10" stroke-width="5"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></symbol>
     <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
   </svg>
 
   <a class="skip" href="#main">Pular para o conteúdo</a>
@@ -270,7 +271,7 @@
     <button id="camera-native" type="button" class="camera-native">Usar a câmera do sistema</button>
   </dialog>
 
-  <!-- Página em tela cheia + ajuste do recorte (js/viewer.js). -->
+  <!-- Página em tela cheia + ajuste do recorte, tarjas e cópia do texto (js/viewer.js). -->
   <dialog id="viewer" class="viewer" aria-labelledby="viewer-title">
     <div class="viewer-head">
       <h2 id="viewer-title"></h2>
@@ -303,6 +304,7 @@
     <div id="viewer-view-actions" class="viewer-actions">
       <button id="viewer-crop" type="button" class="btn btn-primary"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-crop"/></svg> Ajustar recorte</button>
       <button id="viewer-redact" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-redact"/></svg> Tarjar</button>
+      <button id="viewer-copy" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-copy"/></svg> Copiar texto</button>
     </div>
     <div id="viewer-redact-actions" class="viewer-actions" hidden>
       <button id="redact-add" type="button" class="btn">Nova tarja</button>

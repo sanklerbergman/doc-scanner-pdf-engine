@@ -45,6 +45,7 @@ const APP_FILES = [
   './js/ocr-layer.js',
   './js/ttf.js',
   './js/pdfa-fonts.js',
+  './js/page-text.js',
   './icon.svg',
   './sankler-logo-reduzido-fundo-claro.svg',
   './sankler-logo-reduzido-fundo-escuro.svg',
