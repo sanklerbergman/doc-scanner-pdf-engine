@@ -425,26 +425,31 @@ export function unskewRect(rect, angle, { width, height }) {
 
 const SKEW_SIDE = 1000; // lado maior da imagem reduzida
 const SKEW_MAX = (15 * Math.PI) / 180;
-const SKEW_MIN = Math.PI / 180; // abaixo de 1°, o Tesseract lê bem sem endireitar
-const SKEW_POINTS = 60000; // pixels escuros na conta, no máximo
-// Contraste da projeção (a do melhor ângulo contra a mediana dos outros), medido em 56 imagens de teste e em
-// documentos girados de -15° a 15°: página com texto, de 1,6 a 3,4; ruído forte, sombra e só figura, de 1,0 a 1,4.
+// Abaixo de 2,5°, a página é lida como está: o Tesseract lê bem assim (documento girado 2°: o mesmo acerto da página
+// reta), e endireitar pouco pode piorar (foto difícil, com faixa escura e carimbo, medida em 1,3° a 1,9°: de 92% das
+// palavras certas para 63% a 87%).
+const SKEW_MIN = (2.5 * Math.PI) / 180;
+const SKEW_POINTS = 60000; // pontos na conta, no máximo
+// Contraste da projeção (a do melhor ângulo contra a mediana dos outros). Com 1,5, nas 56 imagens de teste e em
+// documentos girados de -15° a 15°, nenhuma página reta saiu com ângulo, e as tortas saíram com o ângulo certo; sem
+// medida, só as com ruído forte (também desfocadas), sombra, canto escuro, foto de tela ruim, figura sozinha e
+// textura.
 const SKEW_CONTRAST = 1.5;
 
 /**
- * Inclinação das linhas de texto numa imagem em tons de cinza, pela projeção dos pixels escuros: no ângulo certo,
+ * Inclinação das linhas de texto numa imagem em tons de cinza, pela projeção das bordas escuras: no ângulo certo,
  * as linhas viram faixas separadas, e a soma dos quadrados da projeção é a maior. Procura de -15° a 15°, de meio
  * em meio grau e depois de 0,05 em 0,05°, numa imagem reduzida (cada pixel fica com o mais escuro do bloco, para o
  * traço fino das letras não sumir).
  * @param {Uint8Array} gray tons de cinza, linha por linha
- * @returns {number} a inclinação do texto (como em unskew); 0 abaixo de 1° ou sem linhas claras (ruído, figura,
- *   página em branco)
+ * @returns {number|null} a inclinação do texto (como em unskew); 0 na página reta (abaixo de 2,5°); null sem linhas
+ *   claras para medir (ruído, sombra, figura grande, página em branco)
  */
 export function textSkew(gray, width, height) {
   const step = Math.max(1, Math.ceil(Math.max(width, height) / SKEW_SIDE));
   const w = Math.floor(width / step);
   const h = Math.floor(height / step);
-  if (w < 16 || h < 16) return 0;
+  if (w < 16 || h < 16) return null;
   const small = new Uint8Array(w * h);
   for (let by = 0; by < h; by++) {
     for (let bx = 0; bx < w; bx++) {
@@ -456,15 +461,23 @@ export function textSkew(gray, width, height) {
     }
   }
   const threshold = otsu(small);
+  // Só a borda de cima e de baixo do que é escuro: a letra fina conta inteira, e a faixa escura do cabeçalho, a
+  // figura e a sombra contam só pelas bordas, sem puxar o ângulo para o delas.
+  const edge = (i) => small[i] <= threshold && (small[i - w] > threshold || small[i + w] > threshold);
   let dark = 0;
-  for (let i = 0; i < small.length; i++) if (small[i] <= threshold) dark++;
-  if (dark < 50 || dark > small.length / 2) return 0; // quase nada escuro, ou o escuro é o fundo
-  const every = Math.ceil(dark / SKEW_POINTS);
+  let edges = 0;
+  for (let i = 0; i < small.length; i++) {
+    if (small[i] > threshold) continue;
+    dark++;
+    if (i >= w && i < small.length - w && edge(i)) edges++;
+  }
+  if (edges < 50 || dark > small.length / 2) return null; // quase nada escuro, ou o escuro é o fundo
+  const every = Math.ceil(edges / SKEW_POINTS);
   const xs = [];
   const ys = [];
-  for (let y = 0, n = 0; y < h; y++) {
+  for (let y = 1, n = 0; y < h - 1; y++) {
     for (let x = 0; x < w; x++) {
-      if (small[y * w + x] <= threshold && n++ % every === 0) {
+      if (edge(y * w + x) && n++ % every === 0) {
         xs.push(x - w / 2);
         ys.push(y - h / 2);
       }
@@ -491,7 +504,7 @@ export function textSkew(gray, width, height) {
     if (e > bestEnergy) [best, bestEnergy] = [(k * SKEW_MAX) / 30, e];
   }
   const median = coarse.sort((p, q) => p - q)[coarse.length >> 1];
-  if (!median || bestEnergy < median * SKEW_CONTRAST) return 0;
+  if (!median || bestEnergy < median * SKEW_CONTRAST) return null;
   const center = best;
   for (let k = -10; k <= 10; k++) {
     const a = center + (k * SKEW_MAX) / 300;

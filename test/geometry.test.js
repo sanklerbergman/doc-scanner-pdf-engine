@@ -178,13 +178,12 @@ test('textSkew: mede a inclinação das linhas de texto, no sentido do giro que 
   assert.ok(Math.abs(degrees(textSkew(tiltedPage(7, { noise: 120 }), 800, 1100)) + 7) < 0.15);
 });
 
-test('textSkew: página reta (menos de 1°), em branco ou sem linhas de texto dá 0', () => {
-  assert.equal(textSkew(tiltedPage(0), 800, 1100), 0);
-  assert.equal(textSkew(tiltedPage(0.5), 800, 1100), 0);
-  assert.equal(textSkew(new Uint8Array(800 * 1100).fill(250), 800, 1100), 0);
+test('textSkew: página reta (menos de 2,5°) dá 0; em branco ou sem linhas de texto, null (não dá para medir)', () => {
+  for (const tilt of [0, 1, 2, -2]) assert.equal(textSkew(tiltedPage(tilt), 800, 1100), 0, `${tilt}°`);
+  assert.equal(textSkew(new Uint8Array(800 * 1100).fill(250), 800, 1100), null);
   // Ruído sem linhas (textura, foto ruim): nenhum ângulo se destaca.
   const noise = new Uint8Array(800 * 1100);
   for (let i = 0; i < noise.length; i++) noise[i] = (i * 2654435761) % 251;
-  assert.equal(textSkew(noise, 800, 1100), 0);
-  assert.equal(textSkew(new Uint8Array(100), 10, 10), 0);
+  assert.equal(textSkew(noise, 800, 1100), null);
+  assert.equal(textSkew(new Uint8Array(100), 10, 10), null);
 });

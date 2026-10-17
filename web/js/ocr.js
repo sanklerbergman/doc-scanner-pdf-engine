@@ -209,25 +209,28 @@ export async function startOcr({ workers = 1 } = {}) {
 
 // Página torta. Medido com o Tesseract do app (Chromium e WebKit), num documento nítido: girado 3°, sai de 42% a
 // 64% do texto; de 5° a 12°, de 0 a 52% (com 5°, menos de 25%), quase sempre com nota alta, e o aviso de confiança
-// baixa não pega. Com rotateAuto, o Tesseract mede a inclinação das linhas e endireita a imagem antes de ler: de 1°
-// a 6° sai tudo, como na página reta, e na página reta não gasta nada a mais (ele só gira a partir de 0,3°). Com 7°
-// ou mais, às vezes ele não acha linha nenhuma e não endireita; aí o app mede a inclinação (textSkew) e pede de novo
-// com o giro fixo, que leu tudo até 15°. Fica a leitura com mais texto bom. As palavras voltam medidas na imagem
-// original (readWords).
-const FEW_WORDS = 50; // página com menos palavras que isso (ou com confiança baixa) e sem giro: confere a inclinação
-
+// baixa não pega. O app mede a inclinação antes (textSkew, uns 20 ms):
+// - página reta (abaixo de 2,5°): lida como está, como antes. Com rotateAuto em toda página, o Tesseract endireitava
+//   também a foto quase reta, e a leitura ficava uns 10% mais lenta e às vezes pior (foto difícil: de 92% para 63%);
+// - torta: lida com rotateAuto, que mede o ângulo melhor que o app (numa foto difícil girada 3°: 99% contra 76%). Com
+//   7° ou mais, às vezes ele não acha linha nenhuma e não endireita; aí vai de novo, com o ângulo do app, que leu
+//   tudo até 15°;
+// - sem linhas para medir (ruído, sombra, figura grande): rotateAuto, como reserva (nessas, girada 5°, ele leu de
+//   1,4 a 3,5 vezes mais palavras).
+// As palavras voltam medidas na imagem original (readWords).
 async function readLevel(canvas, recognize) {
   const { width, height } = canvas;
   const read = async (image, turn) => {
     const result = await recognize(image, turn);
     return readWords(result?.blocks, width, height, result?.rotateRadians);
   };
-  // Vai uma cópia da imagem: se precisar da segunda leitura, ela ainda está aqui (sem ler o canvas de novo).
   const image = toPgm(canvas);
-  const words = await read(image.slice(), { rotateAuto: true });
-  if (words.some((word) => word.angle) || (words.length >= FEW_WORDS && !lowConfidence(words))) return words;
   const angle = textSkew(image.subarray(image.length - width * height), width, height);
-  if (!angle) return words;
+  if (angle === 0) return read(image, {});
+  if (angle === null) return read(image, { rotateAuto: true });
+  // Vai uma cópia da imagem: se precisar da segunda leitura, ela ainda está aqui (sem ler o canvas de novo).
+  const words = await read(image.slice(), { rotateAuto: true });
+  if (words.some((word) => word.angle)) return words;
   const again = await read(image, { rotateRadians: angle });
   return goodText(again) > goodText(words) ? again : words;
 }
