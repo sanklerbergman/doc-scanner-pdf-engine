@@ -277,8 +277,18 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 
 #### Fase 3: acabamento
 
-- [ ] "Copiar texto" na tela cheia da página (área de transferência, local)
-- [ ] Aviso quando a confiança for baixa (o Tesseract dá uma nota para cada palavra): "parte do texto pode ter saído errada"
+- [x] "Copiar texto" na tela cheia da página (área de transferência, local), em `page-text.js`:
+  - foto e página escaneada pelo OCR, que roda na hora se precisar e fica guardado para gerar o PDF; PDF com texto pelo PDF.js; Word pelo layout
+  - página tarjada sem nada do que está sob as tarjas: PDF tarjado lido pelo OCR na imagem tarjada, como vai para o arquivo; Word pelo mesmo `redactLayout` e conferido pelo mesmo `textUnderRedactions` do PDF montado (se sobrar texto sob uma tarja, nada é copiado)
+  - no Safari, `ClipboardItem` com a promessa do texto, para não perder o toque enquanto o OCR roda; sem ele, `writeText`. Fechar a tela ou trocar de página cancela o OCR, e o motor sai da memória
+- [x] Aviso quando a confiança for baixa (o Tesseract dá uma nota para cada palavra): "parte do texto pode ter saído errada", no fim da geração, com o número das páginas. Limites medidos com o Tesseract do app em 56 imagens, no Chromium e no WebKit (iguais nos dois): a página tem confiança baixa com média abaixo de 82 (ponderada pelos caracteres) ou com mais de 20% do texto em palavras com nota abaixo de 70. Documento nítido fica entre 90 e 95; desfocado, tremido, com pouca resolução, foto de tela e letra de mão, abaixo de 80. Palavra com nota abaixo de 70 estava certa em só 14% dos casos (com 90 ou mais, em 95%). A nota não mostra o que o Tesseract leu errado com certeza (riscos do scanner) nem o que ele pulou (sombra forte)
+- [x] Ruído fora da camada de texto: sai só a palavra sem nenhuma letra ou dígito (e sem §, &, %, $, @ ou #) com nota abaixo de 50 ("|", ":", "==", "«"). Nas medições, umas 80 de 19 mil palavras, quase todas lixo. Palavra com letra ou dígito nunca sai: o CPF chegou a vir partido em duas palavras certas com nota 0
+- [x] Busca de dados com o CPF que o OCR partiu na pontuação ("123.456" e ".789-09"): número e pontuação a menos de uma linha e meia continuam juntos
+- [x] Página torta (foto sem fundo para recortar, folha que entrou torta no scanner, PDF escaneado torto): medido com o Tesseract do app num documento nítido, girado 3° saíam de 42% a 64% do texto, e de 5° a 12°, de 0 a 52%, quase sempre com nota alta (o aviso de confiança baixa não pegava). Agora:
+  - o Tesseract mede a inclinação das linhas e endireita a imagem antes de ler (`rotateAuto`, que já vem no worker do Tesseract.js): de 1° a 6° sai tudo, e a página reta não gasta nada a mais
+  - com 7° ou mais, às vezes ele não acha linha nenhuma: quando a leitura vem fraca e sem giro, o app mede a inclinação pela projeção dos pixels escuros (`textSkew`, em `geometry.js`) e lê de novo com o giro fixo. Fica a leitura com mais texto bom. Resultado: 96% a 97% das palavras certas de -15° a 15°, no Chromium e no WebKit, de 1,6 a 2,4 s por página. Acima de 15°, nada muda
+  - a imagem do PDF continua como estava (torta): as palavras voltam para a imagem original, e a camada de texto vai inclinada (`Tm` girada, combinada com o `/Rotate`), com a seleção em cima da palavra. Na página reta, o PDF sai idêntico byte a byte
+  - para as tarjas, a palavra torta vale pela caixa reta que a envolve (`filterWords` tira toda palavra que encosta na tarja), e a conferência do PDF montado mede o texto inclinado pelos quatro cantos, com a mesma regra dos 30% da altura. A busca de dados acha CPF, CNPJ e CEP na página torta; a tarja sugerida é um retângulo reto, maior que o dado
 - [ ] Inglês como segundo idioma, se houver pedido (mais um modelo para baixar)
 
 ### Segurança e privacidade
@@ -299,6 +309,12 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 - [x] No navegador (Chromium e WebKit, Tesseract de verdade), num PDF escaneado de teste: a página com texto é pulada, as escaneadas ganham o texto certo e na posição certa (conferido com o PyMuPDF), inclusive a girada pelo `/Rotate`, a gravada deitada e endireitada no app e a tarjada
 - [x] No navegador: nenhuma requisição na aba Rede e nada no IndexedDB durante o OCR (Playwright, no Chromium e no WebKit, com e sem o service worker)
 - [x] Teste real no iPhone, no site publicado: validado pelo dono no iPhone 16e, no site publicado, na v3.5.0 (2026-10-16)
+- [x] Montagem do texto copiado (palavras do OCR, trechos do PDF e do Word, com tarja) e notas de qualidade (`test/page-text.test.js`, `test/ocr.test.js`)
+- [x] No navegador (Chromium e WebKit): "Copiar texto" em foto, PDF escaneado (inclusive com `/Rotate`), PDF com texto e Word; cancelar no meio, área de transferência recusada e foto em branco; aviso de confiança baixa no fim da geração, que some depois de endireitar a página; nenhuma requisição e nada guardado
+- [x] Página torta: volta das coordenadas (com as do worker de verdade), camada inclinada, página com `/Rotate 90`, PDF/A no veraPDF e conferência das tarjas pelos quatro cantos (`test/geometry.test.js`, `test/ocr.test.js`, `test/redact.test.js`). No navegador (Chromium e WebKit): foto torta 8° e PDF escaneado a 8° e -5°, com 97% do texto extraído pelo PDF.js, as caixas do texto em cima das palavras tortas, e as 12 tarjas sugeridas pela busca conferidas sem sobrar dado no texto
+- [ ] "Copiar texto" no iPhone 16e, no site publicado (o `ClipboardItem` com promessa depois de vários segundos de OCR)
+- [ ] Página torta no Acrobat e no leitor do Chrome (o PDF.js do Firefox e o `pdftotext` quebram mais as linhas do texto inclinado ao copiar, como nos PDFs do próprio Tesseract; cada palavra sai certa)
+- [ ] Limite da confiança baixa com fotos reais de câmera no iPhone (as 56 imagens da calibragem são sintéticas)
 - [ ] Seleção do texto no Acrobat
 
 ### Decisões
