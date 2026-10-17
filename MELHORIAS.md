@@ -257,8 +257,8 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 - [x] `web/js/ocr.js`:
   - [x] carregar só quando o OCR for ligado
   - [x] Worker de blob, com `cacheMethod: 'none'` e sem `logger`
-  - [x] um Worker por vez, encerrado (`terminate`) no fim, para liberar a memória
-- [x] Reduzir a imagem antes do OCR: a imagem do PDF serve quando o lado maior está entre 2000 e 3500 px; abaixo disso (qualidade Leve), a foto é desenhada de novo com 2400 px. Valores provisórios, a medir no iPhone
+  - [x] um Worker por vez, encerrado (`terminate`) no fim, para liberar a memória. Dois só onde o navegador diz que sobra memória (`deviceMemory` de 8 GB ou mais, 4 núcleos ou mais e 3 páginas ou mais para ler, `ocr-plan.js`); o Safari não informa a memória, e no iPhone continua um só
+- [x] Reduzir a imagem antes do OCR: a imagem do PDF serve quando o lado maior está entre 2000 e 3500 px; abaixo disso (qualidade Leve), a foto é desenhada de novo com 2400 px. Medido em 10 fotos de documento (2026-10-17): o tempo de leitura cresce bem menos que os pixels (1600 → 2400 px: +19%; 2400 → 3500: +30%), e o texto certo, pouco (99,2%, 99,3% e 99,7%). A 1600 px fica 16% mais rápido, mas perde letra miúda; na qualidade Alta, a cópia reduzida a 3500 lê melhor que a imagem de 3508 px direto (98,7% contra 98,0%)
 - [x] `pdf.js`: páginas de imagem aceitam uma camada de texto invisível
 - [x] Interface:
   - [x] opção "Texto pesquisável (OCR)", desligada por padrão
@@ -283,12 +283,21 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
   - no Safari, `ClipboardItem` com a promessa do texto, para não perder o toque enquanto o OCR roda; sem ele, `writeText`. Fechar a tela ou trocar de página cancela o OCR, e o motor sai da memória
 - [x] Aviso quando a confiança for baixa (o Tesseract dá uma nota para cada palavra): "parte do texto pode ter saído errada", no fim da geração, com o número das páginas. Limites medidos com o Tesseract do app em 56 imagens, no Chromium e no WebKit (iguais nos dois): a página tem confiança baixa com média abaixo de 82 (ponderada pelos caracteres) ou com mais de 20% do texto em palavras com nota abaixo de 70. Documento nítido fica entre 90 e 95; desfocado, tremido, com pouca resolução, foto de tela e letra de mão, abaixo de 80. Palavra com nota abaixo de 70 estava certa em só 14% dos casos (com 90 ou mais, em 95%). A nota não mostra o que o Tesseract leu errado com certeza (riscos do scanner) nem o que ele pulou (sombra forte)
 - [x] Ruído fora da camada de texto: sai só a palavra sem nenhuma letra ou dígito (e sem §, &, %, $, @ ou #) com nota abaixo de 50 ("|", ":", "==", "«"). Nas medições, umas 80 de 19 mil palavras, quase todas lixo. Palavra com letra ou dígito nunca sai: o CPF chegou a vir partido em duas palavras certas com nota 0
+- [x] Desempenho, medido no desktop com 10 fotos de documento de 12 MP e um PDF escaneado (14 páginas, 13 lidas):
+  - o JPEG da página sai enquanto o worker lê, e a foto original sai da memória antes da leitura; o motor liga junto com a primeira foto. Com dois workers, a página seguinte já fica pronta enquanto a anterior é lida. Total: no Chromium, de 16,5 s para 7,4 s (34 páginas: de 46 s para 19 s); no WebKit, com um worker, de 23,5 s para 21,1 s. O texto reconhecido não mudou
+  - no WebKit, a memória do worker do Tesseract cresce uns 4 MB a cada página e só volta quando ele é encerrado (40 páginas: +130 MB). Ele é trocado a cada 10 leituras (`RECYCLE_AFTER`), e a memória fica no nível das primeiras páginas; custa uns 0,3 s a cada 10 páginas
+  - ao ligar a opção, o modelo já começa a carregar (`preloadOcr`), sem ligar o worker: numa rede de 10 Mbit/s, a primeira leitura começa em 4,2 s em vez de 6,8 s
+  - andamento com o tempo que falta, pela média das páginas já lidas ("falta mais ou menos 1 minuto"), também na busca de dados
+  - ficaram de fora, medidos: `tessedit_do_invert: '0'` (1% a 3% mais rápido, mas perde texto branco em fundo escuro: um cabeçalho azul caiu de 92% para 81%), resolução menor e ler a próxima página antes de a atual acabar com um worker só (33% mais rápido no WebKit, mas uns 56 MB a mais: fica fora no caminho do iPhone)
 - [x] Busca de dados com o CPF que o OCR partiu na pontuação ("123.456" e ".789-09"): número e pontuação a menos de uma linha e meia continuam juntos
 - [x] Página torta (foto sem fundo para recortar, folha que entrou torta no scanner, PDF escaneado torto): medido com o Tesseract do app num documento nítido, girado 3° saíam de 42% a 64% do texto, e de 5° a 12°, de 0 a 52%, quase sempre com nota alta (o aviso de confiança baixa não pegava). Agora:
-  - o Tesseract mede a inclinação das linhas e endireita a imagem antes de ler (`rotateAuto`, que já vem no worker do Tesseract.js): de 1° a 6° sai tudo, e a página reta não gasta nada a mais
-  - com 7° ou mais, às vezes ele não acha linha nenhuma: quando a leitura vem fraca e sem giro, o app mede a inclinação pela projeção dos pixels escuros (`textSkew`, em `geometry.js`) e lê de novo com o giro fixo. Fica a leitura com mais texto bom. Resultado: 96% a 97% das palavras certas de -15° a 15°, no Chromium e no WebKit, de 1,6 a 2,4 s por página. Acima de 15°, nada muda
+  - antes de ler, o app mede a inclinação pela projeção das bordas de cima e de baixo do que é escuro (`textSkew`, em `geometry.js`, uns 20 ms). Nas 56 imagens de teste e em 10 fotos de documento, nenhuma página reta mediu 2° ou mais (a mais torta, 1,8°), e as tortas, de 2,5° a 15°, saíram com o ângulo certo
+  - abaixo de 2°, a página é lida como está, como antes. Endireitar toda página (`rotateAuto` em todas) deixava a leitura uns 10% mais lenta e às vezes pior: uma foto difícil, com cabeçalho branco em fundo azul, carimbo e assinatura, caía de 92% para 63% das palavras certas
+  - de 2° a 3°, lida dos dois jeitos, e fica a leitura com mais texto bom: lendo como está, o Tesseract já perde linhas inteiras (PDF escaneado a 2,5°: as linhas do CPF e do CEP sumiram); endireitando, às vezes piora
+  - de 3° em diante, o Tesseract mede o ângulo dele e endireita a imagem antes de ler (`rotateAuto`, que já vem no worker do Tesseract.js); com 7° ou mais, às vezes ele não acha linha nenhuma, e aí lê de novo com o ângulo do app. Sem linhas para medir (ruído forte, sombra, figura grande), vai o `rotateAuto`, como reserva
+  - resultado: de 97% a 99,9% das palavras certas de 3° a 8° (antes, de 2% a 95%), e uns 97% a 12°, no Chromium e no WebKit; a página torta leva de 1,2 a 1,8 s, contra 1,0 a 1,25 s da reta. Acima de 15°, nada muda
   - a imagem do PDF continua como estava (torta): as palavras voltam para a imagem original, e a camada de texto vai inclinada (`Tm` girada, combinada com o `/Rotate`), com a seleção em cima da palavra. Na página reta, o PDF sai idêntico byte a byte
-  - para as tarjas, a palavra torta vale pela caixa reta que a envolve (`filterWords` tira toda palavra que encosta na tarja), e a conferência do PDF montado mede o texto inclinado pelos quatro cantos, com a mesma regra dos 30% da altura. A busca de dados acha CPF, CNPJ e CEP na página torta; a tarja sugerida é um retângulo reto, maior que o dado
+  - para as tarjas, a palavra torta vale pela caixa reta que a envolve (`filterWords` tira toda palavra que encosta na tarja), e a conferência do PDF montado mede o texto inclinado pelos quatro cantos, com a mesma regra dos 30% da altura. A busca de dados acha CPF, CNPJ e CEP na página torta, agrupando as palavras pela linha que o OCR leu (pela altura, as palavras de uma linha torta 2° já não se encontravam); a tarja sugerida é um retângulo reto, maior que o dado
 - [ ] Inglês como segundo idioma, se houver pedido (mais um modelo para baixar)
 
 ### Segurança e privacidade
@@ -297,7 +306,7 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 - **Nada guardado:** sem IndexedDB (`cacheMethod: 'none'`). O texto reconhecido só existe na memória e some ao limpar a lista ou fechar a aba. Nada vai para o console.
 - **Texto escondido continua sendo texto.** O PDF com OCR leva, invisível, tudo o que estava escrito (CPF, endereço, valores), e o app avisa isso na própria opção. Também avisa sobre tarjas: uma tarja desenhada depois por cima da imagem, em outro programa, não apaga o texto invisível que está embaixo. Quem precisa tarjar deve fazer isso antes do OCR, ou não usar o OCR nesse documento.
 - **O texto reconhecido é dado, nunca código:** no PDF ele entra como string hexadecimal, e na tela só por `textContent`.
-- **Limites:** número de páginas por vez, tamanho da imagem e tempo por página. Acima disso, o app avisa.
+- **Limites:** o tamanho da imagem fica entre 2000 e 3500 px. O número de páginas não é limitado (decidido em 2026-10-17, com as medidas da fase 3): a memória que crescia a cada página no WebKit fica contida pela troca do worker, e o tempo é avisado (o que falta, a partir da segunda página, e, com 20 páginas ou mais, que pode levar alguns minutos).
 - **PDF assinado:** acrescentar texto altera a página, e a assinatura deixa de valer. O aviso que já aparece ao abrir cobre esse caso.
 
 ### Testes
@@ -309,12 +318,14 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 - [x] No navegador (Chromium e WebKit, Tesseract de verdade), num PDF escaneado de teste: a página com texto é pulada, as escaneadas ganham o texto certo e na posição certa (conferido com o PyMuPDF), inclusive a girada pelo `/Rotate`, a gravada deitada e endireitada no app e a tarjada
 - [x] No navegador: nenhuma requisição na aba Rede e nada no IndexedDB durante o OCR (Playwright, no Chromium e no WebKit, com e sem o service worker)
 - [x] Teste real no iPhone, no site publicado: validado pelo dono no iPhone 16e, no site publicado, na v3.5.0 (2026-10-16)
-- [x] Montagem do texto copiado (palavras do OCR, trechos do PDF e do Word, com tarja) e notas de qualidade (`test/page-text.test.js`, `test/ocr.test.js`)
+- [x] Montagem do texto copiado (palavras do OCR, trechos do PDF e do Word, com tarja), notas de qualidade, número de workers e tempo que falta (`test/page-text.test.js`, `test/ocr.test.js`, `test/ocr-plan.test.js`)
+- [x] No navegador (Chromium e WebKit): gerar com OCR, cancelar no meio e com o motor ainda ligando, gerar de novo, busca de dados e "Copiar texto": nenhum worker do Tesseract fica vivo no fim
 - [x] No navegador (Chromium e WebKit): "Copiar texto" em foto, PDF escaneado (inclusive com `/Rotate`), PDF com texto e Word; cancelar no meio, área de transferência recusada e foto em branco; aviso de confiança baixa no fim da geração, que some depois de endireitar a página; nenhuma requisição e nada guardado
-- [x] Página torta: volta das coordenadas (com as do worker de verdade), camada inclinada, página com `/Rotate 90`, PDF/A no veraPDF e conferência das tarjas pelos quatro cantos (`test/geometry.test.js`, `test/ocr.test.js`, `test/redact.test.js`). No navegador (Chromium e WebKit): foto torta 8° e PDF escaneado a 8° e -5°, com 97% do texto extraído pelo PDF.js, as caixas do texto em cima das palavras tortas, e as 12 tarjas sugeridas pela busca conferidas sem sobrar dado no texto
+- [x] Página torta: volta das coordenadas (com as do worker de verdade), camada inclinada, página com `/Rotate 90`, PDF/A no veraPDF e conferência das tarjas pelos quatro cantos (`test/geometry.test.js`, `test/ocr.test.js`, `test/redact.test.js`). No navegador (Chromium e WebKit): foto torta 8° e PDF escaneado a 8° e -5°, com 97% do texto extraído pelo PDF.js, as caixas do texto em cima das palavras tortas, e as 12 tarjas sugeridas pela busca conferidas sem sobrar dado no texto. A busca de dados acha CPF, CNPJ, CEP e telefone na foto e no PDF escaneado de -2,5° a 8° (só falha quando o OCR lê o número errado)
 - [ ] "Copiar texto" no iPhone 16e, no site publicado (o `ClipboardItem` com promessa depois de vários segundos de OCR)
 - [ ] Página torta no Acrobat e no leitor do Chrome (o PDF.js do Firefox e o `pdftotext` quebram mais as linhas do texto inclinado ao copiar, como nos PDFs do próprio Tesseract; cada palavra sai certa)
 - [ ] Limite da confiança baixa com fotos reais de câmera no iPhone (as 56 imagens da calibragem são sintéticas)
+- [ ] Tempo por página e pico de memória no iPhone 16e com 10 e 30 páginas
 - [ ] Seleção do texto no Acrobat
 
 ### Decisões
@@ -322,13 +333,13 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 - **Dependência nova:** o Tesseract.js é a quarta biblioteca em `web/vendor/`. Pela regra 4 do CONTRIBUTING, isso precisa de conversa antes; este plano é essa conversa, e o pedido veio do dono do projeto.
 - **Desligado por padrão:** pesa ~5,5 MB e leva alguns segundos por página no celular.
 - **Modelo `best_int`:** é o que o Tesseract.js usa com o motor LSTM e o menor (~1,4 MB). O modelo maior (~6,8 MB) só acrescenta o motor antigo, que não será usado.
-- **Versão:** sai na v3.0.0, junto com a assinatura digital. A fase 2 (PDFs escaneados) sai na próxima versão.
+- **Versão:** sai na v3.0.0, junto com a assinatura digital. A fase 2 (PDFs escaneados) sai na próxima versão. A fase 3 (copiar texto e aviso de confiança baixa), a página torta e o desempenho saem na v3.6.0 (2026-10-17).
 - **O OCR lê a página como ela aparece no app** (decidido em 2026-10-16), com o `/Rotate` do PDF e o giro escolhido, como nas fotos: é assim que a pessoa deixa de pé uma página que o scanner gravou deitada. O texto vai para o PDF com o giro total. Girar a página depois faz o OCR ler de novo.
 - **Assinar sem reescrever não combina com o OCR:** com o OCR ligado, as páginas mudam, e o app monta um PDF novo para assinar.
 
 ### Perguntas em aberto
 
-- Quanto tempo e memória o iPhone 16e gasta com 10 páginas ou mais? Vale limitar as páginas por vez?
+- Quanto tempo e memória o iPhone 16e gasta com 10 e 30 páginas? No desktop, de 1 a 1,5 s por página. Limitar as páginas por vez não foi preciso (ver Limites); falta a medida no aparelho.
 
 ## Assinatura com certificado digital (ICP-Brasil)
 
