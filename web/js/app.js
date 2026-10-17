@@ -1099,9 +1099,19 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     const readKind = scanned.every(isPhoto) ? 'fotos' : 'páginas';
     const blank = useOcr ? scanned.filter((page) => !page.ocr?.words.length).length : 0;
     const withText = useOcr ? list.filter((page) => page.kind === 'pdf' && page.ocr?.hasText).length : 0;
+    // Confiança baixa (ocr.js): o Tesseract deu nota baixa a boa parte do texto da página. Numeradas como na lista.
+    // O módulo do OCR já está carregado (foi ele que leu as palavras); se falhar, a mensagem só sai sem o aviso.
+    const { lowConfidence } = useOcr && scanned.some((page) => page.ocr?.words.length) ? await loadOcr().catch(() => ({})) : {};
+    const doubtful = !lowConfidence ? [] : list
+      .map((page, i) => (scanned.includes(page) && page.ocr?.words.length && lowConfidence(page.ocr.words) ? i + 1 : 0))
+      .filter(Boolean);
+    const where = doubtful.length === 1 ? `Na página ${doubtful[0]}` : `Nas páginas ${doubtful.slice(0, -1).join(', ')} e ${doubtful.at(-1)}`;
+    const cause = doubtful.every((n) => isPhoto(list[n - 1])) ? 'foto tremida, escura, deitada ou com letra pequena' : 'imagem borrada, apagada, deitada ou com letra pequena';
+    const unsure = !doubtful.length ? '' : ` ${where}, parte do texto pode ter saído errada (${cause}): confira antes de confiar na busca.`;
     const read = (!useOcr || !scanned.length ? '' : blank === 0
       ? ` O texto ${readKind === 'fotos' ? 'das fotos' : 'das páginas escaneadas'} foi reconhecido: dá para buscar e copiar no PDF.`
       : ` Não achei texto impresso em ${blank === 1 ? `uma das ${readKind}` : `${blank} das ${readKind}`}.`)
+      + unsure
       + (!withText ? '' : withText === 1 ? ' Uma página de PDF já tinha texto e ficou como estava.' : ` ${withText} páginas de PDF já tinham texto e ficaram como estavam.`);
     const locked = !password ? '' : files.length === 1
       ? ' Ele só abre com a senha que você escolheu.'

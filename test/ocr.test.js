@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { layoutPage } from '../web/js/pdf.js';
 import { textWidth } from '../web/js/fonts.js';
-import { readWords } from '../web/js/ocr.js';
+import { readWords, ocrQuality, lowConfidence } from '../web/js/ocr.js';
 import { openPdf, copyPages } from '../web/js/pdf-reader.js';
 import { buildPdf } from './helpers/qpdf.js';
 import { makeRawPdf, textPageObjects } from './helpers/pdf.js';
@@ -141,6 +141,67 @@ test('readWords: palavras do Tesseract em medidas relativas à imagem, com a lin
   // Sem linha de base: a parte de baixo da palavra menos os descendentes.
   assert.ok(Math.abs(words[2].baseline - (255 - 10) / 2000) < 1e-9);
   assert.deepEqual(readWords(null, 10, 10), []);
+});
+
+test('readWords: ruído de borda e sombra (só sinais, nota baixa) sai; palavra com letra ou dígito fica, mesmo com nota 0', () => {
+  const box = (x0) => ({ x0, y0: 210, x1: x0 + 40, y1: 255 });
+  const line = (words, y0 = 200) => ({ bbox: { x0: 0, y0, x1: 1000, y1: y0 + 60 }, rowAttributes: { row_height: 50 }, words });
+  const words = (list) => list.map(([text, confidence], i) => ({ text, confidence, bbox: box(i * 50) }));
+  const blocks = [{
+    paragraphs: [{
+      lines: [
+        // Dados que a busca (Ctrl+F) e a busca de CPF e CNPJ precisam, com as notas baixas que o Tesseract deu a
+        // palavras certas nas medições (o CPF partido em dois, com nota 0, no documento nítido com o filtro Documento).
+        line(words([['CPF', 12], ['123.456', 0], ['.789-09,', 0], ['R$', 0], ['1.500,00', 3], ['nº', 5], ['12.345.678/0001-95', 8]])),
+        // Sinais que valem como palavra ficam com qualquer nota; travessão com nota boa também.
+        line(words([['§', 20], ['1º', 40], ['Silva', 90], ['&', 30], ['Filhos', 90], ['10', 90], ['%', 10], ['—', 92], ['fim', 90]])),
+        // Lixo de borda, risco e sombra: sai. A última palavra da linha passa a ser "texto".
+        line(words([['|', 40], ['texto', 95], ['==', 9], [':', 0], ['«', 42], ['....', 30]])),
+        // Linha só de lixo: some inteira.
+        line(words([['|||', 12], ['—', 0], ['~', 33]])),
+        // Sinal com nota boa fica (o filtro é só para o que o Tesseract mesmo duvida).
+        line(words([['—', 50], ['|', 81]])),
+      ],
+    }],
+  }];
+  const out = readWords(blocks, 1000, 2000);
+  assert.deepEqual(out.map((w) => w.text), [
+    'CPF', '123.456', '.789-09,', 'R$', '1.500,00', 'nº', '12.345.678/0001-95',
+    '§', '1º', 'Silva', '&', 'Filhos', '10', '%', '—', 'fim',
+    'texto',
+    '—', '|',
+  ]);
+  assert.deepEqual(out.filter((w) => w.last).map((w) => w.text), ['12.345.678/0001-95', 'fim', 'texto', '|']);
+});
+
+// Página simulada no formato do readWords: [texto, nota] de cada palavra.
+const scored = (list) => list.map(([text, confidence]) => ({ ...WORDS[0], text, confidence }));
+
+test('ocrQuality: média das notas ponderada pelos caracteres e fração do texto em palavras fracas (nota < 70)', () => {
+  // "Contrato" (8 caracteres) com 90 e "nº" (2) com 40: (8 × 90 + 2 × 40) / 10 = 80; 2 de 10 caracteres fracos.
+  assert.deepEqual(ocrQuality(scored([['Contrato', 90], ['nº', 40]])), { mean: 80, weak: 0.2 });
+  // Letra acentuada conta como um caractere; nota 70 já não é fraca.
+  assert.deepEqual(ocrQuality(scored([['Ação', 70], ['é', 0]])), { mean: 56, weak: 0.2 });
+  assert.deepEqual(ocrQuality([]), { mean: 100, weak: 0 });
+});
+
+test('lowConfidence: documento nítido e foto mediana não avisam; desfocado, tudo duvidoso ou um trecho ruim avisam', () => {
+  const same = (count, confidence) => Array.from({ length: count }, () => ['palavra', confidence]);
+  // Documento nítido como o medido: quase tudo com 96, ordinais e travessões um pouco abaixo, o "@" lido como "Q"
+  // e a assinatura lida como lixo com nota baixa.
+  assert.equal(lowConfidence(scored([...same(40, 96), ['1º', 93], ['—', 92], ['contatoQexemplo.com.br', 84], ['NNVVVVVUVVV', 27]])), false);
+  // Foto mediana (desfoque leve, JPEG ruim): média 85,2 e 10% do texto fraco.
+  assert.equal(lowConfidence(scored([...same(36, 88), ...same(4, 60)])), false);
+  // Tudo meio duvidoso (das palavras com nota de 70 a 79, só metade estava certa): média 75, abaixo de 82.
+  assert.deepEqual(ocrQuality(scored(same(40, 75))), { mean: 75, weak: 0 });
+  assert.equal(lowConfidence(scored(same(40, 75))), true);
+  // Um quarto do texto fraco numa página boa: a média fica em 88,25, mas a fração fraca (25%) passa de 20%.
+  assert.deepEqual(ocrQuality(scored([...same(30, 96), ...same(10, 65)])), { mean: 88.25, weak: 0.25 });
+  assert.equal(lowConfidence(scored([...same(30, 96), ...same(10, 65)])), true);
+  // Desfocado de 4 px (palavras e notas da medição): quase tudo com nota baixa.
+  assert.equal(lowConfidence(scored([['CONTRATO', 95], ['Cornvduate', 14], ['Mara', 75], ['Agarecita', 0], ['Concesção', 5]])), true);
+  // Sem palavras: nada para avisar (a mensagem já diz que não achou texto).
+  assert.equal(lowConfidence([]), false);
 });
 
 // ---------- PDF escaneado ----------

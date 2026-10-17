@@ -151,7 +151,7 @@ export function readWords(blocks, width, height) {
   for (const block of blocks ?? []) {
     for (const paragraph of block.paragraphs ?? []) {
       for (const line of paragraph.lines ?? []) {
-        const list = (line.words ?? []).filter((word) => word.text?.trim() && validBox(word.bbox));
+        const list = (line.words ?? []).filter((word) => word.text?.trim() && validBox(word.bbox) && !isNoise(word));
         if (!list.length || !validBox(line.bbox)) continue;
         const row = line.rowAttributes?.row_height;
         const size = row > 0 ? row : line.bbox.y1 - line.bbox.y0;
@@ -179,3 +179,51 @@ export function readWords(blocks, width, height) {
 }
 
 const validBox = (box) => box && [box.x0, box.y0, box.x1, box.y1].every(Number.isFinite) && box.x1 > box.x0 && box.y1 > box.y0;
+
+// Notas medidas com o próprio app (Tesseract de verdade, Chromium e WebKit) em 56 imagens de teste: documento nítido,
+// desfocado, tremido, com pouca resolução, ruído, sombra, girado, foto de tela, JPEG ruim, letra de mão, só figura,
+// bordas escuras, furos, espiral, carimbo e assinaturas, com e sem o filtro Documento.
+
+// Ruído: palavra só de sinais (sem letra, dígito nem §, &, %, $, @ ou #) com nota baixa, que o Tesseract lê em borda,
+// risco, sombra e foto ruim ("|", ":", "==", "«", "...."). Nas medições saíram umas 80 de 19 mil palavras, quase todas
+// lixo; o resto, travessões de fotos ruins. Palavra com letra ou dígito nunca sai, nem com nota 0: no documento
+// nítido com o filtro Documento, o CPF veio partido em duas palavras certas com nota 0, e nas fotos desfocadas
+// vieram certos com nota 0 "R$", "500,00" e o número do protocolo.
+const NOISE_CONFIDENCE = 50;
+const isNoise = (word) => !/[\p{L}\p{N}§&%$@#]/u.test(word.text) && (word.confidence ?? 0) < NOISE_CONFIDENCE;
+
+// Confiança baixa. Documento nítido (também com letra de 8 pt, pouca luz, bordas, furos, carimbo e assinaturas) tem
+// média de 90 a 95; foto mediana (desfoque leve, JPEG ruim, verso aparecendo), de 83 a 90; desfocado, tremido, com
+// pouca resolução, foto de tela e letra de mão ficam abaixo de 80, com 14% a 98% das palavras erradas. O limite
+// fica no vão. A nota não mostra o que o Tesseract leu errado com certeza (riscos do scanner) nem o que ele pulou
+// (sombra forte, página torta): aí a página passa sem aviso.
+const LOW_MEAN = 82;
+// Palavra com nota abaixo de 70: só 14% delas estavam certas (com 90 ou mais, 95%). Com mais de 20% do texto nelas,
+// a página tem confiança baixa mesmo que a média não caia tanto (um trecho ruim numa página boa).
+const WEAK_WORD = 70;
+const WEAK_SHARE = 0.2;
+
+/**
+ * Qualidade do texto reconhecido numa página, pelas notas que o Tesseract dá a cada palavra (0 a 100).
+ * @param {OcrWord[]} words
+ * @returns {{mean: number, weak: number}} mean: média das notas, ponderada pelo número de caracteres de cada
+ *   palavra; weak: fração dos caracteres em palavras com nota abaixo de 70. Sem palavras: 100 e 0.
+ */
+export function ocrQuality(words) {
+  let total = 0;
+  let sum = 0;
+  let weak = 0;
+  for (const { text, confidence } of words) {
+    const size = [...text].length;
+    total += size;
+    sum += size * confidence;
+    if (confidence < WEAK_WORD) weak += size;
+  }
+  return total ? { mean: sum / total, weak: weak / total } : { mean: 100, weak: 0 };
+}
+
+/** Página de confiança baixa: parte do texto pode ter saído errada (foto tremida, escura, deitada ou letra pequena). */
+export function lowConfidence(words) {
+  const { mean, weak } = ocrQuality(words);
+  return mean < LOW_MEAN || weak > WEAK_SHARE;
+}
