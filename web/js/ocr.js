@@ -11,6 +11,7 @@
 //
 // O app conversa direto com o worker do Tesseract.js, sem a biblioteca da página (tesseract.esm.min.js): na
 // versão 7.0.0 ela manda os bytes do modelo no lugar do nome do idioma ao inicializar, e o Tesseract não inicia.
+import { textSkew, unskew, unskewRect } from './geometry.js';
 
 const VENDOR = new URL('../vendor/tesseract/', import.meta.url).href;
 const OEM_LSTM_ONLY = 1;
@@ -111,16 +112,43 @@ export async function startOcr() {
   return {
     // dpi: resolução da imagem na página do PDF. Sem ela, o Tesseract estima pela altura das letras.
     async recognize(canvas, { dpi } = {}) {
-      const { width, height } = canvas;
-      const image = toPgm(canvas);
       const options = dpi ? { user_defined_dpi: String(Math.round(Math.min(2400, Math.max(70, dpi)))) } : {};
-      const result = await engine.call('recognize', { image, options, output: { text: false, blocks: true } }, [image.buffer]);
-      return readWords(result?.blocks, width, height);
+      return readLevel(canvas, (image, turn) => engine.call('recognize', {
+        image, options: { ...options, ...turn }, output: { text: false, blocks: true },
+      }, [image.buffer]));
     },
     cancel: () => engine.stop(new OcrCancelled()),
     terminate: () => engine.stop(new OcrCancelled()),
   };
 }
+
+// Página torta. Medido com o Tesseract do app (Chromium e WebKit), num documento nítido: girado 3°, sai de 42% a
+// 64% do texto; de 5° a 12°, de 0 a 52% (com 5°, menos de 25%), quase sempre com nota alta, e o aviso de confiança
+// baixa não pega. Com rotateAuto, o Tesseract mede a inclinação das linhas e endireita a imagem antes de ler: de 1°
+// a 6° sai tudo, como na página reta, e na página reta não gasta nada a mais (ele só gira a partir de 0,3°). Com 7°
+// ou mais, às vezes ele não acha linha nenhuma e não endireita; aí o app mede a inclinação (textSkew) e pede de novo
+// com o giro fixo, que leu tudo até 15°. Fica a leitura com mais texto bom. As palavras voltam medidas na imagem
+// original (readWords).
+const FEW_WORDS = 50; // página com menos palavras que isso (ou com confiança baixa) e sem giro: confere a inclinação
+
+async function readLevel(canvas, recognize) {
+  const { width, height } = canvas;
+  const read = async (image, turn) => {
+    const result = await recognize(image, turn);
+    return readWords(result?.blocks, width, height, result?.rotateRadians);
+  };
+  // Vai uma cópia da imagem: se precisar da segunda leitura, ela ainda está aqui (sem ler o canvas de novo).
+  const image = toPgm(canvas);
+  const words = await read(image.slice(), { rotateAuto: true });
+  if (words.some((word) => word.angle) || (words.length >= FEW_WORDS && !lowConfidence(words))) return words;
+  const angle = textSkew(image.subarray(image.length - width * height), width, height);
+  if (!angle) return words;
+  const again = await read(image, { rotateRadians: angle });
+  return goodText(again) > goodText(words) ? again : words;
+}
+
+// Caracteres em palavras com nota boa: para escolher entre duas leituras da mesma página.
+const goodText = (words) => words.reduce((sum, word) => sum + (word.confidence >= WEAK_WORD ? [...word.text].length : 0), 0);
 
 // Imagem em tons de cinza no formato PGM (P5): rápido de montar e sem perda, e o Tesseract trabalha em cinza.
 // O cabeçalho tem um comentário que o leva a 512 bytes: o worker procura a orientação EXIF nos primeiros 500
@@ -140,13 +168,17 @@ function toPgm(canvas) {
 
 /**
  * @typedef {{text: string, x0: number, y0: number, x1: number, y1: number, baseline: number, size: number,
- *   last: boolean, confidence: number}} OcrWord
+ *   last: boolean, confidence: number, angle: number,
+ *   straight?: {x0: number, y0: number, x1: number, y1: number, baseline: number}}} OcrWord
  * Medidas de 0 a 1, relativas à imagem (origem no canto superior esquerdo). baseline: altura da linha de base no
- * meio da palavra; size: altura da linha (tamanho da letra); last: última palavra da linha.
+ * meio da palavra; size: altura da linha (tamanho da letra); last: última palavra da linha. angle: inclinação do
+ * texto em radianos, no sentido anti-horário, 0 na página reta (geometry.js, unskew). Na página torta, x0 a y1 são
+ * a caixa reta que envolve a palavra girada, e straight tem as medidas na imagem endireitada, ao longo da linha.
  */
 
 // Palavras do resultado do Tesseract (blocos → parágrafos → linhas → palavras), em medidas relativas à imagem.
-export function readWords(blocks, width, height) {
+// angle: o giro que o Tesseract fez para endireitar a imagem antes de ler (as caixas vêm na imagem endireitada).
+export function readWords(blocks, width, height, angle = 0) {
   const words = [];
   for (const block of blocks ?? []) {
     for (const paragraph of block.paragraphs ?? []) {
@@ -163,14 +195,16 @@ export function readWords(blocks, width, height) {
           const baseline = hasBaseline && base.x1 !== base.x0
             ? base.y0 + ((base.y1 - base.y0) * (middle - base.x0)) / (base.x1 - base.x0)
             : hasBaseline ? base.y0 : y1 - (line.rowAttributes?.descenders ?? 0);
-          words.push({
+          const item = {
             text: word.text.trim(),
             x0: x0 / width, y0: y0 / height, x1: x1 / width, y1: y1 / height,
             baseline: Math.min(1, Math.max(0, baseline / height)),
             size: size / height,
             last: i === list.length - 1,
             confidence: word.confidence ?? 0,
-          });
+            angle: 0,
+          };
+          words.push(angle ? tilted(item, angle, width, height) : item);
         });
       }
     }
@@ -179,6 +213,20 @@ export function readWords(blocks, width, height) {
 }
 
 const validBox = (box) => box && [box.x0, box.y0, box.x1, box.y1].every(Number.isFinite) && box.x1 > box.x0 && box.y1 > box.y0;
+
+// Palavra medida na imagem endireitada → na imagem original (a que vai para o PDF, ainda torta). A caixa vira a
+// caixa reta que envolve a palavra girada: as tarjas tiram toda palavra que encosta nelas (filterWords), e com a
+// caixa maior continua seguro. As medidas ao longo da linha ficam em straight, para a camada de texto e a busca.
+function tilted(word, angle, width, height) {
+  const [, baseline] = unskew(((word.x0 + word.x1) / 2) * width, word.baseline * height, angle, width, height);
+  return {
+    ...word,
+    ...unskewRect(word, angle, { width, height }),
+    baseline: Math.min(1, Math.max(0, baseline / height)),
+    angle,
+    straight: { x0: word.x0, y0: word.y0, x1: word.x1, y1: word.y1, baseline: word.baseline },
+  };
+}
 
 // Notas medidas com o próprio app (Tesseract de verdade, Chromium e WebKit) em 56 imagens de teste: documento nítido,
 // desfocado, tremido, com pouca resolução, ruído, sombra, girado, foto de tela, JPEG ruim, letra de mão, só figura,

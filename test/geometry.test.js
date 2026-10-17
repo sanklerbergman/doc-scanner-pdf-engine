@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectDocument, warpPixels, quadSize, quadAspect, toRotated, fromRotated, isFullFrame, FULL_QUAD } from '../web/js/geometry.js';
+import { detectDocument, warpPixels, quadSize, quadAspect, toRotated, fromRotated, isFullFrame, FULL_QUAD, unskew, textSkew } from '../web/js/geometry.js';
 
 // Papel claro (quadrilátero) sobre fundo escuro com textura.
 function scene(width, height, quad, { paper = 215, background = 70 } = {}) {
@@ -131,4 +131,60 @@ test('quadAspect com inclinação num sentido só usa uma distância focal típi
 test('quadAspect sem perspectiva devolve a proporção vista na foto', () => {
   const aspect = quadAspect([[500, 500], [2500, 500], [2500, 3500], [500, 3500]], 3000, 4000); // foto de cima
   assert.ok(Math.abs(aspect - 2000 / 3000) < 1e-6);
+});
+
+// ---------- Página torta (OCR) ----------
+
+test('unskew: ponto da imagem endireitada pelo Tesseract volta para a imagem torta', () => {
+  // Medido no Tesseract do app: numa imagem de 1200 × 1600 girada 0,1 rad, "ALFA" (100 a 247 × 157 a 200 na
+  // original) voltou em 163 a 308 × 112 a 168. O centro volta para o lugar, com a folga da caixa do OCR.
+  const [x, y] = unskew((163 + 308) / 2, (112 + 168) / 2, 0.1, 1200, 1600);
+  assert.ok(Math.abs(x - (100 + 247) / 2) < 3 && Math.abs(y - (157 + 200) / 2) < 3, `${x} ${y}`);
+  assert.deepEqual(unskew(10, 20, 0, 1200, 1600), [10, 20]);
+  // Ida (o giro do Tesseract é o ângulo ao contrário) e volta.
+  const [u, v] = unskew(...unskew(300, 900, -0.2, 1200, 1600), 0.2, 1200, 1600);
+  assert.ok(Math.abs(u - 300) < 1e-9 && Math.abs(v - 900) < 1e-9);
+});
+
+// Página de texto (linhas de "palavras" escuras) girada `degrees` graus no sentido horário, como na foto torta.
+function tiltedPage(degrees, { width = 800, height = 1100, noise = 0 } = {}) {
+  const a = (degrees * Math.PI) / 180;
+  const gray = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // Ponto na página antes de girar.
+      const dx = x - width / 2;
+      const dy = y - height / 2;
+      const px = width / 2 + dx * Math.cos(a) + dy * Math.sin(a);
+      const py = height / 2 - dx * Math.sin(a) + dy * Math.cos(a);
+      const line = Math.floor((py - 100) / 30);
+      const ink = line >= 0 && line < 30 && (py - 100) % 30 < 8 && px > 80 && px < width - 80 && (px - 80) % 50 < 38;
+      const n = noise ? (((x * 7919 + y * 104729) % 97) / 97 - 0.5) * noise : 0;
+      gray[y * width + x] = Math.max(0, Math.min(255, (ink ? 30 : 240) + n));
+    }
+  }
+  return gray;
+}
+
+const degrees = (radians) => (radians * 180) / Math.PI;
+
+test('textSkew: mede a inclinação das linhas de texto, no sentido do giro que endireita', () => {
+  // Horário na imagem é negativo no sentido anti-horário (o do Tesseract e do PDF).
+  for (const tilt of [-12, -5, 3, 8, 15]) {
+    const angle = degrees(textSkew(tiltedPage(tilt), 800, 1100));
+    assert.ok(Math.abs(angle + tilt) < 0.15, `${tilt}°: ${angle}°`);
+  }
+  // Com o ruído de uma foto, também.
+  assert.ok(Math.abs(degrees(textSkew(tiltedPage(7, { noise: 120 }), 800, 1100)) + 7) < 0.15);
+});
+
+test('textSkew: página reta (menos de 1°), em branco ou sem linhas de texto dá 0', () => {
+  assert.equal(textSkew(tiltedPage(0), 800, 1100), 0);
+  assert.equal(textSkew(tiltedPage(0.5), 800, 1100), 0);
+  assert.equal(textSkew(new Uint8Array(800 * 1100).fill(250), 800, 1100), 0);
+  // Ruído sem linhas (textura, foto ruim): nenhum ângulo se destaca.
+  const noise = new Uint8Array(800 * 1100);
+  for (let i = 0; i < noise.length; i++) noise[i] = (i * 2654435761) % 251;
+  assert.equal(textSkew(noise, 800, 1100), 0);
+  assert.equal(textSkew(new Uint8Array(100), 10, 10), 0);
 });

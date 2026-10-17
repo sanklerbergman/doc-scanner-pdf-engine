@@ -182,6 +182,8 @@ test('veraPDF (perfil PDF/A-2B): fotos, OCR, Word com as fontes embutidas e PDF 
   const files = {
     'fotos.pdf': buildPdf(PAGES.map(({ ocr, ...page }) => page), { pdfa: true }),
     'ocr.pdf': buildPdf(PAGES, { pdfa: true }),
+    // A camada do OCR numa página torta: o texto vai inclinado (ocr-layer.js).
+    'ocr-torto.pdf': buildPdf([{ ...PAGES[0], ocr: WORDS.map((word) => ({ ...word, angle: 0.1, straight: word })) }], { pdfa: true }),
     'assinado.pdf': await signer.sign(PAGES, new Date(), { pdfa: true }),
     'word.pdf': buildPdf([WORD], { pdfa: true, fonts: await embedFonts([WORD]) }),
     'word-fotos-ocr.pdf': buildPdf(mixed, { pdfa: true, fonts }),

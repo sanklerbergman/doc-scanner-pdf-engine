@@ -111,6 +111,16 @@ test('OCR: palavras sob a tarja saem, e a palavra antes delas passa a fechar a l
   assert.equal(filterWords(words, []), words);
 });
 
+test('OCR na foto já tarjada: a caixa preta não vira palavra, e a palavra antes dela fecha a linha mesmo assim', () => {
+  const word = (text, x0, x1, last = false) => ({ text, x0, x1, y0: 0.1, y1: 0.12, baseline: 0.118, size: 0.02, last, confidence: 90 });
+  // "CPF [tarja] residente na": o OCR leu as palavras dos dois lados, e nada em cima da tarja.
+  const words = [word('CPF', 0.1, 0.15), word('residente', 0.4, 0.55), word('na', 0.57, 0.6, true)];
+  const kept = filterWords(words, [{ x0: 0.17, y0: 0.095, x1: 0.38, y1: 0.125 }]);
+  assert.deepEqual(kept.map((w) => [w.text, w.last]), [['CPF', true], ['residente', false], ['na', true]]);
+  // Tarja em outra linha: nada muda.
+  assert.deepEqual(filterWords(words, [{ x0: 0.17, y0: 0.2, x1: 0.38, y1: 0.25 }]).map((w) => w.last), [false, false, true]);
+});
+
 test('conferência: texto sob a tarja é achado; encostar na borda não conta', () => {
   const rect = { x0: 0.2, y0: 0.2, x1: 0.6, y1: 0.3 };
   const under = { str: 'Fulano', x0: 0.25, y0: 0.22, x1: 0.4, y1: 0.24 };
@@ -119,4 +129,21 @@ test('conferência: texto sob a tarja é achado; encostar na borda não conta', 
   const partly = { str: 'Fulano de Tal', x0: 0.5, y0: 0.22, x1: 0.8, y1: 0.24 };
   assert.deepEqual(textUnderRedactions([under, beside, lineBelow, partly], [rect]).map((box) => box.str), ['Fulano', 'Fulano de Tal']);
   assert.deepEqual(textUnderRedactions([beside, lineBelow], [rect]), []);
+});
+
+test('conferência na página torta: conta a parte do trecho inclinado dentro da tarja, não a caixa reta dele', () => {
+  // Linha inteira da camada do OCR, inclinada (sobe 0,1 da página da esquerda para a direita), lida pelo PDF.js:
+  // começo embaixo, fim embaixo, fim em cima, começo em cima.
+  const quad = [[0.1, 0.5], [0.9, 0.4], [0.9, 0.38], [0.1, 0.48]];
+  const line = { str: 'linha torta inteira', x0: 0.1, y0: 0.38, x1: 0.9, y1: 0.5, quad };
+  // Tarja num dado de outra linha, à direita: dentro da caixa reta da linha torta, mas longe das letras dela.
+  const elsewhere = { x0: 0.7, y0: 0.43, x1: 0.85, y1: 0.5 };
+  assert.deepEqual(textUnderRedactions([line], [elsewhere]), []);
+  assert.equal(textUnderRedactions([{ ...line, quad: undefined }], [elsewhere]).length, 1, 'com a caixa reta, acusaria');
+  // Tarja por cima de uma parte da linha: acha.
+  assert.equal(textUnderRedactions([line], [{ x0: 0.45, y0: 0.4, x1: 0.6, y1: 0.48 }]).length, 1);
+  // Encostando por baixo, com menos de 30% da altura das letras dentro: não conta.
+  assert.deepEqual(textUnderRedactions([line], [{ x0: 0.2, y0: 0.483, x1: 0.3, y1: 0.52 }]), []);
+  // Com mais de 30% da altura, conta.
+  assert.equal(textUnderRedactions([line], [{ x0: 0.2, y0: 0.475, x1: 0.3, y1: 0.52 }]).length, 1);
 });

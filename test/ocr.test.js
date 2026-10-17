@@ -6,6 +6,7 @@ import { layoutPage } from '../web/js/pdf.js';
 import { textWidth } from '../web/js/fonts.js';
 import { readWords, ocrQuality, lowConfidence } from '../web/js/ocr.js';
 import { openPdf, copyPages } from '../web/js/pdf-reader.js';
+import { unskew, unskewRect } from '../web/js/geometry.js';
 import { buildPdf } from './helpers/qpdf.js';
 import { makeRawPdf, textPageObjects } from './helpers/pdf.js';
 
@@ -204,6 +205,78 @@ test('lowConfidence: documento nítido e foto mediana não avisam; desfocado, tu
   assert.equal(lowConfidence([]), false);
 });
 
+// ---------- Página torta ----------
+
+// Linha "ALFA BRAVO" como o Tesseract do app devolveu numa imagem de 1200 × 1600 desenhada girada 5° no sentido
+// horário, lida com rotateAuto: ele endireitou a imagem (rotateRadians −0,0876) e mediu nela.
+const TILT = -0.0875513032078743;
+const tiltedBlocks = () => [{
+  paragraphs: [{
+    lines: [{
+      bbox: { x0: 100, y0: 156, x1: 1000, y1: 201 },
+      baseline: { x0: 100, y0: 200, x1: 1000, y1: 200, has_baseline: true },
+      rowAttributes: { row_height: 44, descenders: 1, ascenders: 0 },
+      words: [
+        { text: 'ALFA', confidence: 96, bbox: { x0: 100, y0: 157, x1: 246, y1: 200 } },
+        { text: 'BRAVO', confidence: 96, bbox: { x0: 804, y0: 156, x1: 1000, y1: 201 } },
+      ],
+    }],
+  }],
+}];
+
+test('readWords na página torta: caixa que envolve a palavra na imagem torta e as medidas da imagem endireitada', () => {
+  const straight = readWords(tiltedBlocks(), 1200, 1600);
+  assert.deepEqual(straight.map((w) => [w.angle, w.straight]), [[0, undefined], [0, undefined]], 'página reta: sem giro');
+  const words = readWords(tiltedBlocks(), 1200, 1600, TILT);
+  assert.deepEqual(words.map((w) => w.text), ['ALFA', 'BRAVO']);
+  words.forEach((word, i) => {
+    assert.equal(word.angle, TILT);
+    const { x0, y0, x1, y1, baseline } = straight[i];
+    assert.deepEqual(word.straight, { x0, y0, x1, y1, baseline });
+    assert.deepEqual([word.size, word.last, word.confidence], [straight[i].size, straight[i].last, straight[i].confidence]);
+  });
+  // Onde "ALFA" foi desenhada (100 a 247 × 157 a 200, girada 5° em volta do centro): a caixa envolve os quatro cantos.
+  const a = (5 * Math.PI) / 180;
+  for (const [x, y] of [[100, 157], [247, 157], [247, 200], [100, 200]]) {
+    const u = 600 + (x - 600) * Math.cos(a) - (y - 800) * Math.sin(a);
+    const v = 800 + (x - 600) * Math.sin(a) + (y - 800) * Math.cos(a);
+    const [alfa] = words;
+    assert.ok(u >= alfa.x0 * 1200 - 2 && u <= alfa.x1 * 1200 + 2 && v >= alfa.y0 * 1600 - 2 && v <= alfa.y1 * 1600 + 2, `${u} ${v}`);
+  }
+  // O começo da linha de base (de onde a camada escreve) volta para o ponto em que a palavra começa na imagem torta.
+  const [u, v] = unskew(words[0].straight.x0 * 1200, words[0].straight.baseline * 1600, TILT, 1200, 1600);
+  assert.ok(Math.abs(u - (600 - 500 * Math.cos(a) + 600 * Math.sin(a))) < 0.5);
+  assert.ok(Math.abs(v - (800 - 500 * Math.sin(a) - 600 * Math.cos(a))) < 0.5);
+  // A caixa da palavra torta é maior que a da palavra reta (envolve a palavra girada).
+  assert.ok(words[1].y1 - words[1].y0 > straight[1].y1 - straight[1].y0 + 0.01);
+});
+
+// Palavras da primeira linha de WORDS numa página torta: as mesmas medidas, agora na imagem endireitada.
+const tiltWords = (list, angle, size) => list.map((word) => ({
+  ...word, ...unskewRect(word, angle, size), angle, straight: { x0: word.x0, y0: word.y0, x1: word.x1, y1: word.y1, baseline: word.baseline },
+}));
+
+test('camada do OCR na página torta: o texto vai inclinado como a linha, a partir do começo da palavra torta', () => {
+  const page = photo(40, 30);
+  const { box } = page;
+  const words = tiltWords(WORDS.slice(0, 3), 0.1, { width: box.w, height: box.h });
+  const block = ocrBlock(latin1(buildPdf([{ ...page, ocr: words }])));
+  // Matriz girada 0,1 rad (cos 0,995, sen 0,0998) e o começo da linha de base levado para a imagem torta.
+  const [u, v] = unskew(0.1 * box.w, 0.135 * box.h, 0.1, box.w, box.h);
+  const at = (n) => String(Math.round(n * 100) / 100);
+  assert.ok(block.includes(`0.995 0.0998 -0.0998 0.995 ${at(box.x + u)} ${at(box.y + box.h - v)} Tm <436f6e747261746f20> Tj`), block);
+  // A largura ao longo da linha é a da imagem endireitada: o mesmo Tz da página reta.
+  const scale = (100 * (0.32 - 0.1) * box.w) / textWidth('Contrato ', 'Helvetica', 0.04 * box.h);
+  assert.ok(block.includes(`${Math.round(scale * 100) / 100} Tz`));
+  assert.equal(block.match(/0\.995 0\.0998 -0\.0998 0\.995 [\d.]+ [\d.]+ Tm/g).length, 3);
+  for (const [, x, y] of block.matchAll(/0\.995 0\.0998 -0\.0998 0\.995 ([\d.]+) ([\d.]+) Tm/g)) {
+    assert.ok(x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h, `${x} ${y} dentro da imagem`);
+  }
+  // Ângulo 0 (página reta) sai byte a byte igual a antes.
+  const plain = WORDS.map((word) => ({ ...word, angle: 0 }));
+  assert.deepEqual(buildPdf([{ ...page, ocr: plain }]), buildPdf([{ ...page, ocr: WORDS }]));
+});
+
 // ---------- PDF escaneado ----------
 
 // Duas páginas com os mesmos recursos (objeto 6): a primeira girada 90° e com a CropBox deslocada. A fonte /OCR já
@@ -260,6 +333,22 @@ test('PDF escaneado girado no app: o texto vai com o giro total (o do PDF mais o
   // 180°: x do PDF = 550 − 0,1 × 500 e y = 60 + 0,135 × 700; a matriz vira o texto de cabeça para baixo no PDF.
   assert.ok(layer.includes('-1 0 0 -1 500 154.5 Tm <436f6e747261746f20> Tj'), layer.match(/BT\n3 Tr[\s\S]*?ET/)?.[0]);
   assert.match(layer, /\/OCR1 28 Tf/, 'altura da linha: 4% dos 700 pontos visíveis');
+});
+
+test('PDF escaneado torto e com /Rotate: a inclinação da linha vai junto com a matriz que deixa o texto de pé', async () => {
+  const doc = await scannedPdf();
+  // Página visível de 700 × 500 (girada 90°), lida torta: 0,1 rad.
+  const words = tiltWords(WORDS.slice(0, 3), 0.1, { width: 700, height: 500 });
+  const copy = copyPages(doc, [0], { ocr: new Map([[0, { words, rotation: 0 }]]) });
+  const layer = latin1(buildPdf([{ copy: { source: copy, page: copy.pages.get(0) } }]));
+  // Inclinação (cos 0,995, sen 0,0998) e depois o giro de 90° (0 1 −1 0); começo da palavra levado para a página
+  // torta e daí para o PDF girado: x = 50 + v, y = 60 + u.
+  const [u, v] = unskew(0.1 * 700, 0.135 * 500, 0.1, 700, 500);
+  const at = (n) => String(Math.round(n * 100) / 100);
+  assert.ok(layer.includes(`-0.0998 0.995 -0.995 -0.0998 ${at(50 + v)} ${at(60 + u)} Tm <436f6e747261746f20> Tj`), layer.match(/BT\n3 Tr[\s\S]*?ET/)?.[0]);
+  assert.equal(layer.match(/-0\.0998 0\.995 -0\.995 -0\.0998 [\d.]+ [\d.]+ Tm/g).length, 3);
+  // O PDF continua abrindo no leitor do app.
+  assert.equal((await openPdf(buildPdf([{ copy: { source: copy, page: copy.pages.get(0) } }]))).pages.length, 1);
 });
 
 test('PDF escaneado: sem palavras (ou sem OCR), a página copiada sai igual', async () => {

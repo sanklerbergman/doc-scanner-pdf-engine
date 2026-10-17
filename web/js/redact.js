@@ -135,7 +135,9 @@ function redactText(item, boxes) {
 
 /**
  * Palavras do OCR fora das tarjas. A palavra antes de uma que saiu passa a fechar a linha: assim o espaço
- * esticado até a próxima palavra (pdf.js) não atravessa a tarja.
+ * esticado até a próxima palavra (pdf.js) não atravessa a tarja. Também fecha a linha a palavra que tem uma tarja
+ * entre ela e a próxima: na foto lida já tarjada, o OCR nem sempre lê a caixa preta como palavra (na página torta,
+ * quase nunca), e o espaço esticado passaria por cima dela.
  * @param {import('./ocr.js').OcrWord[]} words medidas de 0 a 1 na imagem (que é a página como aparece na tela)
  */
 export function filterWords(words, rects) {
@@ -146,20 +148,60 @@ export function filterWords(words, rects) {
       if (out.length && !out[out.length - 1].last) out[out.length - 1] = { ...out[out.length - 1], last: true };
       continue;
     }
+    const previous = out[out.length - 1];
+    if (previous && !previous.last && rects.some((rect) => overlaps(rect, span(previous, word)))) {
+      out[out.length - 1] = { ...previous, last: true };
+    }
     out.push(word);
   }
   return out;
 }
 
+// Caixa que cobre duas palavras vizinhas e o espaço entre elas.
+const span = (a, b) => ({ x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) });
+
 /**
  * Conferência: texto que o PDF.js leu no PDF novo e que fica sob alguma tarja. Lista vazia = tudo certo.
  * Conta como "sob a tarja" o trecho que entra nela com pelo menos 30% da altura (encostar na borda não conta).
- * @param {Array<{str: string, x0: number, y0: number, x1: number, y1: number}>} boxes texto da página, de 0 a 1
+ * @param {Array<{str: string, x0: number, y0: number, x1: number, y1: number, quad?: number[][]}>} boxes texto da
+ *   página, de 0 a 1; quad: os quatro cantos do trecho inclinado (pdf-render.js), medido ao longo da linha
  */
 export function textUnderRedactions(boxes, rects) {
   return boxes.filter((box) => rects.some((rect) => {
+    if (box.quad) return tiltedUnder(box.quad, rect);
     const width = Math.min(box.x1, rect.x1) - Math.max(box.x0, rect.x0);
     const height = Math.min(box.y1, rect.y1) - Math.max(box.y0, rect.y0);
     return width > 0.001 && height > 0.3 * (box.y1 - box.y0);
   }));
+}
+
+// Trecho inclinado: a parte dele dentro da tarja (o quadrilátero cortado pelas quatro bordas dela), medida ao longo
+// da linha e na altura das letras. Mesma regra do trecho reto: pelo menos 30% da altura, e alguma largura.
+// quad: [começo embaixo, fim embaixo, fim em cima, começo em cima].
+function tiltedUnder(quad, rect) {
+  let inside = quad;
+  for (const [axis, limit, keep] of [[0, rect.x0, 1], [0, rect.x1, -1], [1, rect.y0, 1], [1, rect.y1, -1]]) {
+    const out = [];
+    inside.forEach((p, i) => {
+      const q = inside[(i + 1) % inside.length];
+      const pIn = (p[axis] - limit) * keep >= 0;
+      const qIn = (q[axis] - limit) * keep >= 0;
+      if (pIn) out.push(p);
+      if (pIn !== qIn) {
+        const t = (limit - p[axis]) / (q[axis] - p[axis]);
+        out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+      }
+    });
+    inside = out;
+    if (!inside.length) return false;
+  }
+  // Cada ponto em (s, t): s ao longo da linha e t na altura, os dois de 0 a 1 no trecho.
+  const [o, end, , top] = quad;
+  const u = [end[0] - o[0], end[1] - o[1]];
+  const v = [top[0] - o[0], top[1] - o[1]];
+  const det = u[0] * v[1] - u[1] * v[0];
+  if (!det) return false;
+  const ss = inside.map(([x, y]) => ((x - o[0]) * v[1] - (y - o[1]) * v[0]) / det);
+  const ts = inside.map(([x, y]) => (u[0] * (y - o[1]) - u[1] * (x - o[0])) / det);
+  return (Math.max(...ss) - Math.min(...ss)) * Math.hypot(...u) > 0.001 && Math.max(...ts) - Math.min(...ts) > 0.3;
 }

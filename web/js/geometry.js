@@ -390,3 +390,113 @@ export function visibleToPdf([x1, y1, x2, y2], rotate, u, v) {
 export function uprightMatrix(rotate) {
   return { 90: [0, 1, -1, 0, 0, 0], 180: [-1, 0, 0, -1, 0, 0], 270: [0, -1, 1, 0, 0, 0] }[rotate] ?? [1, 0, 0, 1, 0, 0];
 }
+
+// ---------- Página torta (OCR) ----------
+// O OCR endireita a página torta antes de ler (ocr.js): a imagem gira em volta do centro, sem mudar de tamanho, e
+// as palavras são medidas na imagem endireitada. A imagem que vai para o PDF continua torta. O ângulo é a
+// inclinação do texto na imagem torta, em radianos, no sentido anti-horário (como no PDF): o mesmo número que o
+// Tesseract devolve em rotateRadians (o giro que ele fez para endireitar, no sentido horário dele).
+
+/**
+ * Ponto da imagem endireitada → o mesmo ponto na imagem como ela está (torta). Medidas com y para baixo, na mesma
+ * unidade de width e height (pixels, ou pontos da página).
+ */
+export function unskew(x, y, angle, width, height) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const dx = x - width / 2;
+  const dy = y - height / 2;
+  return [width / 2 + dx * cos + dy * sin, height / 2 - dx * sin + dy * cos];
+}
+
+/**
+ * Retângulo da imagem endireitada (de 0 a 1) → a caixa reta que o envolve na imagem torta, cortada na imagem. Sem
+ * ângulo, o mesmo retângulo.
+ * @param {{width: number, height: number}} size tamanho da imagem (a proporção conta: o giro é em pixels)
+ */
+export function unskewRect(rect, angle, { width, height }) {
+  if (!angle) return rect;
+  const points = [[rect.x0, rect.y0], [rect.x1, rect.y0], [rect.x1, rect.y1], [rect.x0, rect.y1]]
+    .map(([x, y]) => unskew(x * width, y * height, angle, width, height));
+  const xs = points.map(([x]) => Math.min(1, Math.max(0, x / width)));
+  const ys = points.map(([, y]) => Math.min(1, Math.max(0, y / height)));
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
+const SKEW_SIDE = 1000; // lado maior da imagem reduzida
+const SKEW_MAX = (15 * Math.PI) / 180;
+const SKEW_MIN = Math.PI / 180; // abaixo de 1°, o Tesseract lê bem sem endireitar
+const SKEW_POINTS = 60000; // pixels escuros na conta, no máximo
+// Contraste da projeção (a do melhor ângulo contra a mediana dos outros), medido em 56 imagens de teste e em
+// documentos girados de -15° a 15°: página com texto, de 1,6 a 3,4; ruído forte, sombra e só figura, de 1,0 a 1,4.
+const SKEW_CONTRAST = 1.5;
+
+/**
+ * Inclinação das linhas de texto numa imagem em tons de cinza, pela projeção dos pixels escuros: no ângulo certo,
+ * as linhas viram faixas separadas, e a soma dos quadrados da projeção é a maior. Procura de -15° a 15°, de meio
+ * em meio grau e depois de 0,05 em 0,05°, numa imagem reduzida (cada pixel fica com o mais escuro do bloco, para o
+ * traço fino das letras não sumir).
+ * @param {Uint8Array} gray tons de cinza, linha por linha
+ * @returns {number} a inclinação do texto (como em unskew); 0 abaixo de 1° ou sem linhas claras (ruído, figura,
+ *   página em branco)
+ */
+export function textSkew(gray, width, height) {
+  const step = Math.max(1, Math.ceil(Math.max(width, height) / SKEW_SIDE));
+  const w = Math.floor(width / step);
+  const h = Math.floor(height / step);
+  if (w < 16 || h < 16) return 0;
+  const small = new Uint8Array(w * h);
+  for (let by = 0; by < h; by++) {
+    for (let bx = 0; bx < w; bx++) {
+      let min = 255;
+      for (let y = by * step; y < (by + 1) * step; y++) {
+        for (let x = bx * step, i = y * width + x; x < (bx + 1) * step; x++, i++) if (gray[i] < min) min = gray[i];
+      }
+      small[by * w + bx] = min;
+    }
+  }
+  const threshold = otsu(small);
+  let dark = 0;
+  for (let i = 0; i < small.length; i++) if (small[i] <= threshold) dark++;
+  if (dark < 50 || dark > small.length / 2) return 0; // quase nada escuro, ou o escuro é o fundo
+  const every = Math.ceil(dark / SKEW_POINTS);
+  const xs = [];
+  const ys = [];
+  for (let y = 0, n = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (small[y * w + x] <= threshold && n++ % every === 0) {
+        xs.push(x - w / 2);
+        ys.push(y - h / 2);
+      }
+    }
+  }
+  const span = Math.ceil(Math.hypot(w, h)) + 2;
+  const bins = new Uint32Array(span);
+  // a: inclinação no sentido horário da imagem (y para baixo); cada ponto cai na faixa da linha a que pertence.
+  const energy = (a) => {
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    bins.fill(0);
+    for (let i = 0; i < xs.length; i++) bins[Math.round(ys[i] * cos - xs[i] * sin + span / 2)]++;
+    let sum = 0;
+    for (let i = 0; i < span; i++) sum += bins[i] * bins[i];
+    return sum;
+  };
+  const coarse = [];
+  let best = 0;
+  let bestEnergy = -1;
+  for (let k = -30; k <= 30; k++) {
+    const e = energy((k * SKEW_MAX) / 30);
+    coarse.push(e);
+    if (e > bestEnergy) [best, bestEnergy] = [(k * SKEW_MAX) / 30, e];
+  }
+  const median = coarse.sort((p, q) => p - q)[coarse.length >> 1];
+  if (!median || bestEnergy < median * SKEW_CONTRAST) return 0;
+  const center = best;
+  for (let k = -10; k <= 10; k++) {
+    const a = center + (k * SKEW_MAX) / 300;
+    const e = energy(a);
+    if (e > bestEnergy) [best, bestEnergy] = [a, e];
+  }
+  return Math.abs(best) < SKEW_MIN ? 0 : -best;
+}

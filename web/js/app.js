@@ -1,7 +1,7 @@
 import { buildPdf, layoutPage } from './pdf.js';
 import { FILTERS, decodeFile, detectQuad, renderPage, renderPageAsync, canvasToBlob } from './imaging.js';
 import { setupViewer } from './viewer.js';
-import { quadSize } from './geometry.js';
+import { quadSize, unskewRect } from './geometry.js';
 import { setupCamera } from './camera.js';
 import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
@@ -1466,6 +1466,18 @@ function charPositions(text, x0, x1, family = 'sans-serif') {
   return xs;
 }
 
+// Palavras do OCR (foto e PDF escaneado) → dados achados, com a área da tarja. Na página torta, a busca usa as
+// medidas da imagem endireitada (straight, ocr.js), onde as linhas são retas, e a área volta para a imagem torta
+// como a caixa reta que a envolve: a tarja fica maior que o dado, mas cobre tudo.
+function findInWords(words, size) {
+  const angle = words.find((word) => word.angle)?.angle ?? 0;
+  const pieces = words.map((word) => {
+    const at = word.angle ? word.straight : word;
+    return { str: word.text, xs: charPositions(word.text, at.x0, at.x1), y0: at.y0, y1: at.y1 };
+  });
+  return findInPieces(pieces, size).map((found) => ({ ...found, rect: unskewRect(padRect(found.rect, size, 0.3), angle, size) }));
+}
+
 // Word: a posição exata de cada letra sai das larguras das fontes padrão (as mesmas do PDF).
 function findInDocument(page) {
   const { width, height, items } = page.layout;
@@ -1498,8 +1510,7 @@ async function findInPdfPage(page, startEngine) {
 async function findInScannedPage(page, startEngine, { width, height }) {
   await ensureOcr(page, startEngine);
   const size = page.rotation % 180 !== 0 ? { width: height, height: width } : { width, height };
-  const pieces = page.ocr.words.map((word) => ({ str: word.text, xs: charPositions(word.text, word.x0, word.x1), y0: word.y0, y1: word.y1 }));
-  return findInPieces(pieces, size).map((found) => ({ ...found, rect: padRect(found.rect, size, 0.3) }));
+  return findInWords(page.ocr.words, size);
 }
 
 // Texto do OCR da foto ou da página de PDF com o recorte, o filtro, o giro e as tarjas de agora (ocrKey). Sem ele,
@@ -1538,8 +1549,7 @@ async function recognizePhoto(page, startEngine) {
 async function findInPhoto(page, startEngine) {
   await ensureOcr(page, startEngine);
   const size = page.ocr.size ?? { width: 1, height: 1.414 };
-  const pieces = page.ocr.words.map((word) => ({ str: word.text, xs: charPositions(word.text, word.x0, word.x1), y0: word.y0, y1: word.y1 }));
-  return findInPieces(pieces, size).map((found) => ({ ...found, rect: padRect(found.rect, size, 0.3) }));
+  return findInWords(page.ocr.words, size);
 }
 
 const inside = (outer, inner) => inner.x0 >= outer.x0 && inner.y0 >= outer.y0 && inner.x1 <= outer.x1 && inner.y1 <= outer.y1;

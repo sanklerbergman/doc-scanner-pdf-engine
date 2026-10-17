@@ -86,12 +86,30 @@ export async function renderPdfPage(key, bytes, index, { maxSide, rotation = 0 }
 // Caixa de um trecho de texto do PDF.js na página (de 0 a 1, origem no canto superior esquerdo), pelo viewport:
 // da linha de base um pouco para baixo até perto do tamanho da letra para cima.
 function itemBox(item, viewport) {
-  const [, , c, d, e, f] = item.transform;
+  const [, b, c, d, e, f] = item.transform;
   const height = item.height || Math.hypot(c, d);
+  if (b || c) return tiltedBox(item, viewport, height);
   const corners = [[e, f - height * 0.2], [e + item.width, f + height * 0.8]].map(([x, y]) => viewport.convertToViewportPoint(x, y));
   const xs = corners.map(([x]) => x / viewport.width);
   const ys = corners.map(([, y]) => y / viewport.height);
   return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
+// Trecho inclinado (a camada do OCR numa página torta, texto girado de outro PDF): os quatro cantos, ao longo da
+// linha de base e na direção do alto das letras, em quad; a caixa é a reta que envolve os quatro. A conferência das
+// tarjas usa os cantos (redact.js): a caixa reta de uma linha inclinada inteira passa por cima das linhas vizinhas.
+function tiltedBox(item, viewport, height) {
+  const [a, b, c, d, e, f] = item.transform;
+  const along = Math.hypot(a, b) || 1;
+  const up = Math.hypot(c, d) || 1;
+  const quad = [[0, -0.2], [1, -0.2], [1, 0.8], [0, 0.8]].map(([s, t]) => {
+    const [x, y] = viewport.convertToViewportPoint(e + (a / along) * item.width * s + (c / up) * height * t,
+      f + (b / along) * item.width * s + (d / up) * height * t);
+    return [x / viewport.width, y / viewport.height];
+  });
+  const xs = quad.map(([x]) => x);
+  const ys = quad.map(([, y]) => y);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys), quad };
 }
 
 /**
