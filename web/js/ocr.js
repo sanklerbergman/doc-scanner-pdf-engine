@@ -7,7 +7,8 @@
 // - O modelo vem de um módulo JS do próprio site (por.traineddata.js) e chega ao worker em bytes: o Tesseract
 //   nunca usa fetch. Se algum caminho dele tentar, a política bloqueia e o OCR falha, em vez de vazar.
 // - Nada guardado: sem cache no IndexedDB (cacheMethod 'none'), sem logs, e o texto só existe na memória.
-// - Um worker por vez, encerrado no fim: a memória do WebAssembly (centenas de MB) volta para o aparelho.
+// - Um worker por vez (dois só onde sobra memória, ocr-plan.js), encerrado no fim: a memória do WebAssembly
+//   (centenas de MB) volta para o aparelho.
 //
 // O app conversa direto com o worker do Tesseract.js, sem a biblioteca da página (tesseract.esm.min.js): na
 // versão 7.0.0 ela manda os bytes do modelo no lugar do nome do idioma ao inicializar, e o Tesseract não inicia.
@@ -35,6 +36,12 @@ function loadModel() {
     throw err;
   });
   return model;
+}
+
+// Aquecimento: quando a pessoa liga o OCR, o modelo já começa a baixar, sem ligar o worker (que só liga ao gerar).
+// Sem rede, a falha não fica guardada: tenta de novo ao gerar.
+export function preloadOcr() {
+  loadModel().catch(() => {});
 }
 
 function decodeBase64(text) {
@@ -87,16 +94,8 @@ function spawn() {
   };
 }
 
-/**
- * Liga o motor de OCR com o modelo de português.
- * @returns {Promise<{recognize: (canvas: HTMLCanvasElement, options?: {dpi?: number}) => Promise<OcrWord[]>,
- *   cancel: () => void, terminate: () => void}>}
- */
-export async function startOcr() {
-  const { default: base64 } = await loadModel().catch(() => {
-    throw new OcrError('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.');
-  });
-  const engine = spawn();
+// Um worker do Tesseract pronto para ler: o núcleo, o modelo de português e os parâmetros.
+async function startEngine(base64, engine = spawn()) {
   try {
     await engine.call('load', { options: { lstmOnly: true, corePath: VENDOR, logging: false } });
     const data = decodeBase64(base64);
@@ -109,7 +108,93 @@ export async function startOcr() {
     engine.stop(err);
     throw err;
   }
+  return engine;
+}
+
+// Leituras de um worker antes de trocá-lo por um novo. No WebKit (Safari, iPhone), a memória do worker cresce uns
+// 4 MB a cada página lida e só volta quando ele é encerrado (40 leituras: +130 MB; no Chromium, fica estável).
+// Trocando a cada 10, a memória fica no nível das primeiras páginas, e o novo liga enquanto o app monta a página
+// seguinte (custa uns 0,3 s a cada 10 páginas, medido no desktop).
+const RECYCLE_AFTER = 10;
+
+// Vários workers com a mesma cara de um só (call e stop): cada trabalho vai para o primeiro que estiver livre, e
+// os outros esperam na fila, na ordem em que chegaram. O worker gasto (RECYCLE_AFTER) é encerrado antes de o novo
+// ligar, nunca dois no lugar de um; e o novo já conta como vivo: se a leitura acabar enquanto ele liga, o stop o
+// encerra na hora.
+function pool(engines, restart) {
+  const live = new Set(engines);
+  const idle = [...engines];
+  const queue = [];
+  const reads = new Map();
+  let stopped = null;
+  const stop = (err) => {
+    if (stopped) return;
+    stopped = err;
+    for (const engine of live) engine.stop(err);
+    for (const waiting of queue.splice(0)) waiting.reject(err);
+  };
+  const release = (engine) => {
+    const next = queue.shift();
+    if (next) next.resolve(engine);
+    else idle.push(engine);
+  };
+  // Se o novo não ligar, segue com os outros; sem nenhum, as leituras que esperam falham com o erro.
+  const renew = async (engine) => {
+    live.delete(engine);
+    engine.stop(new OcrCancelled());
+    const fresh = spawn();
+    live.add(fresh);
+    try {
+      await restart(fresh);
+      if (!stopped) release(fresh);
+    } catch (err) {
+      live.delete(fresh);
+      if (!live.size) stop(err);
+    }
+  };
   return {
+    async call(action, payload, transfer) {
+      if (stopped) throw stopped;
+      const engine = idle.pop() ?? await new Promise((resolve, reject) => queue.push({ resolve, reject }));
+      try {
+        return await engine.call(action, payload, transfer);
+      } finally {
+        const count = (reads.get(engine) ?? 0) + 1;
+        reads.set(engine, count);
+        if (stopped) {
+          // encerrado: nada volta para a fila
+        } else if (action === 'recognize' && count >= RECYCLE_AFTER) {
+          reads.delete(engine);
+          renew(engine);
+        } else {
+          release(engine);
+        }
+      }
+    },
+    stop,
+  };
+}
+
+/**
+ * Liga o motor de OCR com o modelo de português.
+ * @param {{workers?: number}} [options] workers: quantos workers do Tesseract ligar (ocr-plan.js). Cada um tem a
+ *   própria memória do WebAssembly; as leituras vão para o que estiver livre.
+ * @returns {Promise<{recognize: (canvas: HTMLCanvasElement, options?: {dpi?: number}) => Promise<OcrWord[]>,
+ *   cancel: () => void, terminate: () => void, workers: number}>}
+ * O recognize lê os pixels do canvas na hora da chamada, antes de esperar o worker: quem chama pode liberar o
+ * canvas (ou desenhar outra coisa nele) sem esperar o resultado.
+ */
+export async function startOcr({ workers = 1 } = {}) {
+  const { default: base64 } = await loadModel().catch(() => {
+    throw new OcrError('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.');
+  });
+  // Um worker a mais que não ligou (falta de memória, por exemplo) não impede o OCR: segue com os que ligaram.
+  const started = await Promise.allSettled(Array.from({ length: Math.max(1, workers) }, () => startEngine(base64)));
+  const ready = started.filter(({ status }) => status === 'fulfilled').map(({ value }) => value);
+  if (!ready.length) throw started[0].reason;
+  const engine = pool(ready, (fresh) => startEngine(base64, fresh));
+  return {
+    workers: ready.length,
     // dpi: resolução da imagem na página do PDF. Sem ela, o Tesseract estima pela altura das letras.
     async recognize(canvas, { dpi } = {}) {
       const options = dpi ? { user_defined_dpi: String(Math.round(Math.min(2400, Math.max(70, dpi)))) } : {};

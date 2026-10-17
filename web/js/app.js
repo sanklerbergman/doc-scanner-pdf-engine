@@ -11,6 +11,7 @@ import { findInPieces, padRect, TYPE_LABELS } from './find-data.js';
 import { plainText, linesText, documentText } from './page-text.js';
 import { textWidth } from './fonts.js';
 import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex } from './stamp.js';
+import { ocrWorkers, progressNote } from './ocr-plan.js';
 
 // O site oficial já proíbe ser embutido em outro pelo cabeçalho frame-ancestors (web/_headers). Esta checagem
 // fica como segunda camada, e protege cópias hospedadas onde não dá para enviar cabeçalhos: o app se recusa a
@@ -35,8 +36,11 @@ const PREVIEW_SIDE = 1280; // cópia reduzida guardada em memória (miniaturas, 
 const THUMB_SIDE = 960; // no celular a miniatura ocupa a largura da tela, em tela de alta densidade
 const VIEW_SIDE = 2000; // página em tela cheia
 const UNDO_MS = 10000; // tempo para desfazer a remoção de uma página
-// OCR: o Tesseract lê bem com o lado maior entre 2000 e 3500 px. A imagem do PDF serve quando está nessa faixa;
-// abaixo disso (qualidade Leve), a foto é desenhada de novo, só para o OCR. A medir no iPhone.
+// OCR: a imagem do PDF serve quando o lado maior está entre 2000 e 3500 px; abaixo disso (qualidade Leve), a foto é
+// desenhada de novo com 2400 px, só para o OCR. Medido em 10 fotos de documento (2026-10-17): o tempo de leitura
+// cresce bem menos que os pixels (1600 → 2400 px: +19%; 2400 → 3500: +30%), e o texto certo, pouco (99,2%, 99,3% e
+// 99,7%); reduzir abaixo de 2400 ganha pouco tempo e perde letra miúda. Na qualidade Alta (3508 px), a cópia
+// reduzida a 3500 lê melhor que a imagem do PDF direto (98,7% contra 98,0%): o teto fica em 3500.
 const OCR_MIN_SIDE = 2000;
 const OCR_SIDE = 2400;
 const OCR_MAX_SIDE = 3500;
@@ -726,6 +730,10 @@ els.filterAll.addEventListener('change', async () => {
 });
 
 for (const select of [els.pageSize, els.margin, els.quality, els.ocr]) select.addEventListener('change', discardPdf);
+// Ligou o OCR: o código e o modelo (uns 2 MB) já começam a baixar, para o reconhecimento começar mais cedo ao gerar.
+els.ocr.addEventListener('change', () => {
+  if (els.ocr.checked) loadOcr().then(({ preloadOcr }) => preloadOcr(), () => {});
+});
 
 // PDF/A: com fotos e páginas de Word (que levam as fontes embutidas), sem página de outro PDF (que vem como está, com
 // fontes e cores que o app não converte) e sem senha (o PDF/A não permite criptografia). O motivo de estar
@@ -899,8 +907,11 @@ async function generate({ signer, stamp = null, append = null } = {}) {
   const readable = (page) => isPhoto(page) || page.kind === 'pdf';
   const useOcr = els.ocr.checked && list.some(readable);
   const toRead = useOcr ? list.filter((page) => readable(page) && page.ocr?.key !== ocrKey(page)) : [];
-  let ocr = null; // motor do OCR: um só, encerrado no fim
+  const workers = toRead.length ? ocrWorkers(navigator, toRead.length) : 1; // dois só onde sobra memória
+  let ocr = null; // motor do OCR, encerrado no fim
+  let starting = null; // o motor ligando
   let cancelled = false;
+  let finished = false;
   if (toRead.length) {
     els.cancel.hidden = false;
     state.cancel = () => {
@@ -912,18 +923,56 @@ async function generate({ signer, stamp = null, append = null } = {}) {
   const stopIfCancelled = () => {
     if (cancelled) throw new Cancelled();
   };
-  // O motor do OCR liga na primeira página que precisa dele (página de PDF que já tem texto não precisa).
-  const engine = async () => {
-    if (!ocr) {
-      announce('Preparando o reconhecimento de texto (na primeira vez, o app baixa uns 5 MB)…');
-      const { startOcr } = await loadOcr().catch(() => {
-        throw ocrError('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.');
-      });
-      stopIfCancelled();
-      ocr = await startOcr();
-      stopIfCancelled();
+  // O motor do OCR liga uma vez, quando a primeira página precisa dele (página de PDF que já tem texto não precisa).
+  // Com foto para ler, ele já liga no começo, enquanto a primeira foto é montada.
+  const engine = () => {
+    if (!starting) {
+      starting = (async () => {
+        const { startOcr } = await loadOcr().catch(() => {
+          throw ocrError('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.');
+        });
+        stopIfCancelled();
+        const reader = await startOcr({ workers });
+        // Cancelado, ou a geração parou com erro, enquanto o motor ligava: ele sai da memória na hora.
+        if (cancelled || finished) {
+          reader.terminate();
+          throw new Cancelled();
+        }
+        return (ocr = reader);
+      })();
+      starting.catch(() => {}); // o erro aparece para quem espera o motor
     }
-    return ocr;
+    return starting;
+  };
+  // Leituras do OCR em andamento, no máximo uma por worker. Enquanto o worker lê uma página, o app gera o JPEG dela.
+  // Com um worker só (no iPhone, por exemplo), o app também decodifica a próxima foto, mas só recorta e filtra depois
+  // que a leitura termina: a memória não passa da de antes, quando a foto da página ficava aberta durante a leitura.
+  // Com dois, onde sobra memória, a página seguinte já fica pronta, esperando a vez.
+  const single = workers === 1;
+  const reading = new Set();
+  let done = 0;
+  let begin = 0; // quando a primeira leitura começou: base da estimativa do tempo que falta
+  const free = async () => {
+    while (reading.size >= (ocr?.workers ?? workers)) await Promise.race(reading);
+  };
+  const turn = async (page) => {
+    if (!ocr) announce('Preparando o reconhecimento de texto (na primeira vez, o app baixa uns 5 MB)…');
+    const reader = await engine();
+    await free();
+    stopIfCancelled();
+    begin ||= performance.now();
+    announce(`Reconhecendo o texto: página ${toRead.indexOf(page) + 1} de ${toRead.length}…${progressNote(performance.now() - begin, done, toRead.length)}`);
+    return reader;
+  };
+  // Guarda a leitura em andamento. A falha fica no Set e aparece na próxima espera pela vez ou no fim.
+  const track = (words, save) => {
+    const job = words.then((list) => {
+      save(list);
+      done++;
+      reading.delete(job);
+    });
+    job.catch(() => {});
+    reading.add(job);
   };
 
   let ok = false;
@@ -944,21 +993,25 @@ async function generate({ signer, stamp = null, append = null } = {}) {
 
     // Fotos e documentos são processados uma vez só, mesmo que a página entre em mais de um arquivo.
     const pages = [];
+    if (toRead.some(isPhoto)) engine();
     for (const [i, page] of list.entries()) {
-      announce(`Processando página ${i + 1} de ${list.length}…`);
+      // Com uma leitura em andamento, a mensagem continua sendo a dela.
+      if (!reading.size) announce(`Processando página ${i + 1} de ${list.length}…`);
       await nextFrame();
       stopIfCancelled();
       if (page.kind === 'pdf') {
         if (toRead.includes(page)) {
-          announce(`Reconhecendo o texto: página ${toRead.indexOf(page) + 1} de ${toRead.length}…`);
-          page.ocr = { key: ocrKey(page), ...(await recognizePdfPage(engine, page)) };
+          if (single) await free();
+          const key = ocrKey(page);
+          const scan = await readPdfPage(turn, page);
+          if (scan.hasText) page.ocr = { key, words: [], hasText: true };
+          else track(scan.words, (words) => { page.ocr = { key, words, hasText: false }; });
           stopIfCancelled();
         }
         // Com tarja, a página vira imagem (com os pixels sob a tarja pintados); sem, é copiada mais abaixo, junto
         // com as outras páginas do mesmo PDF (com a camada do OCR, se ela foi lida).
-        const built = page.redactions?.length ? await rasterizePdfPage(page, quality) : null;
-        if (built && useOcr && page.ocr?.words.length) built.ocr = page.ocr.words;
-        pages.push(built);
+        if (single && page.redactions?.length) await free();
+        pages.push(page.redactions?.length ? await rasterizePdfPage(page, quality) : null);
         continue;
       }
       if (isDocument(page)) {
@@ -966,33 +1019,48 @@ async function generate({ signer, stamp = null, append = null } = {}) {
         pages.push(page.redactions?.length ? await redactDocumentPage(page) : { ...page.layout, rotation: page.rotation });
         continue;
       }
+      // Com um worker só, a foto é decodificada enquanto ele ainda lê a anterior (que já saiu da memória), mas o
+      // recorte e o filtro esperam a leitura terminar.
       const image = await decodeFile(page.file);
       let canvas;
-      let layout;
+      let source = null; // imagem para o OCR
       try {
+        if (single) await free();
         // O filtro roda num Web Worker: a página continua respondendo durante a geração.
         canvas = await renderPageAsync(image.source, image.width, image.height, {
           rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: quality.maxSide, redactions: page.redactions,
         });
-        layout = layoutPage(canvas.width, canvas.height, size, margin);
-        if (toRead.includes(page)) {
-          const reader = await engine();
-          announce(`Reconhecendo o texto: página ${toRead.indexOf(page) + 1} de ${toRead.length}…`);
-          // O OCR lê a foto já tarjada; o que ele achar sobre uma tarja (a borda da caixa, ruído) também sai.
-          page.ocr = {
-            key: ocrKey(page),
-            words: filterWords(await recognizePage(reader, image, canvas, page, layout), page.redactions),
-            size: { width: canvas.width, height: canvas.height },
-          };
-        }
+        if (toRead.includes(page)) source = await ocrImage(image, canvas, page);
       } finally {
-        image.release();
+        image.release(); // a foto original não espera a vez do OCR na memória
+      }
+      const layout = layoutPage(canvas.width, canvas.height, size, margin);
+      if (source) {
+        try {
+          const reader = await turn(page);
+          const key = ocrKey(page);
+          const { width, height } = canvas;
+          // O OCR lê a foto já tarjada; o que ele achar sobre uma tarja (a borda da caixa, ruído) também sai.
+          // Resolução da imagem na página do PDF, em pontos por polegada: ajuda o Tesseract a medir as letras.
+          track(reader.recognize(source, { dpi: source.width / (layout.box.w / 72) }), (words) => {
+            page.ocr = { key, words: filterWords(words, page.redactions), size: { width, height } };
+          });
+        } finally {
+          if (source !== canvas) source.width = source.height = 0; // os pixels já foram copiados
+        }
       }
       stopIfCancelled();
+      // O JPEG sai enquanto o worker lê a página: o recognize já copiou os pixels.
       const blob = await canvasToBlob(canvas, 'image/jpeg', quality.jpeg);
-      const words = useOcr ? page.ocr?.words : null;
-      pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), ...layout, ...(words?.length ? { ocr: words } : {}) });
+      pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), ...layout });
       canvas.width = canvas.height = 0; // devolve a memória do canvas na hora
+    }
+    // As últimas leituras; depois, as palavras entram nas páginas que viraram imagem (fotos e páginas de PDF tarjadas).
+    await Promise.all(reading);
+    if (useOcr) {
+      list.forEach((page, i) => {
+        if (pages[i]?.jpeg && page.ocr?.words.length) pages[i].ocr = page.ocr.words;
+      });
     }
     // O motor do OCR ocupa centenas de MB: sai da memória assim que as páginas terminam.
     ocr?.terminate();
@@ -1138,6 +1206,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       announce(known ? err.message : `Algo deu errado ao gerar o PDF: ${err.message}`, 'error');
     }
   } finally {
+    finished = true; // motor que ainda estiver ligando é encerrado assim que ligar
     ocr?.terminate();
     signer?.discard(); // a chave sai da memória, dê certo ou não
     state.cancel = null;
@@ -1150,32 +1219,24 @@ async function generate({ signer, stamp = null, append = null } = {}) {
   }
 }
 
-// Reconhece o texto de uma foto. A imagem do PDF serve quando já tem resolução boa para o OCR; senão, a foto é
-// desenhada de novo, maior, só para isso. Devolve as palavras com posições relativas à imagem.
-async function recognizePage(ocr, image, canvas, page, layout) {
+// Imagem de uma foto para o OCR. A imagem do PDF serve quando já tem resolução boa para o OCR; senão, a foto é
+// desenhada de novo, maior, só para isso (ou reduzida, acima do limite). A cópia, quando há, quem chama libera.
+async function ocrImage(image, canvas, page) {
   const long = Math.max(canvas.width, canvas.height);
-  let source = canvas;
-  let temporary = null;
   if (long < OCR_MIN_SIDE && Math.max(image.width, image.height) > long) {
-    temporary = await renderPageAsync(image.source, image.width, image.height, {
+    return renderPageAsync(image.source, image.width, image.height, {
       rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: OCR_SIDE, redactions: page.redactions,
     });
-  } else if (long > OCR_MAX_SIDE) {
-    const scale = OCR_MAX_SIDE / long;
-    temporary = document.createElement('canvas');
-    temporary.width = Math.max(1, Math.round(canvas.width * scale));
-    temporary.height = Math.max(1, Math.round(canvas.height * scale));
-    const ctx = temporary.getContext('2d');
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(canvas, 0, 0, temporary.width, temporary.height);
   }
-  if (temporary) source = temporary;
-  try {
-    // Resolução da imagem na página do PDF, em pontos por polegada: ajuda o Tesseract a medir as letras.
-    return await ocr.recognize(source, { dpi: source.width / (layout.box.w / 72) });
-  } finally {
-    if (temporary) temporary.width = temporary.height = 0;
-  }
+  if (long <= OCR_MAX_SIDE) return canvas;
+  const scale = OCR_MAX_SIDE / long;
+  const temporary = document.createElement('canvas');
+  temporary.width = Math.max(1, Math.round(canvas.width * scale));
+  temporary.height = Math.max(1, Math.round(canvas.height * scale));
+  const ctx = temporary.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(canvas, 0, 0, temporary.width, temporary.height);
+  return temporary;
 }
 
 els.cancel.addEventListener('click', () => state.cancel?.());
@@ -1189,6 +1250,14 @@ const fontError = () => Object.assign(new Error('Não deu para carregar as fonte
 // Página tarjada vira imagem: é lida sempre, com as tarjas pintadas, e o que o OCR achar sob uma tarja sai.
 // @returns {Promise<{words: object[], hasText: boolean}>} words: medidas na página como aparece no app
 async function recognizePdfPage(engine, page) {
+  const scan = await readPdfPage(engine, page);
+  return scan.hasText ? { words: [], hasText: true } : { words: await scan.words, hasText: false };
+}
+
+// O mesmo, sem esperar a leitura: volta assim que o OCR copiou os pixels, com a leitura em andamento.
+// @param {(page: object) => Promise<object>} engine devolve o motor do OCR quando é a vez da página
+// @returns {Promise<{hasText: true} | {hasText: false, words: Promise<object[]>}>}
+async function readPdfPage(engine, page) {
   const tools = await loadPdfTools();
   const number = state.pages.indexOf(page) + 1;
   const redacted = !!page.redactions?.length;
@@ -1196,7 +1265,7 @@ async function recognizePdfPage(engine, page) {
     const { items } = await tools.pdfPageTextItems(page.doc, page.index).catch(() => {
       throw ocrError(`Não deu para ler a página ${number} (do PDF ${page.name}) para reconhecer o texto. Confira a conexão e tente de novo.`);
     });
-    if (items.length) return { words: [], hasText: true };
+    if (items.length) return { hasText: true };
   }
   const { canvas, real } = await tools.drawPdfPage(page.doc, { index: page.index, ...page.size }, {
     maxSide: OCR_SIDE, rotation: page.rotation, number: page.number,
@@ -1206,9 +1275,11 @@ async function recognizePdfPage(engine, page) {
     if (redacted) paintRedactions(canvas.getContext('2d'), page.redactions, canvas.width, canvas.height);
     // Resolução do desenho, em pontos por polegada: a largura da página como aparece, em pontos.
     const width = page.rotation % 180 !== 0 ? page.size.height : page.size.width;
-    const reader = await engine();
-    const words = await reader.recognize(canvas, { dpi: canvas.width / (width / 72) });
-    return { words: redacted ? filterWords(words, page.redactions) : words, hasText: false };
+    const reader = await engine(page);
+    const words = reader.recognize(canvas, { dpi: canvas.width / (width / 72) })
+      .then((list) => (redacted ? filterWords(list, page.redactions) : list));
+    words.catch(() => {}); // a falha aparece para quem espera a leitura
+    return { hasText: false, words };
   } finally {
     canvas.width = canvas.height = 0;
   }
@@ -1582,17 +1653,25 @@ async function findData() {
   };
   const groups = new Map();
   const unreadable = [];
+  let spent = 0; // tempo das fotos já lidas: base da estimativa do tempo que falta
+  let done = 0;
   let ok = false;
   try {
     for (const [i, page] of list.entries()) {
       if (cancelled) throw new Cancelled();
-      announce(toRead.includes(page)
-        ? `Reconhecendo o texto da foto ${toRead.indexOf(page) + 1} de ${toRead.length} para procurar dados…`
+      const reading = toRead.includes(page);
+      announce(reading
+        ? `Reconhecendo o texto da foto ${toRead.indexOf(page) + 1} de ${toRead.length} para procurar dados…${progressNote(spent, done, toRead.length)}`
         : `Procurando dados na página ${i + 1} de ${list.length}…`);
       await nextFrame();
+      const start = performance.now();
       let found;
       try {
         found = isDocument(page) ? findInDocument(page) : page.kind === 'pdf' ? await findInPdfPage(page, startEngine) : await findInPhoto(page, startEngine);
+        if (reading) {
+          spent += performance.now() - start;
+          done++;
+        }
       } catch (err) {
         if (cancelled || err instanceof Cancelled || err?.name === 'OcrCancelled' || err?.name === 'OcrError') throw err;
         unreadable.push(i + 1); // ex.: página de PDF que o PDF.js não consegue ler
