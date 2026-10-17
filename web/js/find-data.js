@@ -127,7 +127,10 @@ export function findInPieces(pieces, { width, height }) {
       if (previous) {
         const gap = (piece.xs[0] - previous.xs[previous.xs.length - 1]) * width;
         const lineHeight = (line.y1 - line.y0) * height;
-        if (gap > lineHeight * 0.2 && !/\s$/.test(text) && !/^\s/.test(piece.str)) {
+        // O OCR às vezes parte um número na pontuação ("123.456" e ".789-09"), com um vão entre as palavras: perto
+        // assim, número e pontuação continuam juntos, sem espaço.
+        const split = gap < lineHeight * 1.5 && (/\d$/.test(previous.str) && /^[.\/-]\d/.test(piece.str) || /\d[.\/-]$/.test(previous.str) && /^\d/.test(piece.str));
+        if (gap > lineHeight * 0.2 && !split && !/\s$/.test(text) && !/^\s/.test(piece.str)) {
           text += ' ';
           map.push(null);
         }

@@ -81,6 +81,18 @@ test('palavras do OCR separadas por espaço viram um texto só; palavras longe n
   assert.deepEqual(findInPieces(columns, size), []);
 });
 
+test('número que o OCR partiu na pontuação, com um vão entre as palavras, continua sendo achado', () => {
+  const size = { width: 1000, height: 1000 };
+  // "529.982" e ".247-25," com um vão de uma letra (o Tesseract partiu o CPF no ponto).
+  const cpf = findInPieces([piece('CPF', 0.1, 0.01), piece('529.982', 0.14, 0.01), piece('.247-25,', 0.22, 0.01)], size);
+  assert.deepEqual(cpf.map((r) => r.value), ['529.982.247-25']);
+  assert.ok(Math.abs(cpf[0].rect.x0 - 0.14) < 1e-9 && Math.abs(cpf[0].rect.x1 - 0.29) < 1e-9, JSON.stringify(cpf[0].rect));
+  // Partido depois do ponto ("529.982." e "247-25"), também.
+  assert.deepEqual(findInPieces([piece('529.982.', 0.1, 0.01), piece('247-25', 0.19, 0.01)], size).map((r) => r.value), ['529.982.247-25']);
+  // Sem pontuação no corte, números separados continuam separados.
+  assert.deepEqual(findInPieces([piece('529982', 0.1, 0.01), piece('24725', 0.17, 0.01)], size), []);
+});
+
 test('margem da tarja: cresce em volta, proporcional à altura, sem sair da página', () => {
   const rect = padRect({ x0: 0.5, y0: 0.1, x1: 0.6, y1: 0.12 }, { width: 1000, height: 1000 }, 0.5);
   assert.ok(Math.abs(rect.y0 - 0.09) < 1e-9 && Math.abs(rect.y1 - 0.13) < 1e-9 && Math.abs(rect.x0 - 0.49) < 1e-9);
