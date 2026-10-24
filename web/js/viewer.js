@@ -457,7 +457,7 @@ export function setupViewer({
     showView();
   });
   $('#viewer-redact').addEventListener('click', showRedact);
-  new ResizeObserver(fitRedact).observe(stage);
+  new ResizeObserver(() => requestAnimationFrame(fitRedact)).observe(stage);
 
   // ---------- Editar ----------
   // O modo Editar (editor.js) carrega na primeira vez. A página aparece como vai sair no PDF, sem as edições, que o
@@ -627,7 +627,7 @@ export function setupViewer({
     nextButton.style.right = `${Math.max(12, frame.right - box.right - size - gap)}px`;
   }
   image.addEventListener('load', placeSteps);
-  new ResizeObserver(placeSteps).observe(stage);
+  new ResizeObserver(() => requestAnimationFrame(placeSteps)).observe(stage);
 
   // Na primeira e na última página, a seta que não leva a lugar nenhum some; no recorte, as duas.
   function updateNav(enabled) {
@@ -710,7 +710,9 @@ export function setupViewer({
     showView();
   });
 
-  new ResizeObserver(fitCrop).observe(stage);
+  // Os ajustes ao tamanho do palco rodam no quadro seguinte, fora do aviso do ResizeObserver (como no editor.js):
+  // mudar o layout dentro dele dava "ResizeObserver loop" no WebKit.
+  new ResizeObserver(() => requestAnimationFrame(fitCrop)).observe(stage);
   dialog.addEventListener('close', () => {
     nextToken();
     setUrl('view', image, null);

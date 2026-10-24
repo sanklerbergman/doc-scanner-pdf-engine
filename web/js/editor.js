@@ -348,7 +348,8 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     canvas.height = Math.round(height * ratio);
     render(-1, { keepFocus: true });
   }
-  new ResizeObserver(fit).observe(stage);
+  // No quadro seguinte, fora do aviso do ResizeObserver: mudar a superfície dentro dele dava "ResizeObserver loop" no WebKit.
+  new ResizeObserver(() => requestAnimationFrame(fit)).observe(stage);
 
   // ---------- Desenho e caixas ----------
 
