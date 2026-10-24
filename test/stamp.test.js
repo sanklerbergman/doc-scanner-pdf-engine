@@ -205,7 +205,8 @@ test('PDF/A com carimbo sem as fontes embutidas, ou sem as letras dele: nada sai
   const stamp = { name: 'X', position: 'top-left', page: 'last' };
   assert.throws(() => buildPdfToSign(pages, { reserve: 64, time: TIME, pdfa: true, stamp }), /fontes embutidas/);
   const signer = await openCertificate(fixture('certificados/titular-aes.pfx'), 'senha-de-teste');
-  await assert.rejects(signer.sign(pages, TIME, { pdfa: true, stamp: { position: 'top-left', page: 'last' } }), /fontes embutidas/);
+  // Na hora atual: o certificado de teste só vale a partir de 16/10/2026, e TIME (hora local) cai antes disso em UTC.
+  await assert.rejects(signer.sign(pages, new Date(), { pdfa: true, stamp: { position: 'top-left', page: 'last' } }), /fontes embutidas/);
   // Fontes preparadas sem as letras do carimbo (sem stampCharacters): também recusado.
   const fonts = await embedFonts([], new Map([['Helvetica', 'A'], ['Helvetica-Bold', 'X']]));
   assert.throws(() => buildPdfToSign(pages, { reserve: 64, time: TIME, pdfa: true, fonts, stamp }), /letra que não está na fonte embutida/);
