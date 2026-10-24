@@ -451,7 +451,7 @@ Esta é a parte mais sensível do app. Com o `.pfx` e a senha, qualquer pessoa a
 - **Só A1 e só PAdES básico (B-B):** é o que dá para fazer sem rede e sem programa instalado.
 - **Sem biblioteca nova:** o leitor de PKCS#12 e a montagem do CMS são próprios, e quem assina é o Web Crypto. A alternativa seria copiar o node-forge ou o PKI.js para `web/vendor/`, que são maiores e trazem muito mais do que o necessário.
 - **Carimbo visível desligado por padrão:** a assinatura vale do mesmo jeito sem ele, e o nome da pessoa só aparece desenhado na página se ela escolher. Lugar padrão: embaixo, à direita, na última página.
-- **Carimbo indisponível com o PDF/A:** o texto visível do carimbo exigiria fonte embutida, que só chega com a fase 2 do PDF/A.
+- **Carimbo com o PDF/A** (v3.7.0, #10): a aparência do carimbo leva a Liberation Sans embutida, como as páginas do Word. Até a v3.6.0, um desligava o outro.
 - **Assinar sem reescrever é automático** (decidido em 2026-10-16): quando a lista é um PDF só, inteiro, na ordem, sem giro, tarja, compressão, senha nova nem divisão. Se algo mudou, o app monta um PDF novo, como antes, e avisa que as assinaturas que o PDF tinha deixam de valer. PDF assinado e pesado não liga mais a compressão sozinho.
 - **PDF com senha ou com a xref danificada:** o app monta um PDF novo para assinar (acrescentar num arquivo cifrado exigiria cifrar os objetos novos com a chave dele) e avisa que as assinaturas anteriores deixam de valer.
 - **PDF certificado (com permissão de assinar):** a assinatura entra sem carimbo. O Acrobat aceita um campo visível novo depois da certificação, mas outros validadores (o pyHanko, por exemplo) dão a certificação como violada, e não se sabe de que lado fica o do ITI.
@@ -546,7 +546,7 @@ O que falta no PDF de hoje para ele ser PDF/A-2b:
 - **Desligado por padrão:** a maioria não precisa, e no Word as fontes aumentam o arquivo.
 - **Liberation em vez de outra família livre:** é a que tem as larguras das fontes que o app já usa, então o documento quebra as linhas do mesmo jeito. As fontes entram em `web/vendor/`, o que pela regra 4 do CONTRIBUTING precisa de conversa antes; este plano é essa conversa, e o pedido veio do dono do projeto.
 - **Versão:** a fase 1 (fotos), com o OCR e a assinatura, sai na v3.4.0. A fase 2 (Word) sai na próxima versão (decidido em 2026-10-16, sem esperar a confirmação dos tribunais).
-- **Carimbo da assinatura e PDF/A continuam sem combinar:** a aparência do carimbo usa Helvetica sem embutir. Dá para embutir com o mesmo caminho do Word, se houver pedido.
+- **Carimbo da assinatura com o PDF/A** (v3.7.0, #10): a aparência do carimbo leva a Liberation Sans normal e negrito embutidas, pelo mesmo caminho do Word (ver "Arrastar, lupa e carimbo com PDF/A").
 - **PDF/A e senha não se combinam:** o PDF/A proíbe criptografia; com um ligado, o outro fica indisponível, com o motivo.
 
 ### Perguntas em aberto
@@ -748,12 +748,15 @@ Hoje a página muda de lugar só pelos botões "Mover para antes" e "Mover para 
 - Soltar no mesmo lugar não muda nada e não descarta o PDF já gerado. Esc, ou o navegador cancelar o toque, devolve o cartão ao lugar.
 - Os botões ← e → continuam: são o caminho do teclado, do leitor de tela e de quem não consegue arrastar (WCAG 2.5.7). Por isso a alça fica fora do Tab e escondida do leitor de tela: ela não faz nada que os botões não façam. Ao soltar, o leitor de tela ouve "Página 3 movida para a posição 1".
 - Com o app ocupado (gerando o PDF), a alça fica desligada, como os botões.
+- O lugar de soltar sai do centro do cartão arrastado, não do dedo: a alça fica embaixo de um cartão alto, e pelo dedo descer uma posição custaria uns 100 px e subir, uns 500 px. A conta acha primeiro a linha e depois a coluna (`web/js/reorder.js`).
+- Numa coluna só, os outros cartões andam a altura do arrastado, porque foto e PDF têm alturas diferentes; na grade, cada um vai para o lugar do vizinho. O cartão arrastado fica preso dentro da lista: sem isso, a página cresceria a cada passo e a rolagem automática não pararia.
+- A rolagem automática vale numa faixa de 80 px nas bordas e acelera até 3× em 2 s com o dedo parado. Com 12 páginas no tamanho do iPhone, de uma ponta à outra leva uns 4 a 5 s.
 
 Fases:
 
-- [ ] Funções puras de mover um item e de achar o lugar de soltar pelos retângulos dos cartões, com testes
-- [ ] Alça, cartão acompanhando o dedo, espaço aberto na lista, rolagem automática e cancelamento
-- [ ] Anúncio para o leitor de tela e conferência no Chromium e no WebKit, no tamanho do iPhone 16e
+- [x] Funções puras de mover um item e de achar o lugar de soltar pelos retângulos dos cartões, com testes
+- [x] Alça, cartão acompanhando o dedo, espaço aberto na lista, rolagem automática e cancelamento
+- [x] Anúncio para o leitor de tela e conferência no Chromium e no WebKit (mouse) e no Chromium (toque), no tamanho do iPhone 16e e em 1280 × 800. Falta o Safari do iPhone
 
 ### Lupa ao arrastar os cantos do recorte
 
@@ -765,11 +768,14 @@ O dedo cobre justamente o canto que a pessoa está arrastando, e acertar a borda
 - Fica acima do dedo, numa distância que o dedo não cobre. Perto da borda de cima da tela, vai para baixo ou para o lado, e nunca sai da tela.
 - Aparece com qualquer ponteiro (dedo, caneta ou mouse). Pelas setas do teclado não aparece, porque nada cobre o canto.
 - Fica fora da árvore de acessibilidade (`aria-hidden`) e não recebe toque (`pointer-events: none`).
+- Ficou assim: 120 px, 3×, com a borda a 48 px do dedo. Perto do topo, vai para o lado com mais espaço; sem espaço, para baixo; sempre a 8 px da borda da tela. A posição é uma função pura (`loupeCenter`, em `viewer.js`), com testes.
+- A mira é um anel em volta do ponto, não uma cruz, para não tampar as linhas do recorte. As linhas pegam a cor do polígono (vermelhas quando os cantos se cruzam).
+- A foto do recorte tem no máximo 1280 px no lado maior, então a lupa sai um pouco suave.
 
 Fases:
 
-- [ ] Lupa no canvas, posição em volta do dedo sem sair da tela, mira e linhas do recorte
-- [ ] Conferência no Chromium e no WebKit, no tamanho do iPhone 16e, com foto em pé e deitada
+- [x] Lupa no canvas, posição em volta do dedo sem sair da tela, mira e linhas do recorte
+- [x] Conferência no Chromium e no WebKit (390 × 664 e 1280 × 800), com foto em pé e deitada, por mouse e, no Chromium, por toque. Falta o Safari do iPhone
 
 ### Carimbo da assinatura com o PDF/A
 
@@ -781,12 +787,15 @@ Hoje um desliga o outro ("Indisponível com o PDF/A: o texto do carimbo precisar
 - O desenho do carimbo não muda: as Liberation têm as larguras das fontes padrão em toda a WinAnsi (menos ¯ ± µ · ÷, com até 0,4 ponto de diferença), e o `/Widths` vem da fonte embutida.
 - Com o PDF/A e o carimbo, o app baixa a Liberation Sans normal e negrito na primeira vez (uns 0,5 MB cada), se o Word ainda não tiver baixado.
 - Saem a recusa em `sign.js` e em `pdf.js` e o aviso na janela de assinar.
+- Com o carimbo, a camada do OCR das fotos usa a mesma Helvetica embutida, mesmo sem página de Word (a regra que já valia com o Word).
+- Falha fechada: se faltar a fonte embutida ou alguma letra do carimbo no subconjunto, nada é gerado.
+- O carimbo com o PDF/A acrescenta uns 18 KB num PDF só de fotos e uns 3 KB quando o Word já embute a Helvetica. Sem o PDF/A, o PDF assinado sai byte a byte como antes.
 
 Fases:
 
-- [ ] Fontes embutidas na aparência do carimbo quando o PDF/A está ligado, com testes
-- [ ] Conferência no veraPDF (PDF/A-2b), assinatura válida e `qpdf --check`
-- [ ] Janela de assinar sem o aviso, com a prévia como antes
+- [x] Fontes embutidas na aparência do carimbo quando o PDF/A está ligado, com testes
+- [x] Conferência no veraPDF (PDF/A-2b), assinatura válida e `qpdf --check`: foto, Word, e Word com foto e OCR. Antes da mudança, o veraPDF reprovava o carimbo sem fonte embutida (regra 6.2.11.4.1)
+- [x] Janela de assinar sem o aviso, com a prévia como antes, no Chromium e no WebKit
 
 ### Segurança e privacidade
 

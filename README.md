@@ -8,14 +8,14 @@ Feito pela comunidade, para a comunidade.
 ## O que faz
 
 - Tirar foto com a câmera do celular, com **botão de luz**, aviso de ambiente escuro e contorno do papel ao vivo, ou escolher várias imagens (também aceita arrastar e colar)
-- **Recorte automático do papel** com correção de perspectiva e de proporção, ajustável arrastando os cantos
+- **Recorte automático do papel** com correção de perspectiva e de proporção, ajustável arrastando os cantos, com uma lupa para acertar a borda do papel que o dedo cobre
 - Ver cada página em tela cheia, como vai sair no PDF, e **copiar o texto** dela (foto, PDF escaneado, PDF com texto ou Word; o que está sob uma tarja não é copiado)
-- Reordenar, girar e remover páginas
+- Reordenar (arrastando pela alça do cartão ou pelos botões), girar e remover páginas
 - Filtros: **Documento** (remove sombra, fundo branco, reforça texto fraco), **Cor realçada**, **Preto e branco** e **Original**
 - Tamanho A4, Carta ou igual à imagem; margem e qualidade ajustáveis
 - Baixar ou compartilhar o PDF (no celular)
 - Abre **documentos do Word (.docx)**: o PDF sai com texto de verdade (selecionável e pesquisável), com títulos, listas, negrito e itálico, tabelas, imagens, cabeçalho e rodapé (com "Página X de Y"), no tamanho de página e nas margens do documento. As páginas podem ser misturadas com fotos
-- **PDF/A** (PDF/A-2b, formato de arquivamento que alguns tribunais pedem no processo eletrônico): para fotos e documentos do Word, com ou sem o texto pesquisável e a assinatura. Nas páginas do Word, as fontes vão embutidas no PDF (as Liberation, com as mesmas medidas de Helvetica, Times e Courier, só com as letras usadas). Não vale para páginas de outro PDF e não combina com senha, porque o PDF/A não permite criptografia
+- **PDF/A** (PDF/A-2b, formato de arquivamento que alguns tribunais pedem no processo eletrônico): para fotos e documentos do Word, com ou sem o texto pesquisável e a assinatura (com o carimbo visível, se quiser). Nas páginas do Word e no carimbo, as fontes vão embutidas no PDF (as Liberation, com as mesmas medidas de Helvetica, Times e Courier, só com as letras usadas). Não vale para páginas de outro PDF e não combina com senha, porque o PDF/A não permite criptografia
 - **Tarja de verdade**: na tela cheia da página, marque o que esconder (CPF, endereço, conta, assinatura). O que fica sob a tarja é apagado do PDF, não só coberto: nas fotos, os pixels são pintados; no Word, o texto embaixo sai da página; a página de outro PDF tarjada vira imagem. Antes de entregar, o app relê o PDF novo e confere que não sobrou texto sob nenhuma tarja. O botão "Procurar dados para tarjar" acha CPF, CNPJ, e-mail, telefone, CEP e número de cartão no texto das páginas (nas fotos e nos PDFs escaneados, com o OCR) e sugere as tarjas, que a pessoa confirma uma a uma
 - Abre **PDFs com senha** (contracheques, extratos, faturas): o app pede a senha, que só é usada no aparelho e não fica guardada. PDF que só tem restrições do autor abre direto. O PDF novo sai sem senha, a não ser que você ligue "Proteger o PDF com senha"
 - **Protege o PDF gerado com senha** (AES-256): quem receber precisa da senha para abrir. O app não guarda a senha nem tem como recuperá-la

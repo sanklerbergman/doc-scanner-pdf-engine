@@ -32,8 +32,6 @@ npm test    # testes
 ## Ideias de próximos passos
 
 - Detectar o papel também com sombra forte ou fundo claro
-- Lupa ao arrastar os cantos do recorte
-- Arrastar para reordenar páginas
 - Interface em outros idiomas
 
 Funcionalidades maiores (abrir .docx, juntar, dividir e comprimir PDF, reconhecer texto com OCR, assinar com certificado digital, gerar PDF/A, tarjar dados e abrir PDF com senha) estão planejadas em [MELHORIAS.md](MELHORIAS.md).
