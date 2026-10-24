@@ -10,35 +10,10 @@ import { buildStamp, stampPageIndex } from './stamp.js';
 
 const encoder = new TextEncoder();
 
-// Campos do formulário (AcroForm), com o tipo herdado do campo de cima: [{field, type, top}].
-// top: o campo está direto na lista /Fields (é ali que o nome precisa ser único).
-function formFields(doc) {
-  const form = doc.resolve(doc.catalog().get('AcroForm'));
-  const fields = form instanceof PdfDict ? doc.resolve(form.get('Fields')) : null;
-  const out = [];
-  const seen = new Set();
-  const stack = Array.isArray(fields) ? fields.map((ref) => ({ ref, type: null, top: true })) : [];
-  while (stack.length && seen.size < 10000) {
-    const { ref, type, top } = stack.pop();
-    if (ref instanceof PdfRef) {
-      if (seen.has(ref.num)) continue;
-      seen.add(ref.num);
-    }
-    const field = doc.resolve(ref);
-    if (!(field instanceof PdfDict)) continue;
-    const own = doc.resolve(field.get('FT'));
-    const kind = own instanceof PdfName ? own.value : type;
-    out.push({ field, type: kind, top });
-    const kids = doc.resolve(field.get('Kids'));
-    if (Array.isArray(kids)) stack.push(...kids.map((kid) => ({ ref: kid, type: kind, top: false })));
-  }
-  return out;
-}
-
 /**
  * O PDF da lista, quando dá para assiná-lo sem reescrever: a lista é um PDF só, inteiro e na ordem, e nada do que foi
- * escolhido muda o arquivo (giro, tarja, edição, compressão, OCR, senha, dividir, "em todas as páginas"). Aí a
- * assinatura entra no fim do arquivo, e as que ele já tinha continuam valendo.
+ * escolhido muda o arquivo (giro, tarja, edição, valor preenchido no formulário, compressão, OCR, senha, dividir, "em
+ * todas as páginas"). Aí a assinatura entra no fim do arquivo, e as que ele já tinha continuam valendo.
  * @param {object[]} pages a lista de páginas do app
  * @param {{changes: boolean, groups: number[][] | null}} options changes: alguma opção do PDF muda o arquivo
  *   (compressão, senha, OCR, "em todas as páginas"); groups: os arquivos que vão sair (null: intervalos inválidos)
@@ -46,7 +21,7 @@ function formFields(doc) {
  */
 export function unchangedSource(pages, { changes, groups }) {
   const doc = pages[0]?.doc;
-  if (!doc || changes || pages.length !== doc.pages.length) return null;
+  if (!doc || changes || pages.length !== doc.pages.length || doc.form?.hasValues()) return null;
   const same = pages.every((page, i) => page.kind === 'pdf' && page.doc === doc && page.index === i && !page.rotation
     && !page.redactions?.length && !page.edits?.length);
   if (!same || groups?.length !== 1) return null;
@@ -76,7 +51,7 @@ export function changePermission(doc) {
   };
   const perms = doc.resolve(doc.catalog().get('Perms'));
   if (perms instanceof PdfDict) fromSignature(doc.resolve(perms.get('DocMDP')));
-  for (const { field, type } of formFields(doc)) if (type === 'Sig') fromSignature(doc.resolve(field.get('V')));
+  for (const { type, value } of doc.formFields()) if (type === 'Sig') fromSignature(value);
   return levels.length ? Math.min(...levels) : null;
 }
 
@@ -132,18 +107,6 @@ export function appendBlocker(doc) {
     return { kind: 'locked', message: 'O autor certificou este PDF sem permitir nenhuma alteração. Uma assinatura nova faria a certificação deixar de valer, por isso o app não assina este arquivo.' };
   }
   return null;
-}
-
-// Nome de campo (/T) para mostrar ou comparar: UTF-16 com a marca de ordem dos bytes, ou um byte por letra.
-function fieldName(value) {
-  if (!(value instanceof PdfString)) return '';
-  const { bytes } = value;
-  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
-    let out = '';
-    for (let i = 2; i + 1 < bytes.length; i += 2) out += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
-    return out;
-  }
-  return String.fromCharCode(...bytes.subarray(0, 1000));
 }
 
 // Valor do PDF original → texto, com as referências apontando para os mesmos objetos de antes.
@@ -223,7 +186,7 @@ export function buildAppendToSign(doc, { reserve, time, stamp }) {
   }
 
   // Nome do campo: "Assinatura", "Assinatura 2"… sem repetir o de um campo que já existe.
-  const taken = new Set(formFields(doc).filter(({ top }) => top).map(({ field }) => fieldName(doc.resolve(field.get('T')))));
+  const taken = new Set(doc.formFields().filter(({ top }) => top).map(({ partial }) => partial));
   let name = 'Assinatura';
   for (let n = 2; taken.has(name); n++) name = `Assinatura ${n}`;
 

@@ -1,6 +1,7 @@
-// O que o app faz com um PDF, sem o navegador: abrir (com os avisos), juntar, dividir, comprimir, acrescentar a
-// camada do OCR (com palavras simuladas), acrescentar edições (formas e desenho, como as da tela cheia) e acrescentar
-// uma assinatura sem reescrever o arquivo (só a estrutura, com o espaço reservado: a chave não muda nada nela).
+// O que o app faz com um PDF, sem o navegador: abrir (com os avisos e os campos do formulário), juntar, dividir,
+// comprimir, acrescentar a camada do OCR (com palavras simuladas), acrescentar edições (formas e desenho, como as da
+// tela cheia), preencher todos os campos e acrescentar uma assinatura sem reescrever o arquivo (só a estrutura, com o
+// espaço reservado: a chave não muda nada nela).
 // Cada PDF gerado é reaberto pelo próprio leitor e, se pedido, passa pelo qpdf --check.
 // Usado pela varredura (varrer-pdfs.mjs) e pelo fuzzing (fuzz-pdf.mjs), sempre dentro de um Worker com tempo e
 // memória limitados (isolar.mjs): um PDF que trava o leitor derruba só o Worker dele.
@@ -17,6 +18,7 @@ import { compressObjects, compressibleBytes } from '../../web/js/pdf-compress.js
 import { buildPdf } from '../../web/js/pdf.js';
 import { appendBlocker, buildAppendToSign } from '../../web/js/pdf-append.js';
 import { rotateEdits } from '../../web/js/edits.js';
+import { readForm } from '../../web/js/pdf-form.js';
 import { storeImage, flateImage, rubricFromStrokes, rubricEdit } from '../../web/js/edit-media.js';
 
 // O app recodifica as imagens num canvas; aqui, toda imagem vira o mesmo JPEG pequeno. Basta para passar pela
@@ -59,9 +61,19 @@ EDITS.push(
     'bottom-right', 80, { width: 600, height: 800 }),
 );
 
-// Copia as páginas (girando uma sim, outra não, como o app permite), monta o PDF e reabre com o leitor.
-async function rebuild(doc, indices, replace, ocr, edits) {
-  const copy = copyPages(doc, indices, { replace, ocr, edits });
+// Valor de teste para cada tipo de campo (pdf-form.js): texto com parênteses, barra e acento; a última opção do rádio;
+// a primeira das listas.
+function sampleValue(field) {
+  if (field.kind === 'checkbox') return true;
+  if (field.kind === 'radio') return field.options.at(-1)?.value ?? null;
+  if (field.kind === 'combo' || field.kind === 'list') return field.options[0]?.value ?? '';
+  return field.multiline ? 'Texto (preenchido) \\ ação\nsegunda linha' : 'Texto (preenchido) \\ ação';
+}
+
+// Copia as páginas (girando uma sim, outra não, como o app permite), monta o PDF e reabre com o leitor. fill: os campos
+// do formulário (pdf-form.js), como o app passa sempre: os preenchidos e os que outro programa não desenhou (#16).
+async function rebuild(doc, indices, replace, ocr, edits, fill = doc.form?.fill()) {
+  const copy = copyPages(doc, indices, { replace, ocr, edits, fill });
   const out = buildPdf(indices.map((index, i) => ({ copy: { source: copy, page: copy.pages.get(index) }, rotation: (i % 2) * 90 })));
   let again;
   try {
@@ -123,6 +135,9 @@ export async function exercise(bytes) {
     doc.isSigned();
     doc.hasAnnotations();
     compressibleBytes(doc);
+    stage = 'campos';
+    doc.form = await readForm(doc);
+    doc.form.redrawn();
     const all = doc.pages.map((_, i) => i);
     stage = 'juntar';
     outputs.push(await rebuild(doc, all));
@@ -135,6 +150,10 @@ export async function exercise(bytes) {
     outputs.push(await rebuild(doc, all, undefined, new Map(all.map((i) => [i, { words: WORDS, rotation: (i % 2) * 90 }]))));
     stage = 'edição';
     outputs.push(await rebuild(doc, all, undefined, undefined, new Map(all.map((i) => [i, { edits: rotateEdits(EDITS, (i % 2) * 90), rotation: (i % 2) * 90 }]))));
+    stage = 'formulário';
+    for (const field of doc.form.fields) if (field.editable) doc.form.setValue(field.id, sampleValue(field));
+    outputs.push(await rebuild(doc, all));
+    doc.form.clear();
     stage = 'assinar sem reescrever';
     const signed = await append(doc);
     if (signed) outputs.push(signed);

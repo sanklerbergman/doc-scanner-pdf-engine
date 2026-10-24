@@ -55,6 +55,35 @@ export class Keyword {
 
 export const isName = (value, name) => value instanceof PdfName && (name === undefined || value.value === name);
 
+// Codificação padrão dos textos do PDF (PDFDocEncoding, ISO 32000-1, anexo D): igual à Latin-1, menos estes códigos.
+const PDF_DOC = new Map([
+  [0x18, 0x02d8], [0x19, 0x02c7], [0x1a, 0x02c6], [0x1b, 0x02d9], [0x1c, 0x02dd], [0x1d, 0x02db], [0x1e, 0x02da],
+  [0x1f, 0x02dc], [0x80, 0x2022], [0x81, 0x2020], [0x82, 0x2021], [0x83, 0x2026], [0x84, 0x2014], [0x85, 0x2013],
+  [0x86, 0x0192], [0x87, 0x2044], [0x88, 0x2039], [0x89, 0x203a], [0x8a, 0x2212], [0x8b, 0x2030], [0x8c, 0x201e],
+  [0x8d, 0x201c], [0x8e, 0x201d], [0x8f, 0x2018], [0x90, 0x2019], [0x91, 0x201a], [0x92, 0x2122], [0x93, 0xfb01],
+  [0x94, 0xfb02], [0x95, 0x0141], [0x96, 0x0152], [0x97, 0x0160], [0x98, 0x0178], [0x99, 0x017d], [0x9a, 0x0131],
+  [0x9b, 0x0142], [0x9c, 0x0153], [0x9d, 0x0161], [0x9e, 0x017e], [0xa0, 0x20ac],
+]);
+
+/**
+ * Texto de uma string do PDF (nome de campo, valor, rótulo): UTF-16 com a marca de ordem dos bytes, UTF-8 com a marca
+ * (PDF 2.0) ou PDFDocEncoding. Até limit letras.
+ * @param {PdfString | unknown} value
+ */
+export function textString(value, limit = 100000) {
+  if (!(value instanceof PdfString)) return '';
+  const bytes = value.bytes.subarray(0, limit * 2 + 3);
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    let out = '';
+    for (let i = 2; i + 1 < bytes.length; i += 2) out += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
+    return out.slice(0, limit);
+  }
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return new TextDecoder().decode(bytes.subarray(3)).slice(0, limit);
+  let out = '';
+  for (const b of bytes.subarray(0, limit)) out += String.fromCharCode(PDF_DOC.get(b) ?? b);
+  return out;
+}
+
 // ---------- Análise léxica ----------
 
 const WHITESPACE = new Set([0, 9, 10, 12, 13, 32]);
@@ -270,6 +299,7 @@ class PdfDocument {
     this.startxref = null; // posição da tabela xref mais nova (para acrescentar uma atualização no fim)
     this.startxrefAt = null; // posição da palavra "startxref" que aponta para ela
     this.repaired = false; // xref quebrada: os objetos foram achados varrendo o arquivo
+    this.fieldNodes = null; // campos do formulário, lidos na primeira vez (formFields)
   }
 
   async load(password) {
@@ -670,63 +700,92 @@ class PdfDocument {
 
   // PDF assinado digitalmente (gov.br, ICP-Brasil): a assinatura não sobrevive a juntar ou dividir.
   isSigned() {
-    const form = this.resolve(this.catalog().get('AcroForm'));
-    if (!(form instanceof PdfDict)) return false;
+    const form = this.acroForm();
+    if (!form) return false;
     if ((this.resolve(form.get('SigFlags')) ?? 0) & 1) return true;
-    const seen = new Set();
-    const fields = this.resolve(form.get('Fields'));
-    const stack = Array.isArray(fields) ? [...fields] : [];
-    while (stack.length && seen.size < 10000) {
-      const ref = stack.pop();
-      if (ref instanceof PdfRef) {
-        if (seen.has(ref.num)) continue;
-        seen.add(ref.num);
-      }
-      const field = this.resolve(ref);
-      if (!(field instanceof PdfDict)) continue;
-      if (isName(this.resolve(field.get('FT')), 'Sig') && field.get('V') != null) return true;
-      const kids = this.resolve(field.get('Kids'));
-      if (Array.isArray(kids)) stack.push(...kids);
-    }
-    return false;
+    return this.formFields().some((node) => node.type === 'Sig' && node.value != null);
   }
 
-  // Formulário preenchido em outro programa que não desenhou os valores (#16): campo de texto ou lista com valor e
-  // /NeedAppearances no formulário, ou sem aparência (/AP /N). O PDF.js redesenha o campo na tela, mas a cópia
-  // (copyPages) leva a aparência guardada, vazia ou velha, e o valor some do PDF novo. A correção vem com o
-  // preenchimento de formulários (v4.1.0); até lá, o app avisa ao abrir.
-  formValuesWithoutAppearance() {
+  // Dicionário do formulário (/AcroForm), ou null.
+  acroForm() {
     const form = this.resolve(this.catalog().get('AcroForm'));
-    if (!(form instanceof PdfDict)) return false;
-    const redraw = this.resolve(form.get('NeedAppearances')) === true;
-    const filled = (value) => (value instanceof PdfString ? [...value.bytes].some((b) => b > 0x20 && b !== 0xfe && b !== 0xff)
-      : Array.isArray(value) ? value.some((item) => filled(this.resolve(item))) : false);
-    const seen = new Set();
+    return form instanceof PdfDict ? form : null;
+  }
+
+  /**
+   * Campos do formulário, num caminhamento só da árvore do /AcroForm (ISO 32000-1, 12.7.3), usado pela assinatura
+   * (isSigned e pdf-append.js) e pelo preenchimento (pdf-form.js). Cada nó vem com o que herda do campo de cima: tipo
+   * (/FT), opções (/Ff), valor (/V e /DV), aparência do texto (/DA, que cai na do /AcroForm), alinhamento (/Q) e
+   * tamanho máximo (/MaxLen). Filho sem nome (/T) e sem /Kids é widget do campo; com nome, é outro campo.
+   * Cada objeto conta uma vez (referência repetida ou em ciclo é pulada), até 10000 objetos e 32 níveis.
+   * Nada é interpretado nem executado: /DA e /AA ficam como estão no arquivo.
+   * @returns {Array<{ref: PdfRef | null, dict: PdfDict, parent: object | null, name: string, partial: string,
+   *   top: boolean, terminal: boolean, type: string | null, flags: number, value: unknown, defaultValue: unknown,
+   *   da: string | null, q: unknown, maxLen: unknown, widgets: Array<{ref: PdfRef | null, dict: PdfDict}>}>}
+   *   name: o nome completo ("pai.filho"); top: está direto em /Fields; terminal: tem valor (não só campos embaixo)
+   */
+  formFields() {
+    if (this.fieldNodes) return this.fieldNodes;
+    const form = this.acroForm();
+    const nodes = [];
+    this.fieldNodes = nodes;
+    if (!form) return nodes;
     const fields = this.resolve(form.get('Fields'));
-    // O tipo (/FT) e o valor (/V) vêm do campo de cima quando o de baixo não tem.
-    const stack = Array.isArray(fields) ? fields.map((ref) => ({ ref, type: null, value: null })) : [];
-    while (stack.length && seen.size < 10000) {
-      const { ref, type, value } = stack.pop();
+    if (!Array.isArray(fields)) return nodes;
+    const formDa = this.resolve(form.get('DA'));
+    const seen = new Set();
+    let count = 0;
+    const visit = (ref) => {
       if (ref instanceof PdfRef) {
-        if (seen.has(ref.num)) continue;
+        if (seen.has(ref.num)) return null;
         seen.add(ref.num);
       }
-      const field = this.resolve(ref);
-      if (!(field instanceof PdfDict)) continue;
-      const own = this.resolve(field.get('FT'));
-      const kind = own instanceof PdfName ? own.value : type;
-      const current = field.has('V') ? this.resolve(field.get('V')) : value;
-      const kids = this.resolve(field.get('Kids'));
-      if (Array.isArray(kids) && kids.length) {
-        stack.push(...kids.map((kid) => ({ ref: kid, type: kind, value: current })));
-        continue;
+      const dict = this.resolve(ref);
+      if (!(dict instanceof PdfDict) || count >= 10000) return null;
+      count++;
+      return dict;
+    };
+    const own = (dict, key, inherited) => (dict.has(key) ? this.resolve(dict.get(key)) : inherited);
+    // Pilha na ordem do arquivo (o primeiro campo sai primeiro).
+    const stack = fields.slice(0, 10000).reverse().map((ref) => ({ ref, parent: null, depth: 0 }));
+    while (stack.length && count < 10000) {
+      const { ref, parent, depth } = stack.pop();
+      const dict = visit(ref);
+      if (!dict) continue;
+      const partial = textString(this.resolve(dict.get('T')), 1000);
+      const ft = this.resolve(dict.get('FT'));
+      const flags = own(dict, 'Ff', parent?.flags ?? 0);
+      const da = own(dict, 'DA', parent ? parent.daValue : formDa);
+      const node = {
+        ref: ref instanceof PdfRef ? ref : null, dict, parent,
+        name: parent?.name && partial ? `${parent.name}.${partial}` : parent?.name || partial, partial,
+        top: !parent, terminal: false,
+        type: ft instanceof PdfName ? ft.value : parent?.type ?? null,
+        flags: Number.isInteger(flags) && flags >= 0 ? flags : 0,
+        value: own(dict, 'V', parent?.value), defaultValue: own(dict, 'DV', parent?.defaultValue),
+        daValue: da, da: da instanceof PdfString ? latin1(da.bytes, 0, Math.min(da.bytes.length, 1000)) : null,
+        q: own(dict, 'Q', parent?.q), maxLen: own(dict, 'MaxLen', parent?.maxLen),
+        widgets: [],
+      };
+      nodes.push(node);
+      const kids = this.resolve(dict.get('Kids'));
+      const children = [];
+      if (Array.isArray(kids) && depth < 32) {
+        for (const kid of kids.slice(0, 10000)) {
+          const kidDict = this.resolve(kid);
+          if (!(kidDict instanceof PdfDict)) continue;
+          if (kidDict.has('T') || kidDict.has('Kids')) children.push(kid);
+          else if (visit(kid)) node.widgets.push({ ref: kid instanceof PdfRef ? kid : null, dict: kidDict });
+        }
       }
-      if ((kind === 'Tx' || kind === 'Ch') && filled(current)) {
-        const appearance = this.resolve(this.resolve(field.get('AP'))?.get?.('N'));
-        if (redraw || !(appearance instanceof PdfStream || appearance instanceof PdfDict)) return true;
+      // Sem filhos: o próprio campo é o widget (dicionários fundidos), quando tem cara de widget.
+      if (!children.length && !node.widgets.length && (isName(this.resolve(dict.get('Subtype')), 'Widget') || dict.has('Rect'))) {
+        node.widgets.push({ ref: node.ref, dict });
       }
+      node.terminal = !children.length || node.widgets.length > 0;
+      for (const kid of children.reverse()) stack.push({ ref: kid, parent: node, depth: depth + 1 });
     }
-    return false;
+    return nodes;
   }
 
   // Páginas com links, comentários ou campos de formulário (que não vão para o PDF novo).
@@ -742,7 +801,9 @@ class PdfDocument {
 
 // Aparências visíveis das anotações de uma página, já posicionadas: [{stream, matrix}].
 // matrix leva a caixa da aparência (BBox, transformada pela Matrix dela) até o retângulo da anotação (Rect).
-function flattenAnnotations(doc, page) {
+// fill: campos com valor (opção fill do copyPages), pelo número do widget: a aparência nova (stream) ou o estado
+// escolhido (state), no lugar do /AP /N e do /AS guardados no arquivo.
+function flattenAnnotations(doc, page, fill) {
   const annots = doc.resolve(page.node.get('Annots'));
   if (!Array.isArray(annots)) return [];
   const out = [];
@@ -753,9 +814,10 @@ function flattenAnnotations(doc, page) {
     const subtype = doc.resolve(annot.get('Subtype'));
     if (flags & (2 | 32) || isName(subtype, 'Popup') || isName(subtype, 'Link')) continue; // oculta, sem exibição, ou só clique
     if (doc.layers?.isHidden(annot.get('OC'))) continue; // numa camada oculta
-    let appearance = doc.resolve(doc.resolve(annot.get('AP'))?.get?.('N'));
+    const chosen = ref instanceof PdfRef ? fill?.get(ref.num) : undefined;
+    let appearance = chosen?.stream ?? doc.resolve(doc.resolve(annot.get('AP'))?.get?.('N'));
     if (appearance instanceof PdfDict) { // um estado por valor (caixa de seleção marcada ou não)
-      const state = doc.resolve(annot.get('AS'));
+      const state = typeof chosen?.state === 'string' ? new PdfName(chosen.state) : doc.resolve(annot.get('AS'));
       appearance = state instanceof PdfName ? doc.resolve(appearance.get(state.value)) : null;
     }
     if (!(appearance instanceof PdfStream)) continue;
@@ -833,13 +895,17 @@ class NewRef {
  * @param {PdfDocument} doc
  * @param {number[]} indices posições das páginas (a partir de 0)
  * @param {{replace?: Map<number, PdfStream>, ocr?: Map<number, {words: object[], rotation: number}>,
- *   edits?: Map<number, {edits: object[], rotation: number}>}} [options]
+ *   edits?: Map<number, {edits: object[], rotation: number}>,
+ *   fill?: Map<number, {stream: PdfStream} | {state: string}>}} [options]
  *   replace: objetos trocados na cópia (ex.: imagens recomprimidas pelo pdf-compress.js), pelo número no PDF de
  *   origem; ocr: palavras reconhecidas (ocr.js) nas páginas escaneadas, pela posição da página, medidas na página
  *   como ela aparece com o /Rotate dela mais o giro rotation (o do app, que vai junto no /Rotate do PDF novo): viram
  *   uma camada de texto invisível por cima do conteúdo, como nas fotos (ocr-layer.js); edits: as edições da pessoa
  *   (edits.js), pela posição da página, de 0 a 1 na página como aparece (com o mesmo giro): viram conteúdo da
- *   página, por cima do original e das anotações, com recursos de nomes que a página ainda não usa
+ *   página, por cima do original e das anotações, com recursos de nomes que a página ainda não usa; fill: os campos
+ *   do formulário com valor (pdf-form.js), pelo número do widget no PDF de origem: a aparência nova (stream, um Form
+ *   XObject) ou o estado escolhido da caixa ou do rádio (state), no lugar dos guardados no arquivo. A aparência antiga
+ *   do campo nem é copiada
  * Anotações (links, comentários, campos de formulário) não são copiadas como anotações: o que elas mostram
  * (o valor preenchido num campo, um carimbo, o selo de uma assinatura) é desenhado na própria página.
  * Assim o PDF novo fica igual ao que se via, mas sem nada clicável nem editável.
@@ -847,7 +913,7 @@ class NewRef {
  *   objects: cada objeto como uma lista de partes; {ref: i} aponta para objects[i].
  *   pages: por página, {mediaBox, cropBox, rotate, resources, contents, group}, também em partes.
  */
-export function copyPages(doc, indices, { replace, ocr, edits } = {}) {
+export function copyPages(doc, indices, { replace, ocr, edits, fill } = {}) {
   const objects = [];
   const local = new Map(); // num no PDF de origem → posição em objects
   const queue = [];
@@ -956,7 +1022,7 @@ export function copyPages(doc, indices, { replace, ocr, edits } = {}) {
   for (const index of indices) {
     const page = doc.pages[index];
     const group = page.node.get('Group');
-    const appearances = flattenAnnotations(doc, page);
+    const appearances = flattenAnnotations(doc, page, fill);
     const { words, rotation = 0 } = ocr?.get(index) ?? {};
     const { edits: drawn, rotation: turn = 0 } = edits?.get(index) ?? {};
     const userUnit = validUserUnit(doc.resolve(page.node.get('UserUnit')));

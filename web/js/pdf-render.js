@@ -185,6 +185,14 @@ export async function pageTexts(bytes, indices) {
   }
 }
 
+// Libera a memória de um PDF (a cópia de uma página com valores no formulário, refeita com valores novos).
+export function release(key) {
+  const promise = documents.get(key);
+  if (!promise) return;
+  documents.delete(key);
+  promise.then((doc) => doc.destroy()).catch(() => {});
+}
+
 // Libera a memória dos PDFs (ao limpar a lista).
 export function releaseAll() {
   for (const promise of documents.values()) promise.then((doc) => doc.destroy()).catch(() => {});

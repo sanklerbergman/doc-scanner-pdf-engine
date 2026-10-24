@@ -347,17 +347,15 @@ export async function prepareLayers(doc) {
       layers.removed ||= result.removed;
     }
     visit(resources);
-    // Aparências das anotações, que o copyPages desenha na página.
+    // Aparências das anotações, que o copyPages desenha na página. Da caixa e do rádio, todos os estados: o valor
+    // preenchido no app pode escolher outro que não o guardado (/AS).
     const annots = doc.resolve(page.node.get('Annots'));
     for (const ref of Array.isArray(annots) ? annots : []) {
       const annot = doc.resolve(ref);
       if (!(annot instanceof PdfDict) || layers.isHidden(annot.get('OC'))) continue;
-      let appearance = doc.resolve(doc.resolve(annot.get('AP'))?.get?.('N'));
-      if (appearance instanceof PdfDict) {
-        const state = doc.resolve(annot.get('AS'));
-        appearance = state instanceof PdfName ? doc.resolve(appearance.get(state.value)) : null;
-      }
-      if (appearance instanceof PdfStream) queue.push([appearance, resources]);
+      const appearance = doc.resolve(doc.resolve(annot.get('AP'))?.get?.('N'));
+      const states = appearance instanceof PdfDict ? [...appearance.values()].slice(0, 100).map((item) => doc.resolve(item)) : [appearance];
+      for (const state of states) if (state instanceof PdfStream) queue.push([state, resources]);
     }
     await drain();
   }

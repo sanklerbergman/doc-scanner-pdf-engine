@@ -19,6 +19,7 @@ let renderer; // pdf-render.js, com o PDF.js
 
 /**
  * Desenha uma página do PDF. Devolve {canvas, real}: real = false quando saiu só o cartão.
+ * Página com valores no formulário sai como vai ficar no PDF novo (filledPage).
  * @param {object} doc documento do pdf-reader
  * @param {{index: number, width: number, height: number}} page
  * @param {{maxSide: number, rotation?: number, number: number}} options
@@ -27,12 +28,46 @@ export async function drawPdfPage(doc, page, options) {
   try {
     renderer ??= import('./pdf-render.js');
     const { renderPdfPage } = await renderer;
-    return { canvas: await renderPdfPage(doc, doc.previewBytes ?? doc.bytes, page.index, options), real: true };
+    const filled = filledPage(doc, page.index);
+    const canvas = filled
+      ? await renderPdfPage(filled, filled.bytes, 0, options)
+      : await renderPdfPage(doc, doc.previewBytes ?? doc.bytes, page.index, options);
+    return { canvas, real: true };
   } catch (err) {
     console.warn('Página de PDF sem desenho:', err);
     renderer = undefined; // tenta de novo na próxima (ex.: sem rede e sem cache na primeira vez)
     return { canvas: drawPdfCard(page, options), real: false };
   }
+}
+
+// Página com valores no formulário (preenchidos no app, ou desenhados de novo quando outro programa não desenhou, #16):
+// o PDF.js desenha um PDF só com ela, montado como o PDF novo (copyPages com fill). Assim a miniatura, a tela cheia, a
+// tarja (que vira imagem) e o OCR mostram o que vai sair. A cópia é refeita quando os valores da página mudam.
+const filledCopies = new WeakMap(); // doc → Map(página → {version, key}); key: {bytes}, a chave do PDF.js
+const RELEASE_MS = 10000; // a cópia velha sai da memória do PDF.js depois disto (um desenho dela pode estar no meio)
+
+function filledPage(doc, index) {
+  const form = doc.form;
+  if (!form?.fillable) return null;
+  // Com senha, a cópia decifrada da prévia já leva os campos desenhados de novo: só os preenchidos no app pedem outra.
+  if (doc.previewBytes && !form.hasValues(index)) return null;
+  if (!filledCopies.has(doc)) filledCopies.set(doc, new Map());
+  const copies = filledCopies.get(doc);
+  const version = form.pageVersion(index);
+  const cached = copies.get(index);
+  if (cached?.version === version) return cached.key;
+  const fill = form.fill([index]);
+  let key = null;
+  if (fill.size) {
+    const copy = copyPages(doc, [index], { fill });
+    key = { bytes: buildPdf([{ copy: { source: copy, page: copy.pages.get(index) } }]) };
+  }
+  if (cached?.key) {
+    const old = cached.key;
+    setTimeout(() => renderer?.then((module) => module.release(old)).catch(() => {}), RELEASE_MS);
+  }
+  copies.set(index, { version, key });
+  return key;
 }
 
 /**
@@ -127,6 +162,11 @@ export async function releasePdfPreviews() {
 export async function openPdfFile(file, password = null) {
   if (file.size > MAX_FILE) throw new PdfError('O PDF passa de 200 MB.');
   const doc = await openPdf(new Uint8Array(await file.arrayBuffer()), { password });
+  // Formulário: os campos e os valores (pdf-form.js), carregado só quando o PDF tem campos ou é um formulário XFA.
+  if (doc.formFields().some((node) => node.terminal) || doc.acroForm()?.has('XFA')) {
+    const { readForm } = await import('./pdf-form.js');
+    doc.form = await readForm(doc);
+  }
   const notes = [];
   if (doc.security?.hadPassword) {
     notes.push('Este PDF tinha senha: o PDF novo sai sem ela, a não ser que você ligue "Proteger o PDF com senha".');
@@ -137,7 +177,7 @@ export async function openPdfFile(file, password = null) {
     // O PDF.js desenha uma cópia já decifrada, com as mesmas páginas que vão para o PDF novo: assim a senha não
     // precisa ficar guardada para as miniaturas.
     const all = doc.pages.map((_, index) => index);
-    const copy = copyPages(doc, all);
+    const copy = copyPages(doc, all, { fill: doc.form?.fill() });
     doc.previewBytes = buildPdf(all.map((index) => ({ copy: { source: copy, page: copy.pages.get(index) } })));
   }
   if (doc.isSigned()) {
@@ -149,17 +189,37 @@ export async function openPdfFile(file, password = null) {
   if (doc.layers?.removed) {
     notes.push('Este PDF tem camadas ocultas: o conteúdo delas não vai para o PDF novo, como já estava escondido na tela.');
   }
+  if (doc.form) notes.push(...formNotes(doc.form));
   if (doc.hasAnnotations()) {
-    // Formulário preenchido em outro programa sem desenhar os valores (#16): a tela mostra, mas o PDF novo leva a
-    // aparência guardada, vazia ou velha. Só o aviso, até o preenchimento de formulários (v4.1.0).
-    notes.push(doc.formValuesWithoutAppearance()
-      ? 'Este formulário foi preenchido em outro programa, que não desenhou os valores nos campos: no PDF novo, os valores preenchidos podem não aparecer. Links e campos também viram parte da página, sem dar para clicar nem editar.'
-      : 'No PDF novo, links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.');
+    notes.push('No PDF novo, links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.');
   }
   const pages = doc.pages.map((page, index) => ({ index, width: page.width, height: page.height }));
   const images = compressibleBytes(doc);
   const heavy = images >= HEAVY_IMAGES && images >= file.size * HEAVY_SHARE;
   return { doc, pages, notes, heavy };
+}
+
+// Notas do formulário ao abrir: quantos campos ele tem, o XFA puro (que o app não preenche) e, no formulário preenchido
+// em outro programa sem desenhar os valores (#16), o que o app não consegue desenhar igual. O resto ele desenha de
+// novo, e o PDF novo sai como a tela.
+function formNotes(form) {
+  const count = form.fields.length;
+  if (form.xfa === 'pure') {
+    return ['Este PDF é um formulário XFA, que só o Adobe Reader mostra e preenche: aqui não dá para preencher, e as páginas podem aparecer vazias ou só com um aviso do Adobe.'];
+  }
+  const notes = [];
+  if (count) notes.push(count === 1 ? 'Este PDF tem um formulário com 1 campo.' : `Este PDF tem um formulário com ${count} campos.`);
+  const { clipped, missing } = form.redrawn();
+  const letters = [...missing];
+  const quoted = letters.slice(0, 8).map((char) => `“${char}”`).join(', ');
+  const problems = [
+    letters.length && (letters.length === 1 ? `a letra ${quoted} não existe nas fontes do PDF e fica de fora` : `as letras ${quoted} não existem nas fontes do PDF e ficam de fora`),
+    clipped && (clipped === 1 ? 'um dos valores não cabe no campo e sai cortado' : `${clipped} valores não cabem no campo e saem cortados`),
+  ].filter(Boolean);
+  if (problems.length) {
+    notes.push(`Este formulário foi preenchido em outro programa, que não desenhou os valores nos campos. O app desenha de novo, mas ${problems.join('; e ')}.`);
+  }
+  return notes;
 }
 
 // Nome do formato, quando é um dos comuns (tolerância de 2 pt).

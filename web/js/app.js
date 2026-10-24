@@ -339,6 +339,8 @@ async function addPdfFile(file) {
     const { doc, pages, notes, heavy } = opened;
     doc.heavy = heavy;
     doc.size = file.size;
+    // Valores do formulário (doc.form, pdf-form.js): gravados pelo painel de preenchimento, valem para o PDF inteiro.
+    doc.form?.onChange((changed) => formChanged(doc, changed));
     for (const info of pages) {
       const page = {
         id: nextId++, kind: 'pdf', name: file.name, number: info.index + 1, total: pages.length,
@@ -500,6 +502,16 @@ function askPdfPassword(name, wrong) {
     dialog.showModal();
     els.pdfPasswordInput.focus();
   });
+}
+
+// Valores do formulário de um PDF mudaram (form.setValue ou form.clear, em pdf-form.js): as páginas dele com campos
+// que mudaram são desenhadas de novo, como vão sair (com os valores fixos), e o PDF gerado antes deixa de valer.
+// O mesmo campo vale em todas as páginas e em todos os arquivos com ele.
+async function formChanged(doc, changed) {
+  discardPdf();
+  const affected = state.pages.filter((page) => page.kind === 'pdf' && page.doc === doc && changed.has(page.index));
+  for (const page of affected) await refreshThumb(page);
+  if (affected.length) renderPages();
 }
 
 // Página de PDF desenhada pelo PDF.js; se não der, um cartão com o formato da folha e o número.
@@ -1051,7 +1063,7 @@ const nextFrame = () => new Promise((resolve) => setTimeout(resolve, 0));
 // guardadas relativas à imagem). O OCR lê a página como ela aparece no app, com o giro escolhido: é assim que a
 // pessoa deixa o texto de pé, também numa página de PDF que o scanner gravou deitada.
 const ocrKey = (page) => (page.kind === 'pdf'
-  ? JSON.stringify(['pdf', page.rotation, page.redactions ?? []])
+  ? JSON.stringify(['pdf', page.rotation, page.redactions ?? [], page.doc.form?.pageVersion(page.index) ?? 0])
   : JSON.stringify([page.quad, page.filter, page.rotation, page.redactions ?? []]));
 
 class Cancelled extends Error {}
@@ -1292,6 +1304,11 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     const tools = list.some((page) => page.kind === 'pdf') ? await loadPdfTools() : null;
     const crypt = password && !signer ? await loadCrypt() : null; // com assinatura, quem protege é o sign.js
 
+    // Valores do formulário de cada PDF de origem (os preenchidos no app e os que outro programa não desenhou, #16): a
+    // aparência nova de cada widget, a mesma em todos os arquivos.
+    const fills = new Map(list.filter((page) => page.kind === 'pdf' && page.doc.form).map((page) => [page.doc, null]));
+    for (const doc of fills.keys()) fills.set(doc, doc.form.fill());
+
     // Comprimir: as imagens de cada PDF de origem são recodificadas uma vez só, para todos os arquivos.
     const level = tools ? els.pdfCompress.value : 'none';
     const replacements = new Map();
@@ -1338,6 +1355,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
           replace: compressed ? replacements.get(doc) : undefined,
           ocr: useOcr ? scannedWords(list, doc) : undefined,
           edits: editedCopies.get(doc),
+          fill: fills.get(doc),
         })]));
         return group.map((i, p) => {
           const page = list[i];
@@ -2095,8 +2113,9 @@ function resetSigning() {
 }
 
 // Assinar sem reescrever: a lista é um PDF só, inteiro e na ordem, e nada do que foi escolhido muda o arquivo (giro,
-// tarja, edição, compressão, OCR, senha, dividir, "em todas as páginas"): unchangedSource, em pdf-append.js. Aí a
-// assinatura entra no fim do arquivo, e as que ele já tinha continuam valendo. O PDF/A não vale para páginas de PDF.
+// tarja, edição, valor no formulário, compressão, OCR, senha, dividir, "em todas as páginas"): unchangedSource, em
+// pdf-append.js. Aí a assinatura entra no fim do arquivo, e as que ele já tinha continuam valendo. O PDF/A não vale
+// para páginas de PDF.
 async function unchangedPdf() {
   if (state.pages[0]?.kind !== 'pdf') return null;
   const { unchangedSource } = await loadAppend();
@@ -2134,10 +2153,17 @@ async function prepareSignOptions() {
       ? 'Este PDF já tem assinatura. A sua entra no fim do arquivo, e as que ele tem continuam valendo. O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos).'
       : 'O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos): a sua assinatura entra no fim do arquivo, sem mudar nada nele.';
   } else if (signedSources.size) {
-    // Edição fixa na página (ou em todas as páginas) muda o conteúdo: o aviso diz isso primeiro.
-    mode = state.pages.some((page) => page.edits?.length) || allPages.active()
-      ? 'As edições ficam fixas nas páginas: o PDF vai ser montado de novo, e as assinaturas que ele já tinha deixam de valer. Para manter, assine o PDF sozinho, sem editar nem mudar nada nele.'
-      : 'O PDF vai ser montado de novo, e as assinaturas que ele já tinha deixam de valer. Para manter, assine o PDF sozinho, sem mudar nada nele (sem juntar, girar, tarjar, editar, comprimir nem ligar o OCR).';
+    // Edição ou valor do formulário fixo na página (ou em todas as páginas) muda o conteúdo: o aviso diz isso primeiro.
+    // Certificado pelo autor: a certificação também deixa de valer.
+    const { changePermission } = await loadAppend();
+    const what = [...signedSources].some((source) => changePermission(source) !== null)
+      ? 'a certificação e as assinaturas que ele já tinha deixam'
+      : 'as assinaturas que ele já tinha deixam';
+    const edited = state.pages.some((page) => page.edits?.length) || allPages.active();
+    const filled = [...signedSources].some((source) => source.form?.hasValues());
+    mode = edited || filled
+      ? `${edited && filled ? 'As edições e os valores do formulário ficam fixos' : edited ? 'As edições ficam fixas' : 'Os valores do formulário ficam fixos'} nas páginas: o PDF vai ser montado de novo, e ${what} de valer. Para manter, assine o PDF sozinho, sem ${edited && filled ? 'editar, preencher' : edited ? 'editar' : 'preencher'} nem mudar nada nele.`
+      : `O PDF vai ser montado de novo, e ${what} de valer. Para manter, assine o PDF sozinho, sem mudar nada nele (sem juntar, girar, tarjar, editar, preencher, comprimir nem ligar o OCR).`;
   }
   els.signMode.hidden = !mode;
   els.signMode.firstElementChild.textContent = mode;
