@@ -756,7 +756,7 @@ Fases:
 
 - [x] Funções puras de mover um item e de achar o lugar de soltar pelos retângulos dos cartões, com testes
 - [x] Alça, cartão acompanhando o dedo, espaço aberto na lista, rolagem automática e cancelamento
-- [x] Anúncio para o leitor de tela e conferência no Chromium e no WebKit (mouse) e no Chromium (toque), no tamanho do iPhone 16e e em 1280 × 800. Falta o Safari do iPhone
+- [x] Anúncio para o leitor de tela e conferência no Chromium e no WebKit (mouse) e no Chromium (toque), no tamanho do iPhone 16e e em 1280 × 800. Conferido no iPhone 16e pelo dono (2026-10-24)
 
 ### Lupa ao arrastar os cantos do recorte
 
@@ -775,7 +775,7 @@ O dedo cobre justamente o canto que a pessoa está arrastando, e acertar a borda
 Fases:
 
 - [x] Lupa no canvas, posição em volta do dedo sem sair da tela, mira e linhas do recorte
-- [x] Conferência no Chromium e no WebKit (390 × 664 e 1280 × 800), com foto em pé e deitada, por mouse e, no Chromium, por toque. Falta o Safari do iPhone
+- [x] Conferência no Chromium e no WebKit (390 × 664 e 1280 × 800), com foto em pé e deitada, por mouse e, no Chromium, por toque. Conferido no iPhone 16e pelo dono (2026-10-24)
 
 ### Carimbo da assinatura com o PDF/A
 
