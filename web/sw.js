@@ -22,6 +22,7 @@ const APP_FILES = [
   './js/xml.js',
   './js/inflate.js',
   './js/ranges.js',
+  './js/reorder.js',
   './js/pdf-reader.js',
   './js/pdf-layers.js',
   './js/pdf-open.js',

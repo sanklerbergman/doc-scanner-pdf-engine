@@ -12,6 +12,7 @@ import { plainText, linesText, documentText } from './page-text.js';
 import { textWidth } from './fonts.js';
 import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex, stampCharacters } from './stamp.js';
 import { ocrWorkers, progressNote } from './ocr-plan.js';
+import { moveItem, setupReorder } from './reorder.js';
 
 // O site oficial já proíbe ser embutido em outro pelo cabeçalho frame-ancestors (web/_headers). Esta checagem
 // fica como segunda camada, e protege cópias hospedadas onde não dá para enviar cabeçalhos: o app se recusa a
@@ -485,8 +486,9 @@ function renderPages() {
   els.rangesField.hidden = els.outputMode.value !== 'ranges';
   renderOutputPreview();
 
-  // Cartão: miniatura; número + remover (longe dos outros botões); mover ← → e girar; filtro.
+  // Cartão: miniatura; alça de arrastar, número e remover (longe dos outros botões); mover ← → e girar; filtro.
   // Página de documento ou de PDF: no lugar do recorte e do filtro, de qual arquivo ela veio.
+  // A alça fica fora do Tab e do leitor de tela: os botões ← e → fazem o mesmo pelo teclado.
   els.pages.replaceChildren(...state.pages.map((page, i) => {
     const button = (action, label, disabled = false) => el('button', {
       type: 'button', className: `icon-btn icon-btn-${action}`, title: label, disabled: disabled || state.busy,
@@ -510,7 +512,10 @@ function renderPages() {
           'aria-label': `Ajustar o recorte da página ${i + 1}`,
         }, [icon('crop'), ` ${page.quad ? 'Ajustar recorte' : 'Recortar'}`]),
       el('div', { className: 'page-tools' }, [
-        el('span', { className: 'page-num', textContent: i + 1 }),
+        el('span', { className: 'page-label' }, [
+          el('span', { className: 'drag-handle', title: 'Arraste para mudar a página de lugar', 'aria-hidden': 'true' }, [icon('grip')]),
+          el('span', { className: 'page-num', textContent: i + 1 }),
+        ]),
         button('remove', 'Remover'),
         button('left', 'Mover para antes', i === 0),
         button('right', 'Mover para depois', i === total - 1),
@@ -586,6 +591,17 @@ els.pages.addEventListener('change', async (event) => {
   // Quem trocou o filtro pelo teclado continua no mesmo seletor.
   const index = state.pages.indexOf(page);
   if (index >= 0 && focusLost()) focusCard(index, '.page-filter');
+});
+
+// Arrastar pela alça (reorder.js): a ordem só muda ao soltar, e soltar no mesmo lugar não muda nada.
+setupReorder(els.pages, {
+  enabled: () => !state.busy,
+  move(from, to) {
+    state.pages = moveItem(state.pages, from, to);
+    discardPdf();
+    renderPages();
+    announce(`Página ${from + 1} movida para a posição ${to + 1}.`);
+  },
 });
 
 // ---------- Tela cheia e recorte ----------
