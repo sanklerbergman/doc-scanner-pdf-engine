@@ -731,3 +731,82 @@ A referência é o módulo de tarja do PdfCraft, que segue três princípios: ap
 - **Versão:** são melhorias internas; entram na próxima versão que sair. As correções no leitor de PDF são patch.
 - **O fuzzing do `npm test`** usa 20 mil variações fixas (semente 1), em uns 5 segundos. Rodadas com outras sementes ou com PDFs reais como base ficam no script.
 - **Etapas novas no fuzzing (2026-10-16):** a camada do OCR (com palavras simuladas) e a assinatura acrescentada sem reescrever. No PDF com a assinatura acrescentada, o original vai byte a byte, com os defeitos dele, e o qpdf os descreve de outro jeito; ali só conta erro do qpdf que a entrada não tinha, e o trecho acrescentado é conferido à parte (número e geração de cada objeto novo, e a xref nova apontando para ele).
+
+## Arrastar, lupa e carimbo com PDF/A (v3.7.0)
+
+Três melhorias pequenas para o uso do dia a dia, planejadas em 2026-10-24. Nenhuma precisa de biblioteca nova nem mexe na CSP. Cada uma tem a sua issue: arrastar para reordenar (#8), lupa no recorte (#9) e carimbo com PDF/A (#10).
+
+### Arrastar para reordenar as páginas
+
+Hoje a página muda de lugar só pelos botões "Mover para antes" e "Mover para depois", uma posição por toque. Com 20 páginas, levar a última para o começo custa 19 toques.
+
+- **Alça no cartão**, um ícone de arrastar junto do número da página: segurar e arrastar leva o cartão para outro lugar da lista. Só a alça arrasta (`touch-action: none` nela). No resto do cartão, o dedo continua rolando a lista, e o toque na miniatura continua abrindo a tela cheia.
+- **Pointer Events**, como nos cantos do recorte e nas tarjas. A API de arrastar do HTML (drag and drop) fica de fora: no Safari do iPhone ela não responde ao dedo do mesmo jeito, e no computador se confundiria com soltar arquivos na área de adicionar.
+- Enquanto arrasta, o cartão acompanha o dedo, e os outros abrem espaço onde ele vai entrar. A lista (`state.pages`) só muda ao soltar.
+- Perto da borda de cima ou de baixo da tela, a página rola sozinha, para levar um cartão de uma ponta à outra de uma lista comprida.
+- A grade tem de uma a várias colunas, conforme a largura da tela: o lugar de soltar sai da posição dos cartões nas duas direções, não só da altura.
+- Soltar no mesmo lugar não muda nada e não descarta o PDF já gerado. Esc, ou o navegador cancelar o toque, devolve o cartão ao lugar.
+- Os botões ← e → continuam: são o caminho do teclado, do leitor de tela e de quem não consegue arrastar (WCAG 2.5.7). Por isso a alça fica fora do Tab e escondida do leitor de tela: ela não faz nada que os botões não façam. Ao soltar, o leitor de tela ouve "Página 3 movida para a posição 1".
+- Com o app ocupado (gerando o PDF), a alça fica desligada, como os botões.
+
+Fases:
+
+- [ ] Funções puras de mover um item e de achar o lugar de soltar pelos retângulos dos cartões, com testes
+- [ ] Alça, cartão acompanhando o dedo, espaço aberto na lista, rolagem automática e cancelamento
+- [ ] Anúncio para o leitor de tela e conferência no Chromium e no WebKit, no tamanho do iPhone 16e
+
+### Lupa ao arrastar os cantos do recorte
+
+O dedo cobre justamente o canto que a pessoa está arrastando, e acertar a borda do papel no celular vira tentativa e erro.
+
+- Enquanto um canto é arrastado, aparece um círculo com a foto ampliada em volta dele, com uma mira no ponto exato do canto e as duas linhas do recorte que saem dele. Some ao soltar.
+- É desenhada num `<canvas>`, a partir da mesma imagem do recorte, que já está na memória. Sem `background-image` com endereço e sem nada novo na CSP.
+- Ampliação de 3× sobre a foto como ela aparece na tela, num círculo de uns 120 px.
+- Fica acima do dedo, numa distância que o dedo não cobre. Perto da borda de cima da tela, vai para baixo ou para o lado, e nunca sai da tela.
+- Aparece com qualquer ponteiro (dedo, caneta ou mouse). Pelas setas do teclado não aparece, porque nada cobre o canto.
+- Fica fora da árvore de acessibilidade (`aria-hidden`) e não recebe toque (`pointer-events: none`).
+
+Fases:
+
+- [ ] Lupa no canvas, posição em volta do dedo sem sair da tela, mira e linhas do recorte
+- [ ] Conferência no Chromium e no WebKit, no tamanho do iPhone 16e, com foto em pé e deitada
+
+### Carimbo da assinatura com o PDF/A
+
+Hoje um desliga o outro ("Indisponível com o PDF/A: o texto do carimbo precisaria de fonte embutida"). O carimbo usa Helvetica e Helvetica-Bold sem embutir, e o PDF/A exige fonte embutida em todo texto que aparece.
+
+- Com o PDF/A ligado, a aparência do carimbo leva a Liberation Sans normal e negrito, embutidas e só com as letras usadas, pelo mesmo caminho das páginas do Word (`pdfa-fonts.js` e `ttf.js`). Sem o PDF/A, o carimbo continua como está, com as fontes padrão.
+- Quando o documento já embute a mesma fonte para o Word, o carimbo usa o mesmo objeto, com as letras dos dois.
+- O subconjunto leva as letras do nome, as do texto fixo e todos os algarismos, porque a data e a hora só são decididas na hora de assinar.
+- O desenho do carimbo não muda: as Liberation têm as larguras das fontes padrão em toda a WinAnsi (menos ¯ ± µ · ÷, com até 0,4 ponto de diferença), e o `/Widths` vem da fonte embutida.
+- Com o PDF/A e o carimbo, o app baixa a Liberation Sans normal e negrito na primeira vez (uns 0,5 MB cada), se o Word ainda não tiver baixado.
+- Saem a recusa em `sign.js` e em `pdf.js` e o aviso na janela de assinar.
+
+Fases:
+
+- [ ] Fontes embutidas na aparência do carimbo quando o PDF/A está ligado, com testes
+- [ ] Conferência no veraPDF (PDF/A-2b), assinatura válida e `qpdf --check`
+- [ ] Janela de assinar sem o aviso, com a prévia como antes
+
+### Segurança e privacidade
+
+- Nenhuma biblioteca nova, nenhuma requisição nova e CSP intacta. As fontes já estão em `web/vendor/liberation/`.
+- A lupa só desenha a foto que já está na memória, e nada fica guardado.
+- O carimbo com PDF/A mostra o mesmo que o carimbo de hoje (nome, data e hora), e só se a pessoa ligar.
+
+### Testes
+
+- `node:test`: mover e lugar de soltar (grade de uma e de várias colunas, lista de uma página, soltar no mesmo lugar); carimbo com PDF/A (aparência com `FontFile2` e `ToUnicode`, nenhuma fonte sem embutir); assinatura válida; `qpdf --check`.
+- veraPDF (PDF/A-2b): foto com carimbo, Word com carimbo, e Word com foto, OCR e carimbo.
+- Playwright, no Chromium e no WebKit, no tamanho do iPhone 16e (390 × 664):
+  - arrastar a página 3 para o começo e a 1 para o fim; rolagem automática com 12 páginas; soltar no mesmo lugar; Esc; botões ← e → como antes;
+  - lupa aparece, acompanha o canto, não sai da tela e some ao soltar;
+  - carimbo com o PDF/A ligado, com prévia, gera um PDF que passa no veraPDF.
+- Nenhuma violação da CSP no console, em nenhum dos testes.
+
+### Decisões
+
+- **Uma versão só, a v3.7.0:** três funcionalidades novas compatíveis sobem o minor.
+- **Alça no cartão em vez de toque longo** (decisão do dono, 2026-10-24): começa a arrastar na hora e não briga com a rolagem nem com o menu do toque longo do Safari.
+- **Os botões ← e → ficam**, pelo teclado e pela acessibilidade.
+- **Tarefas nas issues do GitHub** (decisão do dono, 2026-10-24): cada commit cita a sua.
