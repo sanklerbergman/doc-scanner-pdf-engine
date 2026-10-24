@@ -1,9 +1,9 @@
-// Fontes embutidas do PDF/A nas páginas do Word: o PDF/A exige a fonte dentro do arquivo, e as fontes padrão do PDF
-// (Helvetica, Times e Courier) não vão embutidas. No lugar delas vão as Liberation (SIL OFL 1.1, em vendor/liberation),
-// que têm as mesmas larguras em toda a WinAnsi, menos ¯ ± µ · ÷: o texto distribuído pelo layout.js continua no lugar
-// (nesses cinco símbolos, a diferença é de até 0,4 ponto em letra 12). Vai só o subconjunto das letras usadas
-// (ttf.js), comprimido.
-// Carregado só quando o PDF/A está ligado e há página de Word; cada fonte só quando é usada.
+// Fontes embutidas do PDF/A nas páginas do Word e no carimbo da assinatura: o PDF/A exige a fonte dentro do arquivo, e
+// as fontes padrão do PDF (Helvetica, Times e Courier) não vão embutidas. No lugar delas vão as Liberation (SIL OFL 1.1,
+// em vendor/liberation), que têm as mesmas larguras em toda a WinAnsi, menos ¯ ± µ · ÷: o texto distribuído pelo
+// layout.js e o carimbo (stamp.js) continuam no lugar (nesses cinco símbolos, a diferença é de até 0,4 ponto em letra
+// 12). Vai só o subconjunto das letras usadas (ttf.js), comprimido.
+// Carregado só quando o PDF/A está ligado e há página de Word ou carimbo; cada fonte só quando é usada.
 import { readTrueType } from './ttf.js';
 import { winAnsiCode } from './fonts.js';
 import { md5 } from './md5.js';
@@ -44,17 +44,19 @@ function loadFont(font) {
 }
 
 /**
- * Letras usadas por fonte: o texto das páginas do Word e, na Helvetica, o da camada do OCR das fotos (que divide a
- * mesma fonte no PDF quando há página de Word).
+ * Letras usadas por fonte: o texto das páginas do Word, as letras a mais (o carimbo da assinatura) e, na Helvetica, o
+ * da camada do OCR das fotos (que divide a mesma fonte no PDF quando ela vai embutida para o Word ou para o carimbo).
  * @param {object[]} pages as páginas de buildPdf (pdf.js)
+ * @param {Map<string, string>} [extra] letras a mais, pela fonte padrão (stampCharacters, em stamp.js)
  * @returns {Map<string, Set<string>>}
  */
-export function usedCharacters(pages) {
+export function usedCharacters(pages, extra = new Map()) {
   const used = new Map();
   const add = (font, text) => {
     if (!used.has(font)) used.set(font, new Set());
     for (const char of text) used.get(font).add(char);
   };
+  for (const [font, text] of extra) add(font, text);
   for (const page of pages) {
     if (page.copy) continue;
     if (page.jpeg) {
@@ -63,10 +65,11 @@ export function usedCharacters(pages) {
     }
     for (const item of page.items) if (item.type === 'text') add(item.font, item.text);
   }
-  // Fonte usada só na camada do OCR (sem página de Word) continua sem embutir: texto invisível não precisa.
-  if (!pages.some((page) => !page.jpeg && !page.copy && page.items.some((item) => item.type === 'text' && item.font === OCR_FONT))) {
-    used.delete(OCR_FONT);
-  }
+  // Fonte usada só na camada do OCR (sem página de Word nem carimbo com ela) continua sem embutir: texto invisível não
+  // precisa.
+  const visible = extra.has(OCR_FONT)
+    || pages.some((page) => !page.jpeg && !page.copy && page.items.some((item) => item.type === 'text' && item.font === OCR_FONT));
+  if (!visible) used.delete(OCR_FONT);
   return used;
 }
 
@@ -99,20 +102,23 @@ function toUnicode(chars) {
 }
 
 /**
- * @typedef {{baseFont: string, firstChar: number, lastChar: number, widths: number[], program: Uint8Array,
- *   length1: number, toUnicode: string, descriptor: {flags: number, bbox: number[], italicAngle: number,
- *   ascent: number, descent: number, capHeight: number, stemV: number}}} EmbeddedFont
+ * @typedef {{baseFont: string, chars: string, firstChar: number, lastChar: number, widths: number[],
+ *   program: Uint8Array, length1: number, toUnicode: string, descriptor: {flags: number, bbox: number[],
+ *   italicAngle: number, ascent: number, descent: number, capHeight: number, stemV: number}}} EmbeddedFont
+ *   chars: as letras do subconjunto
  */
 
 /**
  * Prepara as fontes embutidas das páginas: para cada fonte padrão usada no texto, o subconjunto da Liberation
  * equivalente, comprimido (FlateDecode), com as larguras dela (o /Widths precisa bater com a fonte embutida).
  * @param {object[]} pages as páginas de buildPdf
+ * @param {Map<string, string>} [extra] letras a mais, pela fonte padrão: as do carimbo da assinatura
+ *   (stampCharacters, em stamp.js), que divide com o Word o mesmo objeto de fonte
  * @returns {Promise<Map<string, EmbeddedFont>>} pela fonte padrão (buildPdf, opção fonts)
  */
-export async function embedFonts(pages) {
+export async function embedFonts(pages, extra) {
   const out = new Map();
-  for (const [font, set] of usedCharacters(pages)) {
+  for (const [font, set] of usedCharacters(pages, extra)) {
     if (!FILES[font]) throw new Error(`Fonte sem equivalente para o PDF/A: ${font}`);
     const ttf = await loadFont(font);
     const chars = [...set].filter((char) => winAnsiCode(char) !== undefined).sort((a, b) => winAnsiCode(a) - winAnsiCode(b));
@@ -131,6 +137,7 @@ export async function embedFonts(pages) {
     const italic = /Oblique|Italic/.test(font);
     out.set(font, {
       baseFont: `${subsetTag(font, chars)}+${ttf.postScriptName}`,
+      chars: chars.join(''),
       firstChar, lastChar, widths,
       program: await deflate(program),
       length1: program.length,

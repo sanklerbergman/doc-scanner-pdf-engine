@@ -10,7 +10,7 @@
 import { winAnsiCode } from './fonts.js';
 import { srgbProfile } from './icc.js';
 import { md5 } from './md5.js';
-import { buildStamp, stampPageIndex } from './stamp.js';
+import { buildStamp, stampPageIndex, STAMP_FONTS } from './stamp.js';
 import { ocrLayer, OCR_FONT } from './ocr-layer.js';
 
 const encoder = new TextEncoder();
@@ -143,8 +143,9 @@ export function pdfDate(date) {
  * - copiada: {copy: {source, page}, rotation?}, com source = {objects} e page = descritor de copyPages
  *   (pdf-reader.js). Páginas do mesmo source compartilham os objetos (fontes, imagens), gravados uma vez só.
  * Medidas em pontos (1/72 pol.).
- * @param {{pdfa?: boolean}} [options] pdfa: PDF/A-2b (arquivamento e tribunais). Só para fotos: páginas de texto
- *   (fontes não embutidas) e copiadas de outro PDF não cumprem o padrão, e quem chama não liga a opção com elas
+ * @param {{pdfa?: boolean, fonts?: Map<string, object>}} [options] pdfa: PDF/A-2b (arquivamento e tribunais).
+ *   Páginas copiadas de outro PDF não cumprem o padrão, e quem chama não liga a opção com elas; fonts: com o PDF/A,
+ *   as fontes embutidas das páginas de texto (embedFonts, em pdfa-fonts.js), pela fonte padrão
  * @returns {Uint8Array}
  */
 export function buildPdf(pages, options = {}) {
@@ -157,15 +158,18 @@ export function buildPdf(pages, options = {}) {
  * página, ou mostra o carimbo (stamp.js) na página e no lugar escolhidos.
  * Sem /Name, /Reason, /Location nem /ContactInfo: só a hora da assinatura (/M), que faz parte do padrão.
  * @param {object[]} pages as mesmas de buildPdf
- * @param {{reserve: number, time: Date, pdfa?: boolean, stamp?: {name: string, position: string,
- *   page: 'first' | 'last' | number}}} signature reserve: bytes reservados para o CMS; pdfa: como em buildPdf
- *   (não combina com o carimbo: o PDF/A exige fonte embutida no texto visível); stamp: carimbo visível
+ * @param {{reserve: number, time: Date, pdfa?: boolean, fonts?: Map<string, object>, stamp?: {name: string,
+ *   position: string, page: 'first' | 'last' | number}}} signature reserve: bytes reservados para o CMS; pdfa e
+ *   fonts: como em buildPdf; stamp: carimbo visível. Com o PDF/A, o texto do carimbo vai com as fontes embutidas
+ *   (fonts, com as letras do carimbo: stampCharacters em stamp.js), nos mesmos objetos de fonte das páginas
  * @returns {{bytes: Uint8Array, byteRange: number[], contents: {at: number, length: number}}} contents: posição
  *   e tamanho (em dígitos hexadecimais) do espaço da assinatura, entre o < e o >
  */
 export function buildPdfToSign(pages, signature) {
   if (!(signature?.reserve > 0) || !(signature.time instanceof Date)) throw new Error('Assinatura sem espaço ou sem hora');
-  if (signature.pdfa && signature.stamp) throw new Error('PDF/A com carimbo visível precisa de fonte embutida');
+  if (signature.pdfa && signature.stamp && !STAMP_FONTS.every((font) => signature.fonts?.has(font))) {
+    throw new Error('O carimbo com o PDF/A precisa das fontes embutidas, que não foram preparadas');
+  }
   return assemble(pages, signature, { pdfa: signature.pdfa, fonts: signature.fonts });
 }
 
@@ -279,10 +283,23 @@ function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
   const sigId = signature ? nextId++ : 0;
   // Carimbo visível: a aparência do campo, na página escolhida. Sem carimbo, o campo fica na primeira página.
   const stampIndex = signature?.stamp ? stampPageIndex(signature.stamp.page, pages.length) : 0;
-  const stamp = signature?.stamp ? buildStamp({ ...signature.stamp, time: signature.time }, pageGeometry(pages[stampIndex])) : null;
+  // Com o PDF/A, o texto do carimbo vai com as fontes embutidas: os mesmos objetos das páginas, quando elas já usam a
+  // fonte (Word ou camada do OCR), ou objetos novos, só para ele.
+  const stampFonts = signature?.stamp && pdfa ? new Map() : null;
+  for (const font of stampFonts ? STAMP_FONTS : []) {
+    if (!fontIds.has(font)) fontIds.set(font, nextId++);
+    stampFonts.set(font, `${fontIds.get(font)} 0 R`);
+  }
+  const stamp = signature?.stamp
+    ? buildStamp({ ...signature.stamp, time: signature.time }, pageGeometry(pages[stampIndex]), stampFonts)
+    : null;
+  // Toda letra do carimbo tem que estar no subconjunto, preparado antes da hora da assinatura (stampCharacters).
+  if (stampFonts && stamp.lines.some((line) => [...line.text].some((char) => !fonts.get(line.font).chars.includes(char)))) {
+    throw new Error('O carimbo usa uma letra que não está na fonte embutida');
+  }
   const appearanceId = stamp ? nextId++ : 0;
-  // PDF/A com página de Word: cada fonte vai embutida (pdfa-fonts.js), com o descritor, o programa da fonte e o
-  // mapa para Unicode.
+  // PDF/A com página de Word ou com carimbo: cada fonte vai embutida (pdfa-fonts.js), com o descritor, o programa da
+  // fonte e o mapa para Unicode.
   const embedded = new Map();
   if (pdfa && fonts) {
     for (const font of fontIds.keys()) {

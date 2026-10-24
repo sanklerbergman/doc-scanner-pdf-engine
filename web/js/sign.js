@@ -138,15 +138,14 @@ export async function openCertificate(file, password, now = new Date()) {
        * Monta e assina o PDF. Os bytes que saem são exatamente os que foram assinados e conferidos.
        * @param {object[]} pages as páginas de buildPdf (pdf.js)
        * @param {Date} [time] hora da assinatura (/M e carimbo)
-       * @param {{password?: string, pdfa?: boolean, stamp?: {position: string, page: 'first' | 'last' | number}}}
-       *   [options] password: protege o PDF com senha (pdf-crypt.js) antes de assinar, porque a assinatura cobre os
-       *   bytes finais do arquivo; pdfa: PDF/A-2b (não combina com senha: o PDF/A não permite criptografia; nem com
-       *   o carimbo, que exigiria fonte embutida); stamp: carimbo visível com o nome do titular (stamp.js); fonts: as
-       *   fontes embutidas do PDF/A nas páginas de Word (pdfa-fonts.js)
+       * @param {{password?: string, pdfa?: boolean, stamp?: {position: string, page: 'first' | 'last' | number},
+       *   fonts?: Map<string, object>}} [options] password: protege o PDF com senha (pdf-crypt.js) antes de assinar,
+       *   porque a assinatura cobre os bytes finais do arquivo; pdfa: PDF/A-2b (não combina com senha: o PDF/A não
+       *   permite criptografia); stamp: carimbo visível com o nome do titular (stamp.js); fonts: as fontes embutidas
+       *   do PDF/A (pdfa-fonts.js), nas páginas de Word e, com o carimbo, com as letras dele (stampCharacters)
        */
       async sign(pages, time = new Date(), { password, pdfa = false, stamp, fonts } = {}) {
         if (password && pdfa) throw new SignError('O PDF/A não permite senha: escolha um dos dois.');
-        if (stamp && pdfa) throw new SignError('Por enquanto, o carimbo visível não combina com o PDF/A: escolha um dos dois.');
         ready(time);
         let prepared = buildPdfToSign(pages, { reserve, time, pdfa, fonts, stamp: stamp && { ...stamp, name } });
         if (password) {

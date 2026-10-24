@@ -10,7 +10,7 @@ import { paintRedactions, rotateRedactions, toUnrotated, toRotatedRects, redactL
 import { findInPieces, padRect, TYPE_LABELS } from './find-data.js';
 import { plainText, linesText, documentText } from './page-text.js';
 import { textWidth } from './fonts.js';
-import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex } from './stamp.js';
+import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex, stampCharacters } from './stamp.js';
 import { ocrWorkers, progressNote } from './ocr-plan.js';
 
 // O site oficial já proíbe ser embutido em outro pelo cabeçalho frame-ancestors (web/_headers). Esta checagem
@@ -70,7 +70,7 @@ const loadOcr = lazy('./ocr.js'); // OCR: o motor (vendor/tesseract) só carrega
 const loadSigning = lazy('./sign.js'); // assinatura: PKCS#12, certificado e CMS
 const loadAppend = lazy('./pdf-append.js'); // assinar um PDF que já existe sem reescrever o arquivo
 const loadCrypt = lazy('./pdf-crypt.js'); // proteger o PDF gerado com senha
-const loadPdfaFonts = lazy('./pdfa-fonts.js'); // PDF/A com página de Word: as fontes embutidas (vendor/liberation)
+const loadPdfaFonts = lazy('./pdfa-fonts.js'); // PDF/A com Word ou carimbo: as fontes embutidas (vendor/liberation)
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -1068,14 +1068,16 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     els.cancel.hidden = true;
     state.cancel = null;
 
-    // PDF/A com página de Word: as fontes vão embutidas, só com as letras usadas (as mesmas para todos os arquivos).
+    // PDF/A com página de Word ou com carimbo: as fontes vão embutidas, só com as letras usadas (as mesmas para todos
+    // os arquivos). O carimbo leva as letras do nome e todas as que a data e a hora da assinatura podem usar.
     let fonts = null;
-    if (pdfa && list.some(isDocument)) {
+    if (pdfa && (list.some(isDocument) || (signer && stamp))) {
       announce('Preparando as fontes do PDF/A…');
       const { embedFonts } = await loadPdfaFonts().catch(() => {
         throw fontError();
       });
-      fonts = await embedFonts(pages.filter(Boolean)).catch((err) => {
+      const extra = signer && stamp ? stampCharacters(signer.name) : undefined;
+      fonts = await embedFonts(pages.filter(Boolean), extra).catch((err) => {
         if (!(err instanceof TypeError) && err?.name !== 'TrueTypeError') throw err;
         throw fontError();
       });
@@ -1921,9 +1923,8 @@ async function prepareSignOptions() {
   els.signMode.hidden = !mode;
   els.signMode.firstElementChild.textContent = mode;
 
-  const pdfa = els.pdfa.checked && !pdfaUnavailable();
+  // Com o PDF/A, o carimbo vai com as fontes embutidas (pdfa-fonts.js), como as páginas de Word.
   const reason = signing.locked ? ''
-    : pdfa ? 'Indisponível com o PDF/A: o texto do carimbo precisaria de fonte embutida, que o app ainda não faz.'
     : certified ? 'Indisponível neste PDF: ele foi certificado pelo autor, e um carimbo novo pode invalidar a certificação em alguns validadores. A assinatura entra sem carimbo.'
     : '';
   els.stamp.checked = false;

@@ -23,6 +23,11 @@ const MIN_WIDTH = 150;
 const MAX_WIDTH = 260;
 const LINE = 1.25; // altura da linha, em relação ao tamanho da letra
 const BORDER = [0.16, 0.29, 0.55]; // azul-acinzentado, legível em cima de foto e de texto
+const INTRO = 'Assinado digitalmente por';
+
+// Fontes do carimbo: as padrão do PDF, sem embutir. Com o PDF/A, vão as Liberation equivalentes, embutidas
+// (pdfa-fonts.js), que têm as mesmas larguras: o desenho do carimbo não muda.
+export const STAMP_FONTS = ['Helvetica', 'Helvetica-Bold'];
 
 const num = (v) => String(Math.round(v * 100) / 100);
 const pad = (v) => String(v).padStart(2, '0');
@@ -53,7 +58,7 @@ export function stampLayout(name, time, pageWidth) {
   const date = `${pad(time.getDate())}/${pad(time.getMonth() + 1)}/${time.getFullYear()}`;
   const hour = `${pad(time.getHours())}:${pad(time.getMinutes())}`;
   const lines = [
-    { text: 'Assinado digitalmente por', font: 'Helvetica', size: 7 },
+    { text: INTRO, font: 'Helvetica', size: 7 },
     { text: winAnsi(name.trim()) || '?', font: 'Helvetica-Bold', size: 9 },
     { text: `em ${date} às ${hour} (${zone(time)})`, font: 'Helvetica', size: 7 },
   ];
@@ -70,6 +75,20 @@ export function stampLayout(name, time, pageWidth) {
   }
   const height = PADDING * 2 + lines.reduce((sum, line) => sum + line.size * LINE, 0);
   return { width, height, lines };
+}
+
+/**
+ * Letras que o carimbo pode usar, por fonte, para o subconjunto das fontes embutidas do PDF/A (pdfa-fonts.js). As
+ * fontes são preparadas antes de assinar, e a data, a hora e o fuso só são decididos na hora: por isso vão todos os
+ * algarismos e os símbolos deles, mais as reticências do corte e o "?" do que a fonte não tem.
+ * @param {string} name nome do titular, como em stampLayout
+ * @returns {Map<string, string>} pela fonte padrão
+ */
+export function stampCharacters(name) {
+  return new Map([
+    ['Helvetica', `${INTRO} em às (UTC+-:/) 0123456789…`],
+    ['Helvetica-Bold', `${winAnsi(name.trim())}?…`],
+  ]);
 }
 
 /**
@@ -113,26 +132,29 @@ export function placeStamp({ box, rotate }, position, { width: w, height: h }) {
  * objeto, com o stream. Só ASCII: o tamanho em caracteres é o tamanho em bytes.
  * @param {{name: string, time: Date, position: string}} stamp
  * @param {{box: number[], rotate: number}} page
- * @returns {{rect: number[], appearance: string}}
+ * @param {Map<string, string>} [fonts] PDF/A: a referência ('12 0 R') de cada fonte embutida (STAMP_FONTS), pela
+ *   fonte padrão. Sem elas, o carimbo usa as fontes padrão, sem embutir
+ * @returns {{rect: number[], appearance: string, lines: Array<{text: string, font: string, size: number}>}}
+ *   lines: o texto de cada linha, com a fonte (para conferir as letras da fonte embutida)
  */
-export function buildStamp({ name, time, position }, page) {
+export function buildStamp({ name, time, position }, page, fonts) {
   const sideways = page.rotate % 180 !== 0;
   const pageWidth = sideways ? page.box[3] - page.box[1] : page.box[2] - page.box[0];
   const layout = stampLayout(name, time, pageWidth);
   const { rect, matrix } = placeStamp(page, position, layout);
   const { width, height, lines } = layout;
-  const fonts = { Helvetica: '/F1', 'Helvetica-Bold': '/F2' };
+  const names = { Helvetica: '/F1', 'Helvetica-Bold': '/F2' };
   const ops = [`q ${BORDER.map(num).join(' ')} RG 0.75 w 0.5 0.5 ${num(width - 1)} ${num(height - 1)} re S Q`, 'BT', '0 0 0 rg'];
   let top = height - PADDING;
   for (const line of lines) {
-    ops.push(`${fonts[line.font]} ${num(line.size)} Tf 1 0 0 1 ${PADDING} ${num(top - line.size * 0.95)} Tm ${hexString(line.text)} Tj`);
+    ops.push(`${names[line.font]} ${num(line.size)} Tf 1 0 0 1 ${PADDING} ${num(top - line.size * 0.95)} Tm ${hexString(line.text)} Tj`);
     top -= line.size * LINE;
   }
   ops.push('ET');
   const content = ops.join('\n');
-  const font = (base) => `<< /Type /Font /Subtype /Type1 /BaseFont /${base} /Encoding /WinAnsiEncoding >>`;
+  const font = (base) => fonts?.get(base) ?? `<< /Type /Font /Subtype /Type1 /BaseFont /${base} /Encoding /WinAnsiEncoding >>`;
   const appearance = `<< /Type /XObject /Subtype /Form /BBox [0 0 ${num(width)} ${num(height)}] /Matrix [${matrix.join(' ')}]`
     + ` /Resources << /Font << /F1 ${font('Helvetica')} /F2 ${font('Helvetica-Bold')} >> >> /Length ${content.length} >>`
     + `\nstream\n${content}\nendstream`;
-  return { rect: rect.map((v) => Math.round(v * 100) / 100), appearance };
+  return { rect: rect.map((v) => Math.round(v * 100) / 100), appearance, lines };
 }
