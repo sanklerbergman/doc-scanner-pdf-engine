@@ -819,3 +819,117 @@ Fases:
 - **Alça no cartão em vez de toque longo** (decisão do dono, 2026-10-24): começa a arrastar na hora e não briga com a rolagem nem com o menu do toque longo do Safari.
 - **Os botões ← e → ficam**, pelo teclado e pela acessibilidade.
 - **Tarefas nas issues do GitHub** (decisão do dono, 2026-10-24): cada commit cita a sua.
+
+## Editar o PDF (v4.0.0) e preencher formulários (v4.1.0)
+
+Pedido do dono em 2026-10-24: acrescentar coisas nas páginas (texto, rubrica, imagem e marcações), numerar, pôr cabeçalho, rodapé e marca d'água, e preencher formulários de PDF. Tudo no aparelho, igual no celular e no computador. Corrigir o texto que já existe no PDF fica de fora: o PDF guarda só as letras que o documento usou, posicionadas uma a uma, e trocar uma palavra pode pedir uma letra que a fonte não tem.
+
+Cada fase tem a sua issue: base do editor (#11), texto e numeração (#12), marca-texto e marca d'água (#13), imagem e rubrica (#14) e formulários (#15).
+
+### Abordagem
+
+#### O que fica guardado na página
+
+- Cada página ganha uma lista de edições (`page.edits`), separada das tarjas (`page.redactions`). Cada edição tem o tipo (texto, desenho, imagem, retângulo, seta, ✓, ✗, marca-texto, sublinhado, riscado) e a posição de 0 a 1 na página como ela aparece, com o giro, como as tarjas.
+- Na foto, a posição vale na folha inteira, com a margem, para dar para escrever na margem. Mudar o tamanho da folha ou a margem leva as edições junto, na mesma posição relativa.
+- Girar a página gira as edições junto, como as tarjas. Mudar o recorte da foto apaga as edições daquela página, com aviso, também como as tarjas.
+- Nada sai da memória da aba: texto, desenho, rubrica e imagem somem ao limpar a lista ou fechar a aba.
+
+#### Na tela
+
+- **Modo "Editar"** na tela cheia, ao lado das tarjas e separado delas: a tarja apaga e tem conferência, a edição acrescenta. As duas usam as mesmas coordenadas.
+- **Base nova** (a parte mais cara da interface):
+  - tocar seleciona; arrastar move; alças de 44 px redimensionam;
+  - uma barra junto da edição selecionada tem Remover e Duplicar; Desfazer guarda a pilha inteira da sessão;
+  - Aplicar e Cancelar, como nas tarjas. Esc pede confirmação quando há mudança (hoje Esc perde as tarjas não aplicadas sem perguntar).
+- **Ferramentas** numa linha só, que rola de lado no celular: Selecionar, Texto, Desenho, Imagem, Retângulo, Seta, ✓, ✗, Marca-texto, Sublinhar e Riscar. As propriedades (tamanho, cor, espessura) ficam num painel que abre de baixo.
+- **Teclado e leitor de tela**, no nível das tarjas: "Novo" cria a edição no meio da página; setas movem 1%; Shift e setas mudam o tamanho; Delete remove. Cada edição é um grupo focável com instruções. O desenho à mão não tem caminho pelo teclado: a alternativa é texto ou imagem.
+- **Texto:**
+  - escrito num painel com `textarea`, letra de 16 px ou mais (abaixo disso o iPhone dá zoom), tamanho, cor e família (sem serifa, com serifa, de máquina). "Pôr na página" cria a caixa no meio; Enter na caixa reabre o painel;
+  - o painel acompanha o teclado virtual (`visualViewport`), que hoje cobre a parte de baixo da tela cheia;
+  - vale o que as fontes do PDF têm (WinAnsi), o que cobre todo o português. Letra fora disso (emoji, alfabetos não latinos) é avisada na hora e não entra.
+- **Desenho à mão:** Pointer Events com `getCoalescedEvents`, para o traço sair liso no iPhone, e caneta reconhecida. O traço é suavizado e simplificado antes de virar caminho.
+- **Imagem:** escolhida num `<input type="file">` (PNG ou JPEG), com a proporção travada ao redimensionar e o lado maior limitado, por causa da memória do celular.
+- **Em todas as páginas,** no painel de opções do PDF, com prévia como a do carimbo da assinatura e a mesma grade de seis lugares:
+  - numerar as páginas ("1", "1 de 7" ou "Página 1 de 7");
+  - cabeçalho e rodapé (texto livre);
+  - marca d'água ("CÓPIA", "CONFIDENCIAL" ou texto livre), em diagonal e transparente;
+  - rubrica: desenhada uma vez num painel próprio e repetida em todas as páginas, no lugar escolhido.
+
+#### No PDF
+
+- **Fixo na página:** a edição vira parte do conteúdo da página (um stream a mais, com recursos de nomes novos), não anotação. Quem recebe não tira a rubrica, todo leitor e impressora mostra, e é o mesmo caminho da camada do OCR. Foto e Word entram no `assemble`; página de outro PDF, por uma opção nova do `copyPages`, como a do OCR. As posições passam por `visibleToPdf` e `uprightMatrix`, como o carimbo.
+- **Texto, numeração, cabeçalho e rodapé:** fontes padrão (Helvetica, Times, Courier) sem embutir. Com o PDF/A, a Liberation embutida, pelo caminho que o carimbo usa desde a v3.7.0.
+- **Seta, ✓ e ✗:** caminhos vetoriais. ✓ e ✗ não existem na WinAnsi, e a ZapfDingbats sem embutir reprova o PDF/A.
+- **Transparência:** o gerador ganha `ExtGState`, com opacidade (`/ca` e `/CA`) para a marca d'água e `/BM /Multiply` para o marca-texto não esconder o texto embaixo. O PDF/A-2b aceita os dois, com o perfil sRGB que o app já grava.
+- **Imagem:** PNG com transparência vira imagem Flate com máscara (`/SMask`) em cinza; PNG sem transparência vai como JPEG. A imagem é recodificada pelo canvas, então os metadados do arquivo original (EXIF, texto do PNG) não entram. Como o `assemble` é síncrono, a compressão (`CompressionStream`) é feita antes, como a das fontes.
+- **Rubrica repetida:** um Form XObject gravado uma vez por PDF e chamado em cada página.
+- **Ordem ao gerar:** edição, depois a tarja por cima de tudo (texto da edição sob a tarja sai do arquivo, como no Word, e a conferência continua igual), OCR (que lê só a imagem; o texto da edição já é texto), compressão, senha e, por último, a assinatura.
+- **Assinar sem reescrever:** página com edição, numeração, cabeçalho, rodapé ou marca d'água conta como mudança. O app monta um PDF novo e avisa que as assinaturas que o PDF tinha deixam de valer, como já faz ao juntar ou girar.
+- **PDF/A:** vale com a edição nas fotos e no Word. Página de outro PDF continua sem PDF/A, como hoje.
+
+### Fases
+
+#### Fase 1: base do editor (#11)
+
+- [ ] `page.edits`: modelo, giro, recorte, tamanho e margem
+- [ ] Modo "Editar" na tela cheia: selecionar, mover, redimensionar, Remover, Duplicar, Desfazer, Aplicar, Cancelar e Esc com confirmação; teclado e leitor de tela
+- [ ] Retângulo, seta, ✓, ✗ e desenho à mão
+- [ ] Fixo no PDF nos três tipos de página (foto, Word, página de outro PDF), com a tarja por cima
+- [ ] Assinar sem reescrever desligado quando há edição, com o aviso
+
+#### Fase 2: texto e numeração (#12)
+
+- [ ] Texto novo: painel com `textarea`, tamanho, cor e família; letras fora da WinAnsi avisadas
+- [ ] Numerar páginas, cabeçalho e rodapé, no painel de opções, com prévia
+- [ ] PDF/A com a Liberation embutida para o texto novo
+
+#### Fase 3: marca-texto e marca d'água (#13)
+
+- [ ] `ExtGState` com opacidade e `Multiply`
+- [ ] Marca-texto, sublinhar e riscar (retângulo e linha arrastados à mão)
+- [ ] Marca d'água em todas as páginas, com prévia
+
+#### Fase 4: imagem e rubrica (#14)
+
+- [ ] Imagem PNG com transparência (`/SMask`) e JPEG, com limite de lado
+- [ ] Rubrica desenhada uma vez e repetida em todas as páginas (Form XObject)
+
+#### Fase 5: formulários, v4.1.0 (#15)
+
+- [ ] Ler os campos do PDF (`/AcroForm`, `/Fields`, `/Kids`, `/FT`, `/Ff`, `/Opt`, `/DA`, `/Q`, `/MaxLen`) pelo leitor do app
+- [ ] Lista de campos num painel, por página, com controles do próprio navegador (texto, caixa de marcar, rádio, lista) e "Mostrar na página". Campo desenhado por cima da página não serve no celular: numa A4 de 390 px, a letra fica com uns 8 px
+- [ ] Valores fixos na página: aparência gerada para cada campo preenchido (fonte e tamanho do campo, tamanho automático, alinhamento, várias linhas, pente) e entregue ao achatamento que o app já faz; caixa de marcar e rádio usam o estado "marcado" que o próprio arquivo tem
+- [ ] XFA: no PDF híbrido, preenche a parte AcroForm e tira o `/XFA`; XFA puro é recusado com o motivo. Campo calculado por script sai com o valor digitado, com aviso
+
+### Segurança e privacidade
+
+- Nenhuma biblioteca nova e nenhuma requisição nova; a CSP não muda. As fontes já estão em `web/vendor/`, a imagem chega por `blob:` e é decodificada pelo navegador.
+- Nada guardado: texto, desenho, rubrica e imagem ficam só na memória da aba.
+- O PDF leva só o que a pessoa vê e escolhe: a imagem vai recodificada, sem os metadados do arquivo original.
+- A tarja continua por cima de tudo, e a conferência do PDF montado continua a mesma.
+- Memória do iPhone: imagem com o lado limitado e desenho simplificado.
+
+### Testes
+
+- `node:test`: posições com `/Rotate`, CropBox e margem; seta, ✓, ✗ e suavização do traço; `ExtGState`; `/SMask`; fontes com o PDF/A; Form XObject repetido; `copyPages` com edição sem nome de recurso repetido; assinar sem reescrever desligado com edição; texto da edição sob a tarja fora do arquivo; numeração por arquivo com "um PDF por página" e por intervalos.
+- `qpdf --check` e o fuzzing com edição; veraPDF (PDF/A-2b) com texto novo, marca d'água, marca-texto e imagem com transparência.
+- Playwright no Chromium e no WebKit, em 390 × 664 e 1280 × 800: cada ferramenta pelo ponteiro e pelo teclado, o painel de texto com a tela encolhida pelo teclado virtual, Esc com confirmação, nenhuma violação da CSP. O que for de toque fica para o iPhone real.
+- Formulários: PDFs gerados nos testes com cada tipo de campo, e PDFs públicos de formulário numa pasta fora do repositório, como a varredura.
+
+### Decisões
+
+- **Versões** (decisão do dono, 2026-10-24): o editor sai na v4.0.0 (pacote grande, sobe o major); os formulários, na v4.1.0, logo depois.
+- **Fixo na página, não comentário editável** (decisão do dono, 2026-10-24).
+- **PDF assinado por outra pessoa** (decisão do dono, 2026-10-24): editar monta um PDF novo, com o aviso de que a assinatura deixa de valer. Rubricar mantendo a assinatura dela fica para depois.
+- **Formulário com valores fixos na página** (decisão do dono, 2026-10-24). Campos que continuam editáveis, sem reescrever o arquivo, ficam para depois.
+- **Numeração por arquivo** (decisão do dono, 2026-10-24): com "um PDF por página" ou por intervalos, cada arquivo começa do 1.
+- **Corrigir o texto que já existe no PDF fica de fora** (decisão do dono, 2026-10-24).
+- **Só as letras da WinAnsi:** cobrem todo o português. Alfabetos não latinos e emoji exigiriam fonte composta (Type0), que o `ttf.js` não gera.
+- **Modo "Editar" separado das tarjas,** com a tarja aplicada por cima de tudo.
+
+### Perguntas em aberto
+
+- Rubricar um PDF assinado mantendo a assinatura (anotação numa atualização incremental, com a permissão do autor), se houver pedido.
+- Formulário que continua editável depois de preenchido, se houver pedido.
+- Encaixar o sublinhado e o riscado na linha do texto (pelas caixas de texto do PDF.js ou pelas palavras do OCR)? Na v4.0.0, eles são arrastados à mão.
