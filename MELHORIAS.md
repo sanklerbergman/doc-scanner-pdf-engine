@@ -1043,15 +1043,30 @@ Detalhamento da fase 5 da edição de PDF (#15), planejado em 2026-10-24 com 9 f
 
 #### Fase 5.1: ler
 
-- [ ] Caminhamento com herança no leitor; `isSigned` e `pdf-append.js` passam a usá-lo
-- [ ] `pdf-form.js`: tipos, `Ff`, `/DA`, `/Opt`, `/MaxLen`, `/Q`, `/MK`, `/BS`, estados, página e retângulo de cada widget; XFA, `/Lock`, cálculo e formato
-- [ ] Rótulos e notas ao abrir
+- [x] Caminhamento com herança no leitor; `isSigned` e `pdf-append.js` passam a usá-lo
+- [x] `pdf-form.js`: tipos, `Ff`, `/DA`, `/Opt`, `/MaxLen`, `/Q`, `/MK`, `/BS`, estados, página e retângulo de cada widget; XFA, `/Lock`, cálculo e formato
+- [x] Rótulos e notas ao abrir
+
+Ficou assim:
+
+- O caminhamento (`formFields`, no leitor) é um só, com os limites de antes (10000 objetos) e 32 níveis; a terceira varredura da v4.0.0 (`formValuesWithoutAppearance`) saiu.
+- Os scripts de cálculo, formato, teclado e validação (`/AA` `C`, `F`, `K`, `V`) ficam guardados como texto no campo, para os formatos do Acrobat (fase 5.4). Nada roda.
+- Rótulo: `/TU`, o `/T` limpo ou "Campo 12"; nome que o programa deu sozinho ("Caixa de texto 1_2", "Text3", `/TU` "undefined") não serve. O texto da página em volta do campo entra pelo painel (`pageLabels`, com o `pdfPageTextItems`).
+- Nota ao abrir: "Este PDF tem um formulário com 17 campos."; XFA puro diz que só o Adobe Reader preenche.
+- Nos 8 formulários reais (INSS, Receita, TJMG, INPI, Paraná), os campos batem com os da tabela, menos os ocultos da Receita (680 de 690).
 
 #### Fase 5.2: fixar
 
-- [ ] Aparências: uma linha, várias linhas, pente, tamanho 0, `/Q`, fundo, borda e `/MK /R`; caixa, rádio e listas
-- [ ] `fill` no `copyPages`; `/NeedAppearances`
-- [ ] Página com valores na miniatura, na tela cheia, na tarja e no OCR; assinar sem reescrever desligado
+- [x] Aparências: uma linha, várias linhas, pente, tamanho 0, `/Q`, fundo, borda e `/MK /R`; caixa, rádio e listas
+- [x] `fill` no `copyPages`; `/NeedAppearances`
+- [x] Página com valores na miniatura, na tela cheia, na tarja e no OCR; assinar sem reescrever desligado
+
+Ficou assim:
+
+- Os valores ficam no formulário de cada PDF aberto (`doc.form`, só na memória da aba): o mesmo campo vale em todas as páginas e em todos os arquivos gerados. A página com valores é desenhada pelo PDF.js a partir de um PDF só com ela, montado como o PDF novo.
+- #16: o campo preenchido em outro programa sem a aparência do valor é desenhado de novo também ao só juntar, dividir ou assinar. O aviso da v4.0.0 saiu; fica só uma nota quando o valor tem letra fora das fontes padrão do PDF ou não cabe no campo.
+- Caixa e rádio sem `/AS` válido, com o valor no `/V`, saem como o PDF.js mostra. O PDF assinado com valor preenchido vira PDF novo, e o aviso diz que a certificação também deixa de valer.
+- Nos 8 formulários reais, com um valor de teste em cada campo editável (1.718 de 1.721), o PDF novo passa no `qpdf --check`, e o PDF.js acha cada valor dentro do retângulo do campo, também na página da Receita com `/Rotate 90`.
 
 #### Fase 5.3: painel
 
