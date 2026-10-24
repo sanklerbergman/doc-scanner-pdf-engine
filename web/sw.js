@@ -64,6 +64,7 @@ const APP_FILES = [
   './js/edit-media.js',
   './js/edit-image.js',
   './js/rubric.js',
+  './js/pdf-form-format.js',
   './icon.svg',
   './sankler-logo-reduzido-fundo-claro.svg',
   './sankler-logo-reduzido-fundo-escuro.svg',
