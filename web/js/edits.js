@@ -327,9 +327,193 @@ export function redactEdits(edits, rects, page) {
   return (edits ?? []).flatMap((edit) => {
     const type = editType(edit.type);
     if (type?.redact && page) return type.redact(edit, rects, page);
-    const covered = rects.some((r) => edit.x0 >= r.x0 && edit.y0 >= r.y0 && edit.x1 <= r.x1 && edit.y1 <= r.y1);
-    return covered ? [] : [edit];
+    if (rects.some((r) => covers(r, edit))) return [];
+    // Tipo que não sabe tirar o que fica sob a tarja e é pego só em parte: nada sai (a tarja nunca só cobre).
+    if (rects.some((r) => overlaps(r, edit))) throw new Error(`A edição (${edit.type}) sob a tarja não pôde ser apagada`);
+    return [edit];
   });
+}
+
+const covers = (r, edit) => edit.x0 >= r.x0 && edit.y0 >= r.y0 && edit.x1 <= r.x1 && edit.y1 <= r.y1;
+const overlaps = (r, edit) => r.x0 < edit.x1 && r.x1 > edit.x0 && r.y0 < edit.y1 && r.y1 > edit.y0;
+
+// ---------- Corte pelas tarjas ----------
+// A tarja apaga, não só cobre: da edição que ela pega em parte (desenho, forma, marcação, rubrica) sai o pedaço do
+// desenho que fica dentro dela. O tipo põe redact: cutRedact, que leva as tarjas para o quadro da edição (cuts), e corta
+// os caminhos com cutPath antes de escrever os operadores. As curvas viram linhas retas (achatadas com erro de 0,1
+// ponto), e o corte fica um pouco para fora da borda da tarja (EDGE): nenhum ponto do caminho fica dentro dela, nem
+// depois do arredondamento do PDF. A prévia não muda: lá a tarja é pintada por cima, e o que se vê é o mesmo.
+
+const FLAT = 0.1; // erro máximo, em pontos, ao achatar as curvas
+const EDGE = 0.02; // folga, em pontos, entre o corte e a borda da tarja
+
+const invert = ([a, b, c, d, e, f]) => {
+  const det = a * d - b * c;
+  return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
+};
+const transform = (m, [x, y]) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+
+/**
+ * As tarjas (de 0 a 1 na página como aparece) no quadro da edição de pé, em pontos: [x0, y0, x1, y1]. O giro é de 90 em
+ * 90 graus, então a tarja continua um retângulo reto no quadro.
+ * @param {{width: number, height: number}} page em pontos
+ */
+export function frameRects(edit, rects, page) {
+  const back = invert(editFrame(edit, page.width, page.height).matrix);
+  return rects.map((r) => {
+    const [ax, ay] = transform(back, [r.x0 * page.width, r.y0 * page.height]);
+    const [bx, by] = transform(back, [r.x1 * page.width, r.y1 * page.height]);
+    return [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
+  });
+}
+
+/**
+ * redact dos tipos feitos de caminhos: a edição inteira sob uma tarja sai; a pega em parte leva as tarjas no quadro
+ * dela (cuts), e o tipo corta os caminhos (cutPath); a que a tarja não pega fica como está.
+ */
+export function cutRedact(edit, rects, page) {
+  const hit = rects.filter((r) => overlaps(r, edit));
+  if (!hit.length) return [edit];
+  if (hit.some((r) => covers(r, edit))) return [];
+  return [{ ...edit, cuts: frameRects(edit, hit, page) }];
+}
+
+// Subcaminhos do caminho, com as curvas achatadas: [{points, closed}].
+function flatten(path) {
+  const out = [];
+  let current = null;
+  let at = [0, 0];
+  let start = [0, 0];
+  const steps = (deviation) => Math.max(1, Math.min(200, Math.ceil(Math.sqrt(deviation / FLAT))));
+  const lineTo = (point) => {
+    if (!current) out.push((current = { points: [at], closed: false }));
+    current.points.push(point);
+    at = point;
+  };
+  for (const [op, ...v] of path) {
+    if (op === 'M') {
+      out.push((current = { points: [[v[0], v[1]]], closed: false }));
+      at = start = [v[0], v[1]];
+    } else if (op === 'L') lineTo([v[0], v[1]]);
+    else if (op === 'Q') {
+      const [p0, c, p1] = [at, [v[0], v[1]], [v[2], v[3]]];
+      const n = steps(Math.hypot(p0[0] - 2 * c[0] + p1[0], p0[1] - 2 * c[1] + p1[1]) / 4);
+      for (let i = 1; i <= n; i++) {
+        const t = i / n;
+        const s = 1 - t;
+        lineTo([s * s * p0[0] + 2 * s * t * c[0] + t * t * p1[0], s * s * p0[1] + 2 * s * t * c[1] + t * t * p1[1]]);
+      }
+    } else if (op === 'C') {
+      const [p0, c1, c2, p1] = [at, [v[0], v[1]], [v[2], v[3]], [v[4], v[5]]];
+      const d1 = Math.hypot(p0[0] - 2 * c1[0] + c2[0], p0[1] - 2 * c1[1] + c2[1]);
+      const d2 = Math.hypot(c1[0] - 2 * c2[0] + p1[0], c1[1] - 2 * c2[1] + p1[1]);
+      const n = steps(0.75 * Math.max(d1, d2));
+      for (let i = 1; i <= n; i++) {
+        const t = i / n;
+        const s = 1 - t;
+        lineTo([0, 1].map((k) => s * s * s * p0[k] + 3 * s * s * t * c1[k] + 3 * s * t * t * c2[k] + t * t * t * p1[k]));
+      }
+    } else if (op === 'Z' && current) {
+      current.closed = true;
+      current = null;
+      at = start;
+    }
+  }
+  return out;
+}
+
+// Trecho do segmento p→q dentro do retângulo aberto (Liang-Barsky): [t0, t1], ou null.
+function inside(p, q, [x0, y0, x1, y1]) {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = q[0] - p[0];
+  const dy = q[1] - p[1];
+  for (const [pk, qk] of [[-dx, p[0] - x0], [dx, x1 - p[0]], [-dy, p[1] - y0], [dy, y1 - p[1]]]) {
+    if (pk === 0) {
+      if (qk <= 0) return null;
+    } else if (pk < 0) t0 = Math.max(t0, qk / pk);
+    else t1 = Math.min(t1, qk / pk);
+  }
+  return t0 < t1 ? [t0, t1] : null;
+}
+
+// Traço: os pedaços da linha que ficam fora de todas as tarjas.
+function cutStroke({ points, closed }, rects) {
+  const line = closed ? [...points, points[0]] : points;
+  const pieces = [];
+  let open = null; // o pedaço que continua no próximo segmento
+  let removed = false;
+  for (let i = 0; i < line.length - 1; i++) {
+    const p = line[i];
+    const q = line[i + 1];
+    const gone = rects.map((rect) => inside(p, q, rect)).filter(Boolean).sort((a, b) => a[0] - b[0]);
+    if (gone.length) removed = true;
+    const kept = [];
+    let from = 0;
+    for (const [a, b] of gone) {
+      if (a > from) kept.push([from, a]);
+      from = Math.max(from, b);
+    }
+    if (from < 1) kept.push([from, 1]);
+    const at = (t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+    let next = null;
+    for (const [a, b] of kept) {
+      if (open && a === 0) open.push(at(b));
+      else pieces.push((open = [at(a), at(b)]));
+      next = b === 1 ? open : null;
+      open = next;
+    }
+    open = next;
+  }
+  if (!removed) return [{ points, closed }];
+  return pieces.filter((piece) => piece.length > 1).map((piece) => ({ points: piece, closed: false }));
+}
+
+// Polígono cortado por um semiplano: eixo (0 = x, 1 = y), limite e o lado que fica (-1: menor, 1: maior).
+function clip(polygon, axis, limit, side) {
+  const out = [];
+  polygon.forEach((p, i) => {
+    const q = polygon[(i + 1) % polygon.length];
+    const pIn = (p[axis] - limit) * side >= 0;
+    const qIn = (q[axis] - limit) * side >= 0;
+    if (pIn) out.push(p);
+    if (pIn !== qIn) {
+      const t = (limit - p[axis]) / (q[axis] - p[axis]);
+      out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+    }
+  });
+  return out;
+}
+
+// Área cheia menos o retângulo: as partes do polígono nas quatro faixas de fora dele.
+function subtract(polygon, [x0, y0, x1, y1]) {
+  const xs = polygon.map(([x]) => x);
+  const ys = polygon.map(([, y]) => y);
+  if (Math.max(...xs) <= x0 || Math.min(...xs) >= x1 || Math.max(...ys) <= y0 || Math.min(...ys) >= y1) return [polygon];
+  const middle = clip(clip(polygon, 0, x0, 1), 0, x1, -1);
+  return [clip(polygon, 0, x0, -1), clip(polygon, 0, x1, 1), clip(middle, 1, y0, -1), clip(middle, 1, y1, 1)]
+    .filter((part) => part.length > 2);
+}
+
+/**
+ * O caminho sem o que fica dentro das tarjas (cuts, no mesmo quadro, de cutRedact). Sem tarja, o mesmo caminho.
+ * @param {Array<Array<string | number>>} path comandos M, L, Q, C e Z
+ * @param {number[][] | undefined} cuts [x0, y0, x1, y1] de cada tarja
+ * @param {{fill?: boolean}} [options] fill: área cheia (cortada em polígonos); sem isso, traço (cortado em pedaços)
+ * @returns {Array<Array<string | number>>} vazio quando nada fica de fora
+ */
+export function cutPath(path, cuts, { fill = false } = {}) {
+  if (!cuts?.length) return path;
+  const rects = cuts.map(([x0, y0, x1, y1]) => [x0 - EDGE, y0 - EDGE, x1 + EDGE, y1 + EDGE]);
+  const parts = flatten(path).flatMap((sub) => {
+    if (!fill) return cutStroke(sub, rects);
+    let polygons = [sub.points];
+    for (const rect of rects) polygons = polygons.flatMap((polygon) => subtract(polygon, rect));
+    return polygons.map((points) => ({ points, closed: true }));
+  });
+  return parts.flatMap(({ points, closed }) => [
+    ['M', ...points[0]], ...points.slice(1).map((point) => ['L', ...point]), ...(closed ? [['Z']] : []),
+  ]);
 }
 
 /**

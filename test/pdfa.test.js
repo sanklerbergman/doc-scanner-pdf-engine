@@ -309,6 +309,11 @@ const TEXTS = [
   { type: 'text', x0: 0.1, y0: 0.5, x1: 0.4, y1: 0.53, text: 'Com serifa: “citação”', family: 'serif', color: '#000000' },
   { type: 'text', x0: 0.1, y0: 0.6, x1: 0.4, y1: 0.66, text: 'De máquina\nnº 0123', family: 'mono', color: '#dc2626', turn: 90 },
 ];
+const RUBRIC_EDIT = {
+  type: 'rubric', x0: 0.3, y0: 0.7, x1: 0.7, y1: 0.76,
+  rubric: { id: 3, w: 100, h: 40, strokes: [[[0, 0.5], [0.25, 0.1], [0.5, 0.9], [0.75, 0.1], [1, 0.5]]], color: '#1d4ed8', width: 2 },
+};
+const WATERMARK_EDIT = { type: 'watermark', x0: 0, y0: 0, x1: 1, y1: 1, text: 'CONFIDENCIAL' };
 const numbered = (pages) => pages.map((page, i) => ({
   ...page,
   edits: [...(page.edits ?? []), ...allPagesText({ number: { format: 'page-n-of', spot: 'bottom-right' }, header: { text: 'Contrato nº 12', spot: 'top-center' } },
@@ -353,6 +358,12 @@ test('veraPDF (perfil PDF/A-2B): fotos, OCR, Word com as fontes embutidas, PDF a
     'texto-fotos.pdf': await withFonts(numbered([{ ...PAGES[0], edits: TEXTS }, PAGES[1]])),
     'texto-word.pdf': await withFonts(numbered([{ ...WORD, rotation: 90, edits: TEXTS }, PAGES[0]])),
     'texto-carimbo.pdf': await stamped(numbered([{ ...PAGES[0], edits: TEXTS }])),
+    // Tarja pegando metade das formas, do desenho, do texto, da rubrica e da marca d'água: os caminhos cortados, as
+    // letras tiradas do conteúdo e da fonte embutida.
+    'tarja-edicoes.pdf': await withFonts([
+      { ...PAGES[0], edits: [...EDITS, ...TEXTS, RUBRIC_EDIT, WATERMARK_EDIT], redactions: [{ x0: 0.5, y0: 0, x1: 1, y1: 1 }] },
+      { ...WORD, rotation: 90, edits: [...EDITS, ...TEXTS, RUBRIC_EDIT, WATERMARK_EDIT], items: [...WORD.items, { type: 'redaction', x: 0, y: 300, w: 595.28, h: 300 }] },
+    ]),
   };
   signer.discard();
   const dir = mkdtempSync(join(tmpdir(), 'verapdf-'));

@@ -83,6 +83,14 @@ function pdfString(text) {
 
 const rgb = (color) => (color ?? [0, 0, 0]).map(num).join(' ');
 
+// Caixa preta da tarja (x0 y0 x1 y1 no espaço do PDF), arredondada para fora, como os pixels da tarja: o
+// arredondamento de duas casas nunca deixa uma lasca do que está embaixo aparecer na borda.
+function coverBox(x0, y0, x1, y1) {
+  const [a, b] = [x0, y0].map((v) => Math.floor(Math.round(v * 1e6) / 1e4) / 100);
+  const [c, d] = [x1, y1].map((v) => Math.ceil(Math.round(v * 1e6) / 1e4) / 100);
+  return `${num(a)} ${num(b)} ${num(c - a)} ${num(d - b)} re`;
+}
+
 // Conteúdo de uma página de texto. Os itens vêm com a origem no canto superior esquerdo;
 // no PDF ela fica no inferior, por isso y vira height - y.
 function textContent(page, fontNames, imageNames, edits = '') {
@@ -123,7 +131,7 @@ function textContent(page, fontNames, imageNames, edits = '') {
   // Tarjas: caixas pretas por cima de tudo. O texto que estava embaixo já saiu da página (redact.js).
   for (const item of page.items) {
     if (item.type !== 'redaction') continue;
-    ops.push(`q 0 0 0 rg ${num(item.x)} ${num(page.height - item.y - item.h)} ${num(item.w)} ${num(item.h)} re f Q`);
+    ops.push(`q 0 0 0 rg ${coverBox(item.x, page.height - item.y - item.h, item.x + item.w, page.height - item.y)} f Q`);
   }
   return ops.join('\n');
 }
@@ -453,7 +461,7 @@ function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
     if (edited[i]) {
       // Edições por cima da imagem e, por cima delas, as tarjas da imagem de novo (nos pixels elas já estão).
       const { ops, covers } = edited[i];
-      const boxes = covers.map((r) => `${num(r.x0 * page.width)} ${num((1 - r.y1) * page.height)} ${num((r.x1 - r.x0) * page.width)} ${num((r.y1 - r.y0) * page.height)} re`);
+      const boxes = covers.map((r) => coverBox(r.x0 * page.width, (1 - r.y1) * page.height, r.x1 * page.width, (1 - r.y0) * page.height));
       content += `\n${ops}${boxes.length ? `\nq 0 0 0 rg ${boxes.join(' ')} f Q` : ''}`;
     }
     if (ocr) content += `\n${ocrLayer(page.ocr, { box: [x, y, x + w, y + h], width: w, height: h }, ocr)}`; // só ASCII

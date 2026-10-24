@@ -13,7 +13,7 @@ import { textWidth } from './fonts.js';
 import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex, stampCharacters } from './stamp.js';
 import { ocrWorkers, progressNote } from './ocr-plan.js';
 import { moveItem, setupReorder } from './reorder.js';
-import { paintEdits, rotateEdits, fileExtras, editCharacters } from './edits.js';
+import { paintEdits, rotateEdits, fileExtras, editCharacters, redactEdits } from './edits.js';
 import './edit-types.js';
 import { setupAllPages, spotGrid } from './all-pages.js';
 import './all-pages-text.js'; // numeração, cabeçalho e rodapé (fase 2)
@@ -432,16 +432,26 @@ function photoOnSheet(picture, page, maxSide, { edits = true, redact = true } = 
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(picture, sheet.image.x * scale, sheet.image.y * scale, sheet.image.w * scale, sheet.image.h * scale);
-  if (edits) paintEdits(ctx, page.edits, sheet);
-  if (redact) paintRedactions(ctx, sheetRects(page.redactions, sheet), canvas.width, canvas.height);
+  const covers = sheetRects(page.redactions, sheet);
+  if (edits) paintEdits(ctx, redact ? shownEdits(page.edits, covers, sheet) : page.edits, sheet);
+  if (redact) paintRedactions(ctx, covers, canvas.width, canvas.height);
   return canvas;
 }
 
 // Edições e, por cima, tarjas, num canvas que é a página como aparece (Word e página de PDF).
 function paintOver(canvas, page, { redact = true, edits = true } = {}) {
   const ctx = canvas.getContext('2d');
-  if (edits) paintEdits(ctx, page.edits, visibleSize(page));
+  const size = visibleSize(page);
+  if (edits) paintEdits(ctx, redact ? shownEdits(page.edits, page.redactions, size) : page.edits, size);
   if (redact) paintRedactions(ctx, page.redactions, canvas.width, canvas.height);
+}
+
+// As edições como o PDF as leva, para a tela mostrar o mesmo: sem as letras que as tarjas tiram (texto e marca
+// d'água) e sem o que elas pegam inteiro. Desenho, forma, rubrica e imagem pegos em parte saem cortados no PDF; na tela,
+// a tarja pintada por cima mostra o mesmo (a imagem é cortada só ao gerar, quando o arquivo é montado).
+function shownEdits(edits, covers, size) {
+  if (!edits?.length || !covers?.length) return edits;
+  return edits.flatMap((edit) => (edit.type === 'image' ? [edit] : redactEdits([edit], covers, size)));
 }
 
 // Pede a senha de um PDF protegido. Devolve a senha, ou null se a pessoa pular o arquivo. O campo é limpo na hora.

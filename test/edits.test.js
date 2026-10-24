@@ -241,14 +241,18 @@ test('foto: edições na folha inteira, com a margem, por cima da imagem; sem ed
 });
 
 test('foto com tarja: as edições por baixo e as tarjas de novo por cima, como caixas pretas, na folha', async () => {
-  // A tarja pega só um pedaço do retângulo: ele fica no arquivo, coberto.
+  // A tarja pega só um pedaço do retângulo: o pedaço sob ela sai do arquivo (redact-edits.test.js), e a caixa preta,
+  // arredondada para fora, vem por cima do resto.
   const page = photoPage({ redactions: [{ x0: 0, y0: 0, x1: 0.3, y1: 0.3 }], edits: [RECT] });
   const content = await pageContent(buildPdf([page]));
   const { box } = page;
+  const down = (v) => Math.floor(v * 100) / 100;
+  const up = (v) => Math.ceil(v * 100) / 100;
   const n = (v) => String(Math.round(v * 100) / 100);
-  const tarja = `q 0 0 0 rg ${n(box.x)} ${n(box.y + 0.7 * box.h)} ${n(0.3 * box.w)} ${n(0.3 * box.h)} re f Q`;
+  const [x0, y0, x1, y1] = [down(box.x), down(box.y + 0.7 * box.h), up(box.x + 0.3 * box.w), up(box.y + box.h)];
+  const tarja = `q 0 0 0 rg ${n(x0)} ${n(y0)} ${n(x1 - x0)} ${n(y1 - y0)} re f Q`;
   assert.ok(content.includes(tarja), content);
-  assert.ok(content.indexOf('re S') < content.indexOf(tarja), 'a tarja vem depois da edição');
+  assert.ok(content.indexOf(' S\nQ') < content.indexOf(tarja), 'a tarja vem depois da edição');
   // Sem edição, a tarja já está nos pixels e não vai de novo.
   assert.ok(!(await pageContent(buildPdf([photoPage({ redactions: page.redactions })]))).includes('0 0 0 rg'));
 });

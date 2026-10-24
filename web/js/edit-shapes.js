@@ -1,7 +1,7 @@
 // Tipos de edição da fase 1 (edits.js): retângulo, seta, ✓, ✗ e desenho à mão. Todos são caminhos vetoriais, com a
 // cor e a espessura da edição: no PDF não precisam de fonte nem de imagem (✓ e ✗ não existem na WinAnsi, e a
 // ZapfDingbats sem embutir reprovaria o PDF/A). Código puro, sem DOM.
-import { registerEditType, tracePath, pathOps, circlePath, strokePath, pdfNumber } from './edits.js';
+import { registerEditType, tracePath, pathOps, circlePath, strokePath, pdfNumber, cutRedact, cutPath } from './edits.js';
 
 const COLOR = /^#[0-9a-f]{6}$/i;
 export const DEFAULT_COLOR = '#1d4ed8'; // azul de caneta
@@ -14,10 +14,11 @@ const CAPS = ['butt', 'round', 'square'];
 const JOINS = ['miter', 'round', 'bevel'];
 const round4 = (v) => Math.round(v * 1e4) / 1e4;
 
-// Forma só de traço: o mesmo caminho no canvas e no PDF.
+// Forma só de traço: o mesmo caminho no canvas e no PDF. Pega em parte por uma tarja, o caminho é cortado nela
+// (cutRedact e cutPath, em edits.js): nenhum pedaço do desenho fica no arquivo sob a tarja.
 function stroked({ label, gender, size, path, cap = 1, join = 1 }) {
   return {
-    label, gender, size,
+    label, gender, size, redact: cutRedact,
     create: (box, props) => ({ ...box, ...props }),
     paint(ctx, edit, box) {
       ctx.lineWidth = widthOf(edit);
@@ -27,7 +28,10 @@ function stroked({ label, gender, size, path, cap = 1, join = 1 }) {
       tracePath(ctx, path(edit, box));
       ctx.stroke();
     },
-    pdf: (edit, box) => `${pdfNumber(widthOf(edit), 2)} w ${cap} J ${join} j ${rgb(colorOf(edit))} RG\n${pathOps(path(edit, box))} S`,
+    pdf(edit, box) {
+      const kept = cutPath(path(edit, box), edit.cuts);
+      return kept.length ? `${pdfNumber(widthOf(edit), 2)} w ${cap} J ${join} j ${rgb(colorOf(edit))} RG\n${pathOps(kept)} S` : '';
+    },
   };
 }
 
@@ -85,7 +89,7 @@ export function arrowParts(edit, { w, h }) {
 }
 
 registerEditType('arrow', {
-  label: 'Seta', gender: 'f', size: [120, 60],
+  label: 'Seta', gender: 'f', size: [120, 60], redact: cutRedact,
   create: (box, props) => ({ ...box, ...props, from: [0.06, 0.88], to: [0.94, 0.12] }),
   paint(ctx, edit, box) {
     const parts = arrowParts(edit, box);
@@ -102,7 +106,11 @@ registerEditType('arrow', {
     const parts = arrowParts(edit, box);
     if (!parts) return '';
     const color = rgb(colorOf(edit));
-    return `${pdfNumber(widthOf(edit), 2)} w 0 J ${color} RG ${color} rg\n${pathOps(parts.line)} S\n${pathOps(parts.head)} f`;
+    const line = cutPath(parts.line, edit.cuts);
+    const head = cutPath(parts.head, edit.cuts, { fill: true });
+    if (!line.length && !head.length) return '';
+    return [`${pdfNumber(widthOf(edit), 2)} w 0 J ${color} RG ${color} rg`, ...(line.length ? [`${pathOps(line)} S`] : []),
+      ...(head.length ? [`${pathOps(head)} f`] : [])].join('\n');
   },
 });
 
@@ -156,7 +164,7 @@ function inkPaths(edit, { w, h }) {
 }
 
 registerEditType('ink', {
-  label: 'Desenho', gender: 'm', keepRatio: true,
+  label: 'Desenho', gender: 'm', keepRatio: true, redact: cutRedact,
   paint(ctx, edit, box) {
     const { lines, dots } = inkPaths(edit, box);
     ctx.lineWidth = widthOf(edit);
@@ -172,7 +180,9 @@ registerEditType('ink', {
     }
   },
   pdf(edit, box) {
-    const { lines, dots } = inkPaths(edit, box);
+    const paths = inkPaths(edit, box);
+    const lines = paths.lines.map((path) => cutPath(path, edit.cuts)).filter((path) => path.length);
+    const dots = paths.dots.map((path) => cutPath(path, edit.cuts, { fill: true })).filter((path) => path.length);
     if (!lines.length && !dots.length) return '';
     const color = rgb(colorOf(edit));
     const out = [`${pdfNumber(widthOf(edit), 2)} w 1 J 1 j ${color} RG ${color} rg`];

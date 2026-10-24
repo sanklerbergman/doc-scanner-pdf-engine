@@ -7,7 +7,7 @@
 // - Marca d'água ("em todas as páginas", watermark.js): texto grande na diagonal da página, cinza e transparente, em
 //   Helvetica-Bold (com o PDF/A, a Liberation embutida, pelas letras de characters). Sob uma tarja, saem do arquivo as
 //   letras que ela pega (redact): a conferência das tarjas lê o texto do PDF montado, e a marca d'água é texto.
-import { registerEditType, tracePath, pathOps, pdfNumber } from './edits.js';
+import { registerEditType, tracePath, pathOps, pdfNumber, cutRedact, cutPath } from './edits.js';
 import { textWidth, winAnsiCode } from './fonts.js';
 
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -21,8 +21,10 @@ export const MARK_TINTS = [['#ffcc00', 'Amarelo'], ['#33cc66', 'Verde'], ['#ff33
 export const DEFAULT_TINT = MARK_TINTS[0][0];
 const tintOf = (edit) => (COLOR.test(edit.tint ?? '') ? edit.tint : DEFAULT_TINT);
 
+// Pegos em parte por uma tarja, marca-texto, sublinhado e riscado são cortados nela (cutRedact e cutPath, em
+// edits.js): nada deles fica no arquivo sob a tarja.
 registerEditType('highlight', {
-  label: 'Marca-texto', gender: 'm', size: [160, 16],
+  label: 'Marca-texto', gender: 'm', size: [160, 16], redact: cutRedact,
   create: (box, props) => ({ ...box, ...props }),
   paint(ctx, edit, { w, h }) {
     ctx.globalAlpha = MARK_ALPHA;
@@ -31,8 +33,10 @@ registerEditType('highlight', {
     ctx.fillRect(0, 0, w, h);
   },
   pdf(edit, { w, h }, res) {
+    const area = edit.cuts && cutPath([['M', 0, 0], ['L', w, 0], ['L', w, h], ['L', 0, h], ['Z']], edit.cuts, { fill: true });
+    if (area && !area.length) return '';
     const state = res.extGState({ Type: 'ExtGState', ca: MARK_ALPHA, CA: MARK_ALPHA, BM: 'Multiply' });
-    return `${state} gs ${rgb(tintOf(edit))} rg 0 0 ${pdfNumber(w, 2)} ${pdfNumber(h, 2)} re f`;
+    return `${state} gs ${rgb(tintOf(edit))} rg ${area ? pathOps(area) : `0 0 ${pdfNumber(w, 2)} ${pdfNumber(h, 2)} re`} f`;
   },
 });
 
@@ -48,7 +52,7 @@ const linePath = (edit, { w, h }) => [['M', edit.from[0] * w, edit.from[1] * h],
 
 function lineType(label) {
   return {
-    label, gender: 'm', size: [160, 6],
+    label, gender: 'm', size: [160, 6], redact: cutRedact,
     create: (box, props) => ({ ...box, ...props, from: [0, 0.5], to: [1, 0.5] }),
     paint(ctx, edit, box) {
       ctx.lineWidth = widthOf(edit);
@@ -57,7 +61,10 @@ function lineType(label) {
       tracePath(ctx, linePath(edit, box));
       ctx.stroke();
     },
-    pdf: (edit, box) => `${pdfNumber(widthOf(edit), 2)} w 0 J ${rgb(colorOf(edit))} RG\n${pathOps(linePath(edit, box))} S`,
+    pdf(edit, box) {
+      const line = cutPath(linePath(edit, box), edit.cuts);
+      return line.length ? `${pdfNumber(widthOf(edit), 2)} w 0 J ${rgb(colorOf(edit))} RG\n${pathOps(line)} S` : '';
+    },
   };
 }
 

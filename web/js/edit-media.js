@@ -7,7 +7,7 @@
 //   as páginas como um Form XObject.
 // As imagens ficam só na memória da aba, por uma chave tirada do conteúdo (a mesma imagem escolhida duas vezes ocupa um
 // lugar só), e saem ao limpar a lista (forgetMedia). Código puro, sem DOM: a prévia de cada imagem chega pronta.
-import { registerEditType, editType, pdfNumber, spotBox } from './edits.js';
+import { registerEditType, editType, pdfNumber, spotBox, cutRedact } from './edits.js';
 import { inkFromStrokes } from './edit-shapes.js';
 import { inflate } from './inflate.js';
 
@@ -374,9 +374,11 @@ export function rubricEdit(rubric, spot, side, page, placed = []) {
 const inkOf = (rubric) => ({ type: 'ink', strokes: rubric.strokes, color: rubric.color, width: rubric.width });
 
 // {type: 'rubric', x0, y0, x1, y1, rubric}: criada por "em todas as páginas" (rubric.js), não pelo editor. O desenho
-// vai uma vez para o arquivo, como um Form XObject no quadro dela, e cada página só o chama, na escala da caixa.
+// vai uma vez para o arquivo, como um Form XObject no quadro dela, e cada página só o chama, na escala da caixa. Na
+// página em que uma tarja pega a rubrica em parte (cutRedact), ela vai num Form XObject só dessa página, com os traços
+// cortados na tarja: o desenho que as outras páginas usam não leva nada para baixo dela.
 registerEditType('rubric', {
-  label: 'Rubrica', gender: 'f', keepRatio: true,
+  label: 'Rubrica', gender: 'f', keepRatio: true, redact: cutRedact,
   paint(ctx, edit, { w, h }) {
     const { rubric } = edit;
     ctx.scale(w / rubric.w, h / rubric.h);
@@ -384,10 +386,17 @@ registerEditType('rubric', {
   },
   pdf(edit, { w, h }, res) {
     const { rubric } = edit;
-    const name = res.xObject(`rubrica:${rubric.id}`, {
+    const sx = w / rubric.w;
+    const sy = h / rubric.h;
+    // As tarjas no quadro da rubrica (a caixa é a rubrica na escala da página).
+    const cuts = edit.cuts?.map(([x0, y0, x1, y1]) => [x0 / sx, y0 / sy, x1 / sx, y1 / sy]);
+    const content = editType('ink').pdf({ ...inkOf(rubric), cuts }, { w: rubric.w, h: rubric.h });
+    if (!content) return '';
+    const key = cuts ? `rubrica:${rubric.id}:${cuts.map((cut) => cut.map((v) => v.toFixed(3)).join(',')).join(';')}` : `rubrica:${rubric.id}`;
+    const name = res.xObject(key, {
       dict: { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, rubric.w, rubric.h], Resources: {} },
-      data: encoder.encode(editType('ink').pdf(inkOf(rubric), { w: rubric.w, h: rubric.h })),
+      data: encoder.encode(content),
     });
-    return `${pdfNumber(w / rubric.w, 6)} 0 0 ${pdfNumber(h / rubric.h, 6)} 0 0 cm ${name} Do`;
+    return `${pdfNumber(sx, 6)} 0 0 ${pdfNumber(sy, 6)} 0 0 cm ${name} Do`;
   },
 });

@@ -114,14 +114,19 @@ registerEditType('text', {
     const first = String(edit.text ?? '').split('\n')[0];
     return `Texto "${first.length > 40 ? `${first.slice(0, 39)}…` : first}"`;
   },
+  // Na tela, como no PDF: sem as letras que a tarja tira (hidden), e o resto da linha no mesmo lugar.
   paint(ctx, edit, frame) {
     const { font, lines, size } = layout(edit, frame);
+    const hidden = new Set((edit.hidden ?? []).map(([line, k]) => `${line}:${k}`));
     ctx.fillStyle = colorOf(edit);
     ctx.font = `${size}px ${CSS_FAMILIES[font]}`;
     ctx.textBaseline = 'alphabetic';
     lines.forEach((line, i) => {
-      const width = textWidth(line, font, size);
-      if (width > 0) ctx.fillText(line, PAD * size, (PAD + i * LINE + BASE) * size, width);
+      for (const run of hidden.size ? runs(line, i, hidden) : [{ start: 0, text: line }]) {
+        const width = textWidth(run.text, font, size);
+        const x = PAD * size + textWidth(line.slice(0, run.start), font, size);
+        if (width > 0) ctx.fillText(run.text, x, (PAD + i * LINE + BASE) * size, width);
+      }
     });
   },
   pdf(edit, frame, res) {

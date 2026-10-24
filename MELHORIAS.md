@@ -882,7 +882,7 @@ Ficou assim:
 
 - Pontos de encaixe para as outras fases: os tipos de edição se registram em `edits.js` (`registerEditType`: desenho no canvas e operadores do PDF, mais as letras para o PDF/A, o texto a tirar sob a tarja e a proporção travada); os recursos da página (fontes, `ExtGState`, imagens) passam por `resourceCollector`, que dá nomes que a página ainda não usa; as ferramentas se registram em `editor.js` (`registerTool` e `registerProperty`); e as opções "em todas as páginas", em `all-pages.js` (`addAllPagesOption`), sabendo a posição da página dentro do arquivo e o total dele.
 - Na foto com edição, a miniatura e a tela cheia mostram a folha inteira, com a margem. Sem edição, nada muda.
-- Edição inteira sob uma tarja sai do arquivo; a que só encosta fica coberta pela tarja.
+- A tarja apaga também as edições: a edição inteira sob ela sai do arquivo, e da pega em parte sai o pedaço de dentro (caminhos cortados na borda da tarja, letras tiradas do texto e da marca d'água, pixels da imagem apagados, e a rubrica num Form XObject cortado só para aquela página). Com o PDF/A, a letra tarjada também sai da fonte embutida.
 - Esc, Fechar e Cancelar pedem confirmação quando há mudança não aplicada, também nas tarjas (antes elas se perdiam sem perguntar).
 - Traços próximos viram um desenho só. A ferramenta padrão é Selecionar, e a última escolhida continua na página seguinte.
 - veraPDF, `qpdf --check` e o fuzzing passam com edições.
