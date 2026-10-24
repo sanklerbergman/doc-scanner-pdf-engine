@@ -251,7 +251,10 @@ test('marca d\'água sob a tarja: saem só as letras que ela pega, e os trechos 
   assert.equal(shown.reverse().join('').length + cut.hide.length, 12);
   const xs = [...ops.matchAll(/ ([\d.-]+) [\d.-]+ Tm/g)].map(([, x]) => Number(x));
   assert.ok(xs[0] > xs[1], 'o trecho da direita vem antes');
-  assert.deepEqual([...editCharacters([cut])], [[WATERMARK_FONT, 'CONFIDENCIAL']]);
+  // As letras tiradas não entram no subconjunto da fonte do PDF/A: só as que ficam.
+  const kept = [...'CONFIDENCIAL'].filter((_, i) => !cut.hide.includes(i)).join('');
+  assert.deepEqual([...editCharacters([cut])], [[WATERMARK_FONT, kept]]);
+  assert.ok(kept.length < 12);
 });
 
 test('foto e Word com tarja: a marca d\'água e as marcas por baixo, as tarjas por cima; o texto sob a tarja sai', async () => {

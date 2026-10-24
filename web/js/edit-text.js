@@ -138,8 +138,11 @@ registerEditType('text', {
     if (!out.length) return '';
     return [`BT ${res.font(font)} ${n(size)} Tf ${rgb(colorOf(edit))} rg`, ...out, 'ET'].join('\n');
   },
+  // Só as letras que ficam: as escondidas pelas tarjas (hidden) não entram nem no subconjunto da fonte do PDF/A.
   characters(edit) {
-    return new Map([[textFont(edit.family), String(edit.text ?? '').replace(/\n/g, '')]]);
+    const hidden = new Set((edit.hidden ?? []).map(([line, k]) => `${line}:${k}`));
+    const kept = String(edit.text ?? '').split('\n').map((line, i) => [...line].filter((_, k) => !hidden.has(`${i}:${k}`)).join(''));
+    return new Map([[textFont(edit.family), kept.join('')]]);
   },
   // Letra sob a tarja sai do arquivo, como no Word (redact.js): o resto da linha fica no mesmo lugar.
   redact(edit, rects, page) {

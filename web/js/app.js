@@ -1,4 +1,4 @@
-import { buildPdf, layoutPage } from './pdf.js';
+import { buildPdf, layoutPage, redactedEdits } from './pdf.js';
 import { FILTERS, decodeFile, detectQuad, renderPage, renderPageAsync, canvasToBlob } from './imaging.js';
 import { setupViewer } from './viewer.js';
 import { quadSize, unskewRect } from './geometry.js';
@@ -1263,7 +1263,8 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       const { cutImages } = await import('./edit-image.js');
       await cutImages(fontPages);
     }
-    if (pdfa && (list.some(isDocument) || (signer && stamp) || fontPages.some((page) => editCharacters(page.edits).size))) {
+    // As letras das edições contam como vão para o arquivo, sem as tiradas pelas tarjas (redactedEdits, em pdf.js).
+    if (pdfa && (list.some(isDocument) || (signer && stamp) || fontPages.some((page) => editCharacters(redactedEdits(page)).size))) {
       announce('Preparando as fontes do PDF/A…');
       const { embedFonts } = await loadPdfaFonts().catch(() => {
         throw fontError();

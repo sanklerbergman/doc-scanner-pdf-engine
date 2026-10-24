@@ -9,6 +9,7 @@ import { winAnsiCode } from './fonts.js';
 import { md5 } from './md5.js';
 import { OCR_FONT, ocrText } from './ocr-layer.js';
 import { editCharacters } from './edits.js';
+import { redactedEdits } from './pdf.js';
 
 // Fonte padrão do PDF → arquivo da Liberation equivalente.
 const FILES = {
@@ -45,9 +46,10 @@ function loadFont(font) {
 }
 
 /**
- * Letras usadas por fonte: o texto das páginas do Word, o das edições (edits.js), as letras a mais (o carimbo da
- * assinatura) e, na Helvetica, o da camada do OCR das fotos (que divide a mesma fonte no PDF quando ela vai embutida
- * para o Word, para uma edição ou para o carimbo).
+ * Letras usadas por fonte: o texto das páginas do Word, o das edições (edits.js) como vão para o arquivo, já sem o que
+ * as tarjas tiram (redactedEdits, em pdf.js), as letras a mais (o carimbo da assinatura) e, na Helvetica, o da camada do
+ * OCR das fotos (que divide a mesma fonte no PDF quando ela vai embutida para o Word, para uma edição ou para o carimbo).
+ * A letra tarjada não entra no subconjunto: nem no programa da fonte, nem no /Widths, nem no ToUnicode.
  * @param {object[]} pages as páginas de buildPdf (pdf.js)
  * @param {Map<string, string>} [extra] letras a mais, pela fonte padrão (stampCharacters, em stamp.js)
  * @returns {Map<string, Set<string>>}
@@ -61,7 +63,7 @@ export function usedCharacters(pages, extra = new Map()) {
   for (const [font, text] of extra) add(font, text);
   for (const page of pages) {
     if (page.copy) continue;
-    for (const [font, text] of editCharacters(page.edits)) add(font, text);
+    for (const [font, text] of editCharacters(redactedEdits(page))) add(font, text);
     if (page.jpeg) {
       page.ocr?.forEach((word, i) => add(OCR_FONT, ocrText(word.text) + (word.last || i === page.ocr.length - 1 ? '' : ' ')));
       continue;
@@ -72,7 +74,7 @@ export function usedCharacters(pages, extra = new Map()) {
   // precisa.
   const visible = extra.has(OCR_FONT)
     || pages.some((page) => !page.jpeg && !page.copy && page.items.some((item) => item.type === 'text' && item.font === OCR_FONT))
-    || pages.some((page) => !page.copy && editCharacters(page.edits).has(OCR_FONT));
+    || pages.some((page) => editCharacters(redactedEdits(page)).has(OCR_FONT));
   if (!visible) used.delete(OCR_FONT);
   return used;
 }

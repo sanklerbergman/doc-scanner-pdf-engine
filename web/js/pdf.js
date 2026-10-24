@@ -242,14 +242,26 @@ export function pageCovers(page) {
   return toRotatedRects(boxes, page.rotation ?? 0);
 }
 
+/**
+ * As edições de uma foto ou página de texto como vão para o arquivo: sem o que fica sob as tarjas (redactEdits, com as
+ * tarjas e o tamanho da página como aparece). A mesma conta serve ao conteúdo (prepareEdits) e às letras das fontes
+ * embutidas do PDF/A (pdfa-fonts.js): a letra tirada pela tarja não fica nem no programa da fonte.
+ * @param {object} page uma página de buildPdf (foto ou texto)
+ */
+export function redactedEdits(page) {
+  if (page.copy || !page.edits?.length) return [];
+  const sideways = !page.jpeg && (page.rotation ?? 0) % 180;
+  const visible = sideways ? { width: page.height, height: page.width } : { width: page.width, height: page.height };
+  return redactEdits(page.edits, pageCovers(page), visible);
+}
+
 // Edições de uma foto ou página de texto: os operadores, os recursos que eles pedem e as tarjas que vão por cima.
 // null sem nada a desenhar.
 function prepareEdits(page) {
   const covers = pageCovers(page);
   const res = resourceCollector();
   const frame = { box: [0, 0, page.width, page.height], rotate: page.jpeg ? 0 : page.rotation ?? 0 };
-  const visible = frame.rotate % 180 ? { width: page.height, height: page.width } : { width: page.width, height: page.height };
-  const ops = editsContent(redactEdits(page.edits, covers, visible), frame, res);
+  const ops = editsContent(redactedEdits(page), frame, res);
   return ops ? { ops, res, covers } : null;
 }
 

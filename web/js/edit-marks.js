@@ -179,7 +179,8 @@ function touches(quad, [x0, y0, x1, y1]) {
 
 registerEditType('watermark', {
   label: "Marca d'água", gender: 'f',
-  characters: (edit) => new Map([[WATERMARK_FONT, watermarkText(edit.text)]]),
+  // Só as letras que ficam: as tiradas pelas tarjas (hide) não entram nem no subconjunto da fonte embutida do PDF/A.
+  characters: (edit) => new Map([[WATERMARK_FONT, [...watermarkText(edit.text)].filter((_, i) => !edit.hide?.includes(i)).join('')]]),
   paint(ctx, edit, { w, h }) {
     const layout = watermarkLayout(watermarkText(edit.text), w, h);
     if (!layout) return;
