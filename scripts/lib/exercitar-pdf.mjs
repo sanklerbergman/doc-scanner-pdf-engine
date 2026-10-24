@@ -40,6 +40,10 @@ const EDITS = [
   { type: 'cross', x0: 0.7, y0: 0.7, x1: 0.75, y1: 0.74, color: '#000000', width: 4 },
   { type: 'ink', x0: 0.1, y0: 0.8, x1: 0.5, y1: 0.9, color: '#000000', width: 2, strokes: [[[0, 0.5], [0.3, 0.1], [1, 0.5]], [[0.5, 0.5]]] },
   { type: 'text', x0: 0.1, y0: 0.05, x1: 0.5, y1: 0.08, text: 'Texto (novo) \\ ação', family: 'serif', color: '#000000' },
+  // Fase 3: marca-texto (ExtGState com Multiply), sublinhado e marca d'água (fonte e ExtGState de opacidade).
+  { type: 'highlight', x0: 0.1, y0: 0.32, x1: 0.5, y1: 0.35, tint: '#ffcc00' },
+  { type: 'underline', x0: 0.1, y0: 0.36, x1: 0.5, y1: 0.37, color: '#dc2626', width: 2, from: [0, 0.5], to: [1, 0.5] },
+  { type: 'watermark', x0: 0, y0: 0, x1: 1, y1: 1, text: 'CÓPIA' },
 ];
 
 // Copia as páginas (girando uma sim, outra não, como o app permite), monta o PDF e reabre com o leitor.

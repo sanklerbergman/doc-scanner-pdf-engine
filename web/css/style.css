@@ -246,6 +246,9 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .all-pages legend { padding: 0 4px; }
 .all-pages-body { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-start; }
 .all-pages-options { flex: 1 1 240px; display: grid; gap: 12px; font-weight: normal; }
+/* Marca d'água (js/watermark.js): os textos lado a lado, quebrando no celular; o texto livre embaixo deles. */
+.watermark-choices { margin: 4px 0 0; padding: 0; border: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 0 18px; }
+.watermark-choices .field, .watermark-choices .field-note { flex: 1 1 100%; }
 .protect-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 4px; }
 .settings {
   margin-top: 20px; padding: 16px; background: var(--surface);

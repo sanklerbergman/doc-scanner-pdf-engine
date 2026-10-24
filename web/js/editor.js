@@ -13,7 +13,7 @@
 //   entra na lista TOOL_MODULES (carregada por loadTools antes de a barra ser montada) e no APP_FILES do sw.js.
 // - registerProperty: um controle a mais no painel de propriedades (tamanho da letra, família…).
 // - api (o que pointer, keyboard e open recebem): a página, as edições e as propriedades, mais add, replace, select,
-//   say e point.
+//   say, point e preview (a edição em andamento, desenhada por cima enquanto o dedo arrasta; null tira).
 import {
   editType, paintEdits, cloneEdits, normalizeBox, moveEdit, resizeEdit, growEdit, duplicateEdit, boxAround, prepareStroke,
 } from './edits.js';
@@ -55,6 +55,7 @@ const PROPERTIES = new Map();
 // antes de TOOLS existir).
 const TOOL_MODULES = [
   './edit-text-tool.js', // texto (fase 2)
+  './edit-mark-tools.js', // marca-texto, sublinhar e riscar (fase 3)
 ];
 
 /** Carrega as ferramentas de TOOL_MODULES. Quem monta o editor espera por ela antes de setupEditor. */
@@ -222,7 +223,9 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
       group.hidden = !(target.props ?? []).includes(id);
       for (const input of group.querySelectorAll('input')) input.checked = input.value === String(values[id] ?? current[id]);
     }
-    swatch.style.background = values.color ?? current.color;
+    // A bolinha do botão mostra a cor da ferramenta (a caneta ou o marca-texto).
+    const tint = (target.props ?? []).find((id) => PROPERTIES.get(id)?.look === 'swatch') ?? 'color';
+    swatch.style.background = values[tint] ?? current[tint];
     propsButton.disabled = !(target.props ?? []).length;
     if (propsButton.disabled) togglePanel(false);
   }
@@ -484,6 +487,10 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     add, replace, say,
     select: (index) => select(index, { focus: true }),
     point: (event) => pointIn(event),
+    preview(item) {
+      if (drag) drag.preview = item ?? undefined;
+      paint();
+    },
   };
 
   bar.addEventListener('click', (event) => {

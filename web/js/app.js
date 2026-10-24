@@ -17,6 +17,7 @@ import { paintEdits, rotateEdits, fileExtras, editCharacters } from './edits.js'
 import './edit-types.js';
 import { setupAllPages, spotGrid } from './all-pages.js';
 import './all-pages-text.js'; // numeração, cabeçalho e rodapé (fase 2)
+import './watermark.js'; // marca d'água em todas as páginas (fase 3)
 
 // O site oficial já proíbe ser embutido em outro pelo cabeçalho frame-ancestors (web/_headers). Esta checagem
 // fica como segunda camada, e protege cópias hospedadas onde não dá para enviar cabeçalhos: o app se recusa a
