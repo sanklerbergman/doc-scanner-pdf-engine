@@ -293,7 +293,16 @@ test('carimbo sem PDF/A: as fontes passadas não mudam nada (continua com as fon
   signer.discard();
 });
 
-test('veraPDF (perfil PDF/A-2B): fotos, OCR, Word com as fontes embutidas, PDF assinado e carimbo', async (t) => {
+// Edições da fase 1 (edits.js): retângulo, seta, ✓, ✗ e desenho, só caminhos em RGB.
+const EDITS = [
+  { type: 'rect', x0: 0.1, y0: 0.2, x1: 0.4, y1: 0.3, color: '#dc2626', width: 2 },
+  { type: 'arrow', x0: 0.2, y0: 0.5, x1: 0.6, y1: 0.6, color: '#1d4ed8', width: 2, from: [0.06, 0.88], to: [0.94, 0.12] },
+  { type: 'check', x0: 0.6, y0: 0.1, x1: 0.65, y1: 0.14, color: '#15803d', width: 2, turn: 90 },
+  { type: 'cross', x0: 0.7, y0: 0.7, x1: 0.75, y1: 0.74, color: '#000000', width: 4 },
+  { type: 'ink', x0: 0.1, y0: 0.8, x1: 0.5, y1: 0.9, color: '#000000', width: 2, strokes: [[[0, 0.5], [0.3, 0.1], [0.6, 0.9], [1, 0.5]], [[0.5, 0.5]]] },
+];
+
+test('veraPDF (perfil PDF/A-2B): fotos, OCR, Word com as fontes embutidas, PDF assinado, carimbo e edições', async (t) => {
   const verapdf = process.env.VERAPDF;
   if (!verapdf) {
     t.skip('VERAPDF não definido: a conferência com o veraPDF é pulada');
@@ -322,6 +331,10 @@ test('veraPDF (perfil PDF/A-2B): fotos, OCR, Word com as fontes embutidas, PDF a
     'fotos-ocr-carimbo.pdf': await stamped(PAGES, { position: 'top-left', page: 'first' }),
     'word-carimbo.pdf': await stamped([{ ...WORD, rotation: 90 }]),
     'word-fotos-ocr-carimbo.pdf': await stamped([WORD_SANS, ...PAGES], { position: 'top-center', page: 2 }),
+    // Edições fixas na página: foto com OCR e tarja, Word girado com fontes embutidas, e assinado com carimbo.
+    'fotos-edicoes.pdf': buildPdf([{ ...PAGES[0], edits: EDITS, redactions: [{ x0: 0, y0: 0, x1: 0.3, y1: 0.3 }] }, PAGES[1]], { pdfa: true }),
+    'word-edicoes.pdf': buildPdf([{ ...WORD, rotation: 90, edits: EDITS }], { pdfa: true, fonts: await embedFonts([WORD]) }),
+    'edicoes-carimbo.pdf': await stamped([{ ...PAGES[0], edits: EDITS }]),
   };
   signer.discard();
   const dir = mkdtempSync(join(tmpdir(), 'verapdf-'));

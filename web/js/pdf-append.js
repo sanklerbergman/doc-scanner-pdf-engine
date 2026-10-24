@@ -36,6 +36,24 @@ function formFields(doc) {
 }
 
 /**
+ * O PDF da lista, quando dá para assiná-lo sem reescrever: a lista é um PDF só, inteiro e na ordem, e nada do que foi
+ * escolhido muda o arquivo (giro, tarja, edição, compressão, OCR, senha, dividir, "em todas as páginas"). Aí a
+ * assinatura entra no fim do arquivo, e as que ele já tinha continuam valendo.
+ * @param {object[]} pages a lista de páginas do app
+ * @param {{changes: boolean, groups: number[][] | null}} options changes: alguma opção do PDF muda o arquivo
+ *   (compressão, senha, OCR, "em todas as páginas"); groups: os arquivos que vão sair (null: intervalos inválidos)
+ * @returns {object | null} o documento do pdf-reader, ou null
+ */
+export function unchangedSource(pages, { changes, groups }) {
+  const doc = pages[0]?.doc;
+  if (!doc || changes || pages.length !== doc.pages.length) return null;
+  const same = pages.every((page, i) => page.kind === 'pdf' && page.doc === doc && page.index === i && !page.rotation
+    && !page.redactions?.length && !page.edits?.length);
+  if (!same || groups?.length !== 1) return null;
+  return groups[0].length === doc.pages.length && groups[0].every((n, i) => n === i) ? doc : null;
+}
+
+/**
  * Permissão de alteração de um PDF certificado (/DocMDP, ISO 32000-1, 12.8.2.2): 1 = nenhuma alteração;
  * 2 = preencher formulários e assinar; 3 = também comentar. Vale a mais restritiva, inclusive a que uma
  * assinatura de campo trava para o documento todo (/FieldMDP com /P, do PDF 2.0).

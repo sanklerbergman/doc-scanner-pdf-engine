@@ -4,6 +4,8 @@
 // - texto (documento do Word): texto de verdade, selecionável, com as fontes padrão do PDF
 //   (Helvetica, Times e Courier, codificação WinAnsi), sem embutir fonte;
 // - copiada de outro PDF (juntar e dividir): os objetos vêm prontos do pdf-reader.js, renumerados aqui.
+// Nas fotos e nas páginas de texto, as edições da pessoa (edits.js) entram no conteúdo da página, por cima do que
+// já está nela e por baixo das tarjas; na página copiada, elas vêm prontas do copyPages.
 // Nenhum metadado é gravado (sem /Info, sem datas, sem "Producer"). A única data possível é a hora da assinatura
 // (/M), e só quando a pessoa assina (buildPdfToSign). Com a opção PDF/A, entra só a identificação do padrão (XMP com
 // pdfaid), o perfil de cor sRGB e o /ID, tirado do próprio conteúdo.
@@ -12,6 +14,9 @@ import { srgbProfile } from './icc.js';
 import { md5 } from './md5.js';
 import { buildStamp, stampPageIndex, STAMP_FONTS } from './stamp.js';
 import { ocrLayer, OCR_FONT } from './ocr-layer.js';
+import { editsContent, resourceCollector, redactEdits, pdfValue } from './edits.js';
+import { toRotatedRects } from './redact.js';
+import './edit-types.js';
 
 const encoder = new TextEncoder();
 
@@ -80,7 +85,7 @@ const rgb = (color) => (color ?? [0, 0, 0]).map(num).join(' ');
 
 // Conteúdo de uma página de texto. Os itens vêm com a origem no canto superior esquerdo;
 // no PDF ela fica no inferior, por isso y vira height - y.
-function textContent(page, fontNames, imageNames) {
+function textContent(page, fontNames, imageNames, edits = '') {
   // Fundos e imagens primeiro (ficam por baixo do texto), cada um entre q e Q para não mexer na cor do texto.
   const ops = [];
   for (const item of page.items) {
@@ -113,6 +118,8 @@ function textContent(page, fontNames, imageNames) {
     const y2 = num(page.height - (item.y2 ?? item.y));
     ops.push(`${num(item.width)} w ${num(item.x1)} ${y1} m ${num(item.x2)} ${y2} l S`);
   }
+  // Edições (edits.js): por cima do documento e por baixo das tarjas.
+  if (edits) ops.push(edits);
   // Tarjas: caixas pretas por cima de tudo. O texto que estava embaixo já saiu da página (redact.js).
   for (const item of page.items) {
     if (item.type !== 'redaction') continue;
@@ -132,16 +139,20 @@ export function pdfDate(date) {
 
 /**
  * Monta um PDF. Cada página é de um destes tipos:
- * - foto: {jpeg: Uint8Array, width, height, box: {x, y, w, h}, ocr?}, com a imagem posicionada em box
- *   (origem no canto inferior esquerdo) e ocr = palavras reconhecidas (ocr.js), que viram texto invisível;
+ * - foto: {jpeg: Uint8Array, width, height, box: {x, y, w, h}, ocr?, edits?, redactions?}, com a imagem posicionada
+ *   em box (origem no canto inferior esquerdo) e ocr = palavras reconhecidas (ocr.js), que viram texto invisível;
+ *   edits: edições (edits.js), de 0 a 1 na folha inteira; redactions: as tarjas da imagem (de 0 a 1 nela), já
+ *   pintadas nos pixels, que vão de novo como caixas por cima das edições;
  * - texto: {width, height, items, rotation?}, com items vindos de layout.js: {type: 'text', x, y, text, font,
  *   size, color?, wordSpacing?, rise?}, {type: 'line', x1, x2, y (ou y1 e y2), width, color?}, {type: 'rect', x, y,
  *   w, h, color}, {type: 'image', jpeg, x, y, w, h} e {type: 'redaction', x, y, w, h} (tarja, desenhada por cima
  *   de tudo), origem no canto superior esquerdo e y do texto na linha de base. A mesma imagem (o mesmo
  *   Uint8Array) usada em várias páginas é gravada uma vez só.
- *   rotation (0, 90, 180 ou 270) vira /Rotate.
+ *   rotation (0, 90, 180 ou 270) vira /Rotate. edits: edições (edits.js), de 0 a 1 na página como aparece (com o
+ *   giro), desenhadas antes das tarjas.
  * - copiada: {copy: {source, page}, rotation?}, com source = {objects} e page = descritor de copyPages
- *   (pdf-reader.js). Páginas do mesmo source compartilham os objetos (fontes, imagens), gravados uma vez só.
+ *   (pdf-reader.js). Páginas do mesmo source compartilham os objetos (fontes, imagens), gravados uma vez só. As
+ *   edições dela vão pelo copyPages (opção edits).
  * Medidas em pontos (1/72 pol.).
  * @param {{pdfa?: boolean, fonts?: Map<string, object>}} [options] pdfa: PDF/A-2b (arquivamento e tribunais).
  *   Páginas copiadas de outro PDF não cumprem o padrão, e quem chama não liga a opção com elas; fonts: com o PDF/A,
@@ -213,6 +224,51 @@ export function fillSignature({ bytes, contents }, der) {
   return bytes;
 }
 
+// Tarjas da página na página como aparece (de 0 a 1), para as edições: na foto, as da imagem levadas para a folha;
+// no Word, as caixas do layout (antes do giro) levadas para a página girada.
+function pageCovers(page) {
+  if (page.jpeg) {
+    const { x, y, w, h } = page.box;
+    const top = page.height - y - h;
+    return (page.redactions ?? []).map((rect) => ({
+      x0: (x + rect.x0 * w) / page.width, x1: (x + rect.x1 * w) / page.width,
+      y0: (top + rect.y0 * h) / page.height, y1: (top + rect.y1 * h) / page.height,
+    }));
+  }
+  const boxes = page.items.filter((item) => item.type === 'redaction').map((item) => ({
+    x0: item.x / page.width, x1: (item.x + item.w) / page.width, y0: item.y / page.height, y1: (item.y + item.h) / page.height,
+  }));
+  return toRotatedRects(boxes, page.rotation ?? 0);
+}
+
+// Edições de uma foto ou página de texto: os operadores, os recursos que eles pedem e as tarjas que vão por cima.
+// null sem nada a desenhar.
+function prepareEdits(page) {
+  const covers = pageCovers(page);
+  const res = resourceCollector();
+  const frame = { box: [0, 0, page.width, page.height], rotate: page.jpeg ? 0 : page.rotation ?? 0 };
+  const ops = editsContent(redactEdits(page.edits, covers), frame, res);
+  return ops ? { ops, res, covers } : null;
+}
+
+// Recursos das edições de uma página, como entradas dos dicionários (" /Ed1 12 0 R"), e o /ExtGState inteiro.
+function editResources(prepared, fontIds, refOf) {
+  if (!prepared) return { fonts: '', xobjects: '', states: '' };
+  const { res } = prepared;
+  const fonts = [...res.fonts].map(([name, font]) => ` /${name} ${fontIds.get(font)} 0 R`).join('');
+  const xobjects = [...res.xobjects].map(([name, { key }]) => ` /${name} ${refOf(key)}`).join('');
+  const states = res.states.size
+    ? ` /ExtGState <<${[...res.states].map(([name, params]) => ` /${name} ${pdfValue(params, refOf)}`).join('')} >>`
+    : '';
+  return { fonts, xobjects, states };
+}
+
+// Objeto pedido pelas edições (imagem, formulário, máscara), em partes para object().
+function editObject({ dict, data }, refOf) {
+  if (!data) return [pdfValue(dict, refOf)];
+  return [`${pdfValue({ ...dict, Length: data.length }, refOf)}\nstream\n`, data, '\nendstream'];
+}
+
 function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
   if (!pages.length) throw new Error('Nenhuma página para gerar');
 
@@ -267,6 +323,23 @@ function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
     }
   }
 
+  // Edições das fotos e das páginas de texto: o conteúdo de cada uma e o que ele pede. As fontes entram com as das
+  // páginas (uma vez só no arquivo); imagens, formulários e máscaras, uma vez só pela chave, mesmo em várias páginas.
+  const edited = pages.map((page) => (page.copy || !page.edits?.length ? null : prepareEdits(page)));
+  const editIds = new Map();
+  for (const prepared of edited) {
+    if (!prepared) continue;
+    for (const font of prepared.res.fonts.values()) {
+      if (fontIds.has(font)) continue;
+      if (!STANDARD_FONTS.includes(font)) throw new Error(`Fonte desconhecida: ${font}`);
+      fontIds.set(font, nextId++);
+      fontNames.set(font, `/F${fontIds.size}`);
+    }
+    for (const [key, body] of prepared.res.objects) if (!editIds.has(key)) editIds.set(key, { id: nextId++, body });
+    for (const { key, dict, data } of prepared.res.xobjects.values()) if (!editIds.has(key)) editIds.set(key, { id: nextId++, body: { dict, data } });
+  }
+  const refOf = (key) => `${editIds.get(key).id} 0 R`;
+
   // Objetos das páginas copiadas: cada PDF de origem ganha uma faixa de números, depois das fontes.
   const sources = new Map();
   for (const page of pages) {
@@ -307,6 +380,11 @@ function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
     }
   }
 
+  // Com o PDF/A, toda fonte das edições vai embutida: sem ela, nada sai.
+  if (pdfa && edited.some((prepared) => [...(prepared?.res.fonts.values() ?? [])].some((font) => !embedded.has(font)))) {
+    throw new Error('O PDF/A precisa das fontes das edições embutidas, que não foram preparadas');
+  }
+
   // Página copiada pode usar recursos de versões mais novas do formato (transparência, JPEG 2000…). A assinatura
   // no padrão PAdES (/ETSI.CAdES.detached) também é do PDF 1.7 em diante.
   push(sources.size || signature ? '%PDF-1.7\n' : '%PDF-1.4\n');
@@ -340,16 +418,17 @@ function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
       return;
     }
 
+    const extra = editResources(edited[i], fontIds, refOf);
     if (!page.jpeg) {
       const used = new Set(page.items.filter((item) => item.type === 'text').map((item) => item.font));
-      const fonts = [...used].map((font) => ` ${fontNames.get(font)} ${fontIds.get(font)} 0 R`).join('');
+      const fonts = [...used].map((font) => ` ${fontNames.get(font)} ${fontIds.get(font)} 0 R`).join('') + extra.fonts;
       const pictures = [...new Set(page.items.filter((item) => item.type === 'image').map((item) => item.jpeg))]
-        .map((jpeg) => ` ${imageNames.get(jpeg)} ${imageIds.get(jpeg)} 0 R`).join('');
+        .map((jpeg) => ` ${imageNames.get(jpeg)} ${imageIds.get(jpeg)} 0 R`).join('') + extra.xobjects;
       const rotate = page.rotation ? ` /Rotate ${page.rotation}` : '';
-      const content = textContent(page, fontNames, imageNames); // só ASCII: o tamanho em caracteres é o tamanho em bytes
+      const content = textContent(page, fontNames, imageNames, edited[i]?.ops); // só ASCII: o tamanho em caracteres é o tamanho em bytes
       object(id,
         `<< /Type /Page /Parent 2 0 R ${mediaBox}${rotate}` +
-        ` /Resources <<${fonts ? ` /Font <<${fonts} >>` : ''}${pictures ? ` /XObject <<${pictures} >>` : ''} >> /Contents ${id + 1} 0 R${annots} >>`);
+        ` /Resources <<${fonts ? ` /Font <<${fonts} >>` : ''}${pictures ? ` /XObject <<${pictures} >>` : ''}${extra.states} >> /Contents ${id + 1} 0 R${annots} >>`);
       object(id + 1, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
       return;
     }
@@ -357,12 +436,19 @@ function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
     const { x, y, w, h } = page.box;
     const ocr = page.ocr?.length ? fontNames.get(OCR_FONT) : null;
     let content = `q ${num(w)} 0 0 ${num(h)} ${num(x)} ${num(y)} cm /Im0 Do Q`;
+    if (edited[i]) {
+      // Edições por cima da imagem e, por cima delas, as tarjas da imagem de novo (nos pixels elas já estão).
+      const { ops, covers } = edited[i];
+      const boxes = covers.map((r) => `${num(r.x0 * page.width)} ${num((1 - r.y1) * page.height)} ${num((r.x1 - r.x0) * page.width)} ${num((r.y1 - r.y0) * page.height)} re`);
+      content += `\n${ops}${boxes.length ? `\nq 0 0 0 rg ${boxes.join(' ')} f Q` : ''}`;
+    }
     if (ocr) content += `\n${ocrLayer(page.ocr, { box: [x, y, x + w, y + h], width: w, height: h }, ocr)}`; // só ASCII
-    const font = ocr ? ` /Font << ${ocr} ${fontIds.get(OCR_FONT)} 0 R >>` : '';
+    const fontEntries = (ocr ? ` ${ocr} ${fontIds.get(OCR_FONT)} 0 R` : '') + extra.fonts;
+    const font = fontEntries ? ` /Font <<${fontEntries} >>` : '';
 
     object(id,
       `<< /Type /Page /Parent 2 0 R ${mediaBox}` +
-      ` /Resources << /XObject << /Im0 ${id + 2} 0 R >>${font} >> /Contents ${id + 1} 0 R${annots} >>`);
+      ` /Resources << /XObject << /Im0 ${id + 2} 0 R${extra.xobjects} >>${font}${extra.states} >> /Contents ${id + 1} 0 R${annots} >>`);
     object(id + 1, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
     object(id + 2, ...imageObject(page.jpeg));
   });
@@ -384,6 +470,7 @@ function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
     object(unicode, `<< /Length ${data.toUnicode.length} >>\nstream\n${data.toUnicode}\nendstream`);
   }
   for (const [jpeg, id] of imageIds) object(id, ...imageObject(jpeg));
+  for (const { id, body } of editIds.values()) object(id, ...editObject(body, refOf));
   for (const [source, base] of sources) {
     source.objects.forEach((list, i) => object(base + i, ...parts(list, base)));
   }

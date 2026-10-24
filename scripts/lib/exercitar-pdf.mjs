@@ -1,6 +1,6 @@
 // O que o app faz com um PDF, sem o navegador: abrir (com os avisos), juntar, dividir, comprimir, acrescentar a
-// camada do OCR (com palavras simuladas) e acrescentar uma assinatura sem reescrever o arquivo (só a estrutura, com
-// o espaço reservado: a chave não muda nada nela).
+// camada do OCR (com palavras simuladas), acrescentar edições (formas e desenho, como as da tela cheia) e acrescentar
+// uma assinatura sem reescrever o arquivo (só a estrutura, com o espaço reservado: a chave não muda nada nela).
 // Cada PDF gerado é reaberto pelo próprio leitor e, se pedido, passa pelo qpdf --check.
 // Usado pela varredura (varrer-pdfs.mjs) e pelo fuzzing (fuzz-pdf.mjs), sempre dentro de um Worker com tempo e
 // memória limitados (isolar.mjs): um PDF que trava o leitor derruba só o Worker dele.
@@ -16,6 +16,7 @@ import { openPdf, copyPages, PdfError } from '../../web/js/pdf-reader.js';
 import { compressObjects, compressibleBytes } from '../../web/js/pdf-compress.js';
 import { buildPdf } from '../../web/js/pdf.js';
 import { appendBlocker, buildAppendToSign } from '../../web/js/pdf-append.js';
+import { rotateEdits } from '../../web/js/edits.js';
 
 // O app recodifica as imagens num canvas; aqui, toda imagem vira o mesmo JPEG pequeno. Basta para passar pela
 // leitura das imagens (descompactar, preditores, cores) e pela montagem do PDF com objetos trocados.
@@ -30,9 +31,18 @@ const WORDS = [
   { text: '(reconhecido)', x0: 0.32, y0: 0.1, x1: 0.6, y1: 0.14, baseline: 0.135, size: 0.04, last: true },
 ];
 
+// Edições simuladas (edits.js): as cinco da fase 1, que viram conteúdo da página, com recursos de nomes novos.
+const EDITS = [
+  { type: 'rect', x0: 0.1, y0: 0.2, x1: 0.4, y1: 0.3, color: '#dc2626', width: 2 },
+  { type: 'arrow', x0: 0.2, y0: 0.5, x1: 0.6, y1: 0.6, color: '#1d4ed8', width: 2, from: [0.06, 0.88], to: [0.94, 0.12] },
+  { type: 'check', x0: 0.6, y0: 0.1, x1: 0.65, y1: 0.14, color: '#15803d', width: 2 },
+  { type: 'cross', x0: 0.7, y0: 0.7, x1: 0.75, y1: 0.74, color: '#000000', width: 4 },
+  { type: 'ink', x0: 0.1, y0: 0.8, x1: 0.5, y1: 0.9, color: '#000000', width: 2, strokes: [[[0, 0.5], [0.3, 0.1], [1, 0.5]], [[0.5, 0.5]]] },
+];
+
 // Copia as páginas (girando uma sim, outra não, como o app permite), monta o PDF e reabre com o leitor.
-async function rebuild(doc, indices, replace, ocr) {
-  const copy = copyPages(doc, indices, { replace, ocr });
+async function rebuild(doc, indices, replace, ocr, edits) {
+  const copy = copyPages(doc, indices, { replace, ocr, edits });
   const out = buildPdf(indices.map((index, i) => ({ copy: { source: copy, page: copy.pages.get(index) }, rotation: (i % 2) * 90 })));
   let again;
   try {
@@ -104,6 +114,8 @@ export async function exercise(bytes) {
     outputs.push(await rebuild(doc, all, replace));
     stage = 'OCR';
     outputs.push(await rebuild(doc, all, undefined, new Map(all.map((i) => [i, { words: WORDS, rotation: (i % 2) * 90 }]))));
+    stage = 'edição';
+    outputs.push(await rebuild(doc, all, undefined, undefined, new Map(all.map((i) => [i, { edits: rotateEdits(EDITS, (i % 2) * 90), rotation: (i % 2) * 90 }]))));
     stage = 'assinar sem reescrever';
     const signed = await append(doc);
     if (signed) outputs.push(signed);

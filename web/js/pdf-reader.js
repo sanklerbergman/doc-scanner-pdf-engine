@@ -12,6 +12,9 @@
 import { inflate, InflateError } from './inflate.js';
 import { prepareLayers } from './pdf-layers.js';
 import { ocrLayer, OCR_FONT } from './ocr-layer.js';
+import { editsContent, resourceCollector, ObjectRef } from './edits.js';
+import { STANDARD_FONTS } from './pdf.js';
+import './edit-types.js';
 
 export class PdfError extends Error {}
 
@@ -781,16 +784,24 @@ export function formatString(bytes) {
   return `${out}>`;
 }
 
+// Referência a um objeto novo da cópia (pela posição em objects), dentro de um valor que vai ser escrito.
+class NewRef {
+  constructor(index) { this.index = index; }
+}
+
 /**
  * Copia páginas de um PDF aberto, com tudo o que elas usam (conteúdo, fontes, imagens), renumerando os objetos.
  * Objetos compartilhados entre as páginas (uma fonte usada em todas, por exemplo) são copiados uma vez só.
  * @param {PdfDocument} doc
  * @param {number[]} indices posições das páginas (a partir de 0)
- * @param {{replace?: Map<number, PdfStream>, ocr?: Map<number, {words: object[], rotation: number}>}} [options]
+ * @param {{replace?: Map<number, PdfStream>, ocr?: Map<number, {words: object[], rotation: number}>,
+ *   edits?: Map<number, {edits: object[], rotation: number}>}} [options]
  *   replace: objetos trocados na cópia (ex.: imagens recomprimidas pelo pdf-compress.js), pelo número no PDF de
  *   origem; ocr: palavras reconhecidas (ocr.js) nas páginas escaneadas, pela posição da página, medidas na página
  *   como ela aparece com o /Rotate dela mais o giro rotation (o do app, que vai junto no /Rotate do PDF novo): viram
- *   uma camada de texto invisível por cima do conteúdo, como nas fotos (ocr-layer.js)
+ *   uma camada de texto invisível por cima do conteúdo, como nas fotos (ocr-layer.js); edits: as edições da pessoa
+ *   (edits.js), pela posição da página, de 0 a 1 na página como aparece (com o mesmo giro): viram conteúdo da
+ *   página, por cima do original e das anotações, com recursos de nomes que a página ainda não usa
  * Anotações (links, comentários, campos de formulário) não são copiadas como anotações: o que elas mostram
  * (o valor preenchido num campo, um carimbo, o selo de uma assinatura) é desenhado na própria página.
  * Assim o PDF novo fica igual ao que se via, mas sem nada clicável nem editável.
@@ -798,7 +809,7 @@ export function formatString(bytes) {
  *   objects: cada objeto como uma lista de partes; {ref: i} aponta para objects[i].
  *   pages: por página, {mediaBox, cropBox, rotate, resources, contents, group}, também em partes.
  */
-export function copyPages(doc, indices, { replace, ocr } = {}) {
+export function copyPages(doc, indices, { replace, ocr, edits } = {}) {
   const objects = [];
   const local = new Map(); // num no PDF de origem → posição em objects
   const queue = [];
@@ -808,6 +819,24 @@ export function copyPages(doc, indices, { replace, ocr } = {}) {
     const index = objects.push(null) - 1;
     objects[index] = write(value, [], true);
     return { ref: index };
+  }
+
+  // Objetos pedidos pelas edições (imagem, formulário, máscara), um por chave em todas as páginas desta cópia.
+  const created = new Map();
+  function editObject(key, { dict, data }, res) {
+    if (!created.has(key)) {
+      const value = toPdf(dict, res);
+      created.set(key, add(data ? new PdfStream(value, data) : value).ref);
+    }
+    return new NewRef(created.get(key));
+  }
+  // Valor de um dict do coletor (edits.js) → valor do leitor: texto vira nome, objeto vira dicionário.
+  function toPdf(value, res) {
+    if (typeof value === 'string') return new PdfName(value);
+    if (value instanceof ObjectRef) return editObject(value.key, res.objects.get(value.key), res);
+    if (Array.isArray(value)) return value.map((item) => toPdf(item, res));
+    if (value && typeof value === 'object') return new PdfDict(Object.entries(value).map(([key, item]) => [key, toPdf(item, res)]));
+    return value;
   }
 
   const refTo = (ref) => {
@@ -835,7 +864,8 @@ export function copyPages(doc, indices, { replace, ocr } = {}) {
   // um stream novo dentro de outro valor (top = false) vira um objeto à parte, e no lugar fica a referência.
   // names: nome do dicionário de recursos (/Font, /XObject…) quando o valor é um deles.
   function write(value, out, top = false, names = null) {
-    if (value instanceof PdfRef) {
+    if (value instanceof NewRef) out.push({ ref: value.index });
+    else if (value instanceof PdfRef) {
       // Objeto cujo valor é só outra referência ("9 0 obj 10 0 R endobj") não é válido no PDF gerado:
       // a cópia aponta direto para o objeto final da cadeia.
       let target = value;
@@ -890,6 +920,8 @@ export function copyPages(doc, indices, { replace, ocr } = {}) {
     const group = page.node.get('Group');
     const appearances = flattenAnnotations(doc, page);
     const { words, rotation = 0 } = ocr?.get(index) ?? {};
+    const { edits: drawn, rotation: turn = 0 } = edits?.get(index) ?? {};
+    const userUnit = validUserUnit(doc.resolve(page.node.get('UserUnit')));
     // /Resources que não é dicionário (aponta para um stream ou para um objeto que não existe) vira um vazio.
     let resources = doc.resolve(page.attrs.Resources) instanceof PdfDict ? page.attrs.Resources : new PdfDict();
     const own = doc.layers?.contents.get(index); // conteúdo refeito sem as camadas ocultas
@@ -900,13 +932,14 @@ export function copyPages(doc, indices, { replace, ocr } = {}) {
       .filter((item) => doc.resolve(item) instanceof PdfStream);
     let contents = null;
 
-    if (appearances.length || words?.length) {
+    if (appearances.length || words?.length || drawn?.length) {
       // Recursos: cópia só desta página (outras páginas podem usar os mesmos), com as aparências como XObjects
-      // /Annot0, /Annot1… e a fonte da camada do OCR.
+      // /Annot0, /Annot1…, os recursos das edições e a fonte da camada do OCR.
       const copy = new PdfDict(doc.resolve(resources));
+      const entries = (key) => (doc.resolve(copy.get(key)) instanceof PdfDict ? doc.resolve(copy.get(key)) : []);
       let ops = 'Q';
       if (appearances.length) {
-        const xobjects = new PdfDict(doc.resolve(copy.get('XObject')) instanceof PdfDict ? doc.resolve(copy.get('XObject')) : []);
+        const xobjects = new PdfDict(entries('XObject'));
         appearances.forEach(({ stream, matrix }, i) => {
           xobjects.set(`Annot${i}`, stream);
           ops += `
@@ -914,9 +947,29 @@ q ${matrix.map(formatNumber).join(' ')} cm /Annot${i} Do Q`;
         });
         copy.set('XObject', xobjects);
       }
+      if (drawn?.length) {
+        // Edições por cima do original e das anotações, com nomes que a página ainda não usa em nenhum recurso.
+        const taken = [...NAME_MAPS].flatMap((key) => [...new PdfDict(entries(key)).keys()]);
+        const res = resourceCollector(taken);
+        const content = editsContent(drawn, { box: page.crop ?? page.media, rotate: (page.rotate + turn) % 360, unit: userUnit ?? 1 }, res);
+        const merge = (key, list) => {
+          if (!list.length) return;
+          const dict = new PdfDict(entries(key));
+          for (const [name, value] of list) dict.set(name, value);
+          copy.set(key, dict);
+        };
+        merge('Font', [...res.fonts].map(([name, font]) => {
+          if (!STANDARD_FONTS.includes(font)) throw new Error(`Fonte desconhecida: ${font}`);
+          return [name, new PdfDict([['Type', new PdfName('Font')], ['Subtype', new PdfName('Type1')],
+            ['BaseFont', new PdfName(font)], ['Encoding', new PdfName('WinAnsiEncoding')]])];
+        }));
+        merge('ExtGState', [...res.states].map(([name, params]) => [name, toPdf(params, res)]));
+        merge('XObject', [...res.xobjects].map(([name, { key, dict, data }]) => [name, editObject(key, { dict, data }, res)]));
+        if (content) ops += `\n${content}`;
+      }
       if (words?.length) {
         // Texto invisível por cima de tudo, com um nome de fonte que a página ainda não usa.
-        const fonts = new PdfDict(doc.resolve(copy.get('Font')) instanceof PdfDict ? doc.resolve(copy.get('Font')) : []);
+        const fonts = new PdfDict(entries('Font'));
         let name = 'OCR';
         for (let n = 1; fonts.has(name); n++) name = `OCR${n}`;
         fonts.set(name, new PdfDict([['Type', new PdfName('Font')], ['Subtype', new PdfName('Type1')],
@@ -943,7 +996,7 @@ ${ocrLayer(words, { box: page.crop ?? page.media, rotate: (page.rotate + rotatio
       resources: write(resources, []),
       contents,
       group: group ? write(group, []) : null,
-      userUnit: validUserUnit(doc.resolve(page.node.get('UserUnit'))),
+      userUnit,
     });
   }
   while (queue.length) {
