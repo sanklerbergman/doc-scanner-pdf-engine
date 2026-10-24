@@ -872,11 +872,20 @@ Cada fase tem a sua issue: base do editor (#11), texto e numeração (#12), marc
 
 #### Fase 1: base do editor (#11)
 
-- [ ] `page.edits`: modelo, giro, recorte, tamanho e margem
-- [ ] Modo "Editar" na tela cheia: selecionar, mover, redimensionar, Remover, Duplicar, Desfazer, Aplicar, Cancelar e Esc com confirmação; teclado e leitor de tela
-- [ ] Retângulo, seta, ✓, ✗ e desenho à mão
-- [ ] Fixo no PDF nos três tipos de página (foto, Word, página de outro PDF), com a tarja por cima
-- [ ] Assinar sem reescrever desligado quando há edição, com o aviso
+- [x] `page.edits`: modelo, giro, recorte, tamanho e margem
+- [x] Modo "Editar" na tela cheia: selecionar, mover, redimensionar, Remover, Duplicar, Desfazer, Aplicar, Cancelar e Esc com confirmação; teclado e leitor de tela
+- [x] Retângulo, seta, ✓, ✗ e desenho à mão
+- [x] Fixo no PDF nos três tipos de página (foto, Word, página de outro PDF), com a tarja por cima
+- [x] Assinar sem reescrever desligado quando há edição, com o aviso
+
+Ficou assim:
+
+- Pontos de encaixe para as outras fases: os tipos de edição se registram em `edits.js` (`registerEditType`: desenho no canvas e operadores do PDF, mais as letras para o PDF/A, o texto a tirar sob a tarja e a proporção travada); os recursos da página (fontes, `ExtGState`, imagens) passam por `resourceCollector`, que dá nomes que a página ainda não usa; as ferramentas se registram em `editor.js` (`registerTool` e `registerProperty`); e as opções "em todas as páginas", em `all-pages.js` (`addAllPagesOption`), sabendo a posição da página dentro do arquivo e o total dele.
+- Na foto com edição, a miniatura e a tela cheia mostram a folha inteira, com a margem. Sem edição, nada muda.
+- Edição inteira sob uma tarja sai do arquivo; a que só encosta fica coberta pela tarja.
+- Esc, Fechar e Cancelar pedem confirmação quando há mudança não aplicada, também nas tarjas (antes elas se perdiam sem perguntar).
+- Traços próximos viram um desenho só. A ferramenta padrão é Selecionar, e a última escolhida continua na página seguinte.
+- veraPDF, `qpdf --check` e o fuzzing passam com edições.
 
 #### Fase 2: texto e numeração (#12)
 
@@ -895,7 +904,13 @@ Cada fase tem a sua issue: base do editor (#11), texto e numeração (#12), marc
 - [ ] Imagem PNG com transparência (`/SMask`) e JPEG, com limite de lado
 - [ ] Rubrica desenhada uma vez e repetida em todas as páginas (Form XObject)
 
+#### Aviso de formulário preenchido em outro programa (#16)
+
+- [ ] Ao abrir um PDF com formulário preenchido em outro programa (`/NeedAppearances`, ou campo com valor sem aparência), aviso de que os valores podem não aparecer no PDF novo. Hoje o PDF.js mostra os valores na tela, mas o PDF gerado leva a aparência guardada, vazia ou velha. A correção vem com os formulários, na v4.1.0 (decisão do dono, 2026-10-24)
+
 #### Fase 5: formulários, v4.1.0 (#15)
+
+Detalhada na seção "Preencher formulários (v4.1.0)".
 
 - [ ] Ler os campos do PDF (`/AcroForm`, `/Fields`, `/Kids`, `/FT`, `/Ff`, `/Opt`, `/DA`, `/Q`, `/MaxLen`) pelo leitor do app
 - [ ] Lista de campos num painel, por página, com controles do próprio navegador (texto, caixa de marcar, rádio, lista) e "Mostrar na página". Campo desenhado por cima da página não serve no celular: numa A4 de 390 px, a letra fica com uns 8 px
@@ -933,3 +948,144 @@ Cada fase tem a sua issue: base do editor (#11), texto e numeração (#12), marc
 - Rubricar um PDF assinado mantendo a assinatura (anotação numa atualização incremental, com a permissão do autor), se houver pedido.
 - Formulário que continua editável depois de preenchido, se houver pedido.
 - Encaixar o sublinhado e o riscado na linha do texto (pelas caixas de texto do PDF.js ou pelas palavras do OCR)? Na v4.0.0, eles são arrastados à mão.
+
+## Preencher formulários (v4.1.0)
+
+Detalhamento da fase 5 da edição de PDF (#15), planejado em 2026-10-24 com 9 formulários públicos que têm campos e 4 que não têm (ver "Formulários reais analisados"). Valores fixos na página, como decidido pelo dono; campos que continuam editáveis ficam para depois. Junto vem a correção do formulário já preenchido em outro programa que perde os valores no PDF gerado (#16); a v4.0.0 só avisa.
+
+### Abordagem
+
+#### Ler os campos
+
+- Pelo leitor do app, num módulo novo (`pdf-form.js`), carregado só quando o PDF tem campos e testado em Node. O PDF.js só desenha a página e dá o texto em volta dos campos. Motivos:
+  - gerar precisa do que só o leitor tem: os estados do `/AP /N`, o `/MK`, o `/BS` e o número de cada widget;
+  - no PDF com senha, o PDF.js vê só a cópia decifrada da prévia (`previewBytes`), que já vem achatada, sem campo nenhum;
+  - sem o PDF.js (sem rede e sem cache), o formulário continua funcionando.
+- Um caminhamento só, no leitor, no lugar dos dois de hoje (`isSigned` e `formFields` do `pdf-append.js`), com os mesmos limites.
+- Herança: `FT`, `Ff`, `V`, `DV`, `DA`, `Q` e `MaxLen` vêm do campo de cima; o `/DA` cai no do `/AcroForm`, e as fontes, no `/DR`. O `/DA` é lido pelo `Parser` do leitor (a cor pode vir antes da fonte: `0 0 0 rg /F4 11 Tf`).
+- Mesmo nome é o mesmo campo, mesmo em várias páginas: o valor vale em todas. Widget fora do `/Annots`, oculto (`/F` 2 ou 32) ou botão de ação fica de fora.
+- Rótulo, nesta ordem: `/TU`; o texto da página à esquerda ou logo acima (à direita na caixa e no rádio), pelo `pageTextItems` da busca de dados; o `/T` limpo; "Campo 12". Formulário feito no Word ou no LibreOffice não tem `/TU`, e o nome é "Caixa de texto 1_2".
+
+#### Valores fixos na página
+
+- `copyPages` ganha a opção `fill`, ao lado da `edits` da fase 1: por número do widget, a aparência nova (`stream`) ou o estado escolhido (`state`). O `flattenAnnotations` usa isso no lugar do `/AP /N` e do `/AS`; o resto do achatamento não muda.
+- Não é um tipo de `page.edits`: o valor troca a aparência do widget (o valor antigo não fica por baixo) e vale para o campo em todas as páginas.
+- Aparência `/Tx BMC … EMC`, recortada na área útil, com o fundo `/MK /BG`, a borda `/MK /BC` e `/BS`, e o giro `/MK /R`:
+  - uma linha: fonte, tamanho e cor do `/DA`, alinhamento `/Q`. Tamanho 0: como o PDF.js, altura útil ÷ 1,35, reduzido até caber na largura;
+  - várias linhas (`Ff` 13): quebra por palavra com as larguras do `fonts.js`, entrelinha 1,35; tamanho 0: a maior letra, até 12 pt, em que tudo cabe;
+  - pente (`Ff` 25 com `/MaxLen`): uma letra centrada em cada casa;
+  - texto que não cabe: a letra diminui até 6 pt; se ainda não couber, o painel avisa e o texto sai cortado;
+  - caixa e rádio: o estado "marcado" que o widget já tem no `/AP /N` (no rádio, o widget cujo estado é a opção escolhida). Sem esse desenho, ✓, ✗, ● ou ■ conforme o `/MK /CA`, com os caminhos da fase 1;
+  - lista suspensa (`Ff` 18): o nome da opção (`/Opt` em pares guarda o valor de exportação); com `Ff` 19, texto livre. Lista: as opções visíveis a partir do `/TI`, a escolhida em destaque.
+- Fonte: a padrão do PDF mais parecida com a do `/DA` (Arial e Calibri → Helvetica; Times New Roman → Times; Courier New → Courier; negrito e itálico pelo nome), sem embutir. A do formulário costuma ser subconjunto (`BAAAAA+ArialMT`), sem as letras novas. O PDF/A já fica indisponível com página de outro PDF.
+- Só WinAnsi, como o texto do editor: letra fora dela é avisada na hora e não entra.
+- Já preenchido com `/NeedAppearances`, ou com `/V` sem aparência: hoje o PDF.js mostra o valor na tela, mas o PDF novo leva a aparência guardada (vazia ou velha). O app passa a gerar essas aparências.
+
+#### Na tela
+
+- "Preencher" na tela cheia, ao lado de "Editar", em página de PDF com campos. Ao abrir o PDF, a nota diz quantos campos ele tem.
+- Painel que abre de baixo (o da fase 2, que acompanha o teclado), com os campos da página em ordem de leitura e controles do navegador: `input`, `textarea`, caixa, rádio em `fieldset`, `select`. Letra de 16 px, alvo de 44 px, `maxlength` pelo `/MaxLen`.
+- Campo em foco: a parte de cima da tela mostra a página ampliada nele, com o campo destacado ("Mostrar na página"). Anterior e Próximo; Enter vai para o próximo.
+- Contador por página ("12 de 34"); obrigatório marcado; somente leitura desligado, com o motivo.
+- Aplicar, Cancelar e Esc com confirmação, como no editor. Depois de aplicar, miniatura e tela cheia mostram a página montada pelo app (o caminho do PDF novo), desenhada pelo PDF.js.
+
+#### Casos difíceis
+
+- Nenhum script do PDF roda. Campo calculado (`/AA /C`, `/CO`): editável mesmo se for somente leitura, com o aviso "o formulário fazia esta conta".
+- Formatos do Acrobat (`/AA /F` e `/K`), reconhecidos sem rodar o script: a chamada é lida como texto, por expressão regular, e o app formata o valor por conta própria, num módulo de lógica pura (`pdf-form-format.js`):
+  - `AFNumber_Format` e `AFNumber_Keystroke`: casas decimais, separador (os cinco estilos), negativo e símbolo de moeda antes ou depois;
+  - `AFPercent_Format`;
+  - `AFDate_FormatEx` e `AFDate_KeystrokeEx` (dd/mm/aaaa e os outros padrões), `AFTime_Format`;
+  - `AFSpecial_Format` e `AFSpecial_KeystrokeEx`: a máscara (9 = algarismo, A = letra, X = qualquer, O = letra ou algarismo) vira dica no campo e formata o que foi digitado (CNPJ, CPF, CEP, telefone);
+  - o teclado do celular segue o formato (`inputmode` numérico em número, data e máscara só de algarismos);
+  - valor que não serve para o formato (data impossível, letra em campo de número): aviso no campo, sem bloquear;
+  - função própria do formulário (ex.: `validarCNPJ()` da Receita) não é reconhecida: o valor sai como digitado.
+- Obrigatório vazio: aviso ao aplicar, sem bloquear.
+- XFA híbrido: preenche a parte AcroForm (o `/XFA` não vai para o PDF novo). XFA puro (`/NeedsRendering`, ou `/XFA` sem campos): nota ao abrir e "Preencher" indisponível. O XFA continua desligado no PDF.js.
+- PDF com senha: o leitor já decifra tudo ao abrir, e os campos vêm junto.
+- Assinado: PDF novo, com o aviso, como editar. Certificado sem permitir alteração (`DocMDP` 1): o mesmo, avisando que a certificação deixa de valer. Campo travado por assinatura (`/Lock`) fica somente leitura; campo de assinatura vazio diz "use Assinar".
+- Senha (`Ff` 14) e arquivo (`Ff` 21) não são preenchidos.
+- Muitos "formulários" públicos não têm campo nenhum (4 dos 13 analisados, um deles anunciado como "editável"): para eles serve o Texto da v4.0.0, e o app diz isso.
+
+#### Ordem ao gerar
+
+- Página, aparências dos campos, camada do OCR, edição, tarja e, por último, a assinatura.
+- Página de PDF tarjada vira imagem: o PDF.js desenha a página já com os valores (o caminho da fase 1 para a edição), e a conferência não muda.
+- Compressão: as aparências novas são streams novos, e as antigas dos campos preenchidos nem são copiadas.
+- Assinar sem reescrever fica desligado quando há valor preenchido.
+
+### Fases
+
+#### Fase 5.1: ler
+
+- [ ] Caminhamento com herança no leitor; `isSigned` e `pdf-append.js` passam a usá-lo
+- [ ] `pdf-form.js`: tipos, `Ff`, `/DA`, `/Opt`, `/MaxLen`, `/Q`, `/MK`, `/BS`, estados, página e retângulo de cada widget; XFA, `/Lock`, cálculo e formato
+- [ ] Rótulos e notas ao abrir
+
+#### Fase 5.2: fixar
+
+- [ ] Aparências: uma linha, várias linhas, pente, tamanho 0, `/Q`, fundo, borda e `/MK /R`; caixa, rádio e listas
+- [ ] `fill` no `copyPages`; `/NeedAppearances`
+- [ ] Página com valores na miniatura, na tela cheia, na tarja e no OCR; assinar sem reescrever desligado
+
+#### Fase 5.3: painel
+
+- [ ] Painel por página, foco ampliado, Anterior e Próximo, Aplicar, Cancelar e Esc
+- [ ] Obrigatório, somente leitura, calculado, letras fora da WinAnsi, texto que não cabe
+- [ ] Leitor de tela: `label` ligado ao controle, `fieldset` e `legend` no rádio, `aria-required`
+
+#### Fase 5.4: formatos do Acrobat
+
+- [ ] `pdf-form-format.js`: leitura das chamadas `AFNumber`, `AFPercent`, `AFDate`, `AFTime` e `AFSpecial` e formatação do valor, com testes
+- [ ] No painel: dica da máscara, `inputmode`, formatação ao sair do campo e aviso de valor que não serve
+
+#### Fase 5.5: formulários reais
+
+- [ ] `varrer-pdfs.mjs --preencher`: todo campo recebe um valor de teste, e o PDF gerado passa no `qpdf --check`
+- [ ] Conferir no iPhone com os formulários do INSS, da Receita e do TJMG
+
+### Segurança e privacidade
+
+- Nenhuma biblioteca, requisição ou script novo; a CSP não muda. `/DA` e `/AA` são lidos como texto.
+- Valores só na memória da aba; somem ao limpar a lista ou fechar. Controles sem `name` e fora de `<form>`, com `autocomplete="off"` e `spellcheck="false"` (o corretor avançado do Chrome manda o texto para fora), como os campos de senha do app.
+- O PDF novo leva só o que aparece: sem `/AcroForm`, `/V`, campo oculto nem a aparência antiga do campo preenchido.
+
+### Testes
+
+- `node:test` com PDFs do `test/helpers/pdf.js`: herança em três níveis, nome repetido em duas páginas, cor antes da fonte no `/DA`, tamanho 0, pente, várias linhas, `/Q` 0, 1 e 2, `/MK /R` 90 em página com `/Rotate` 90, rádio com estados "0" e "1" e `/Opt`, caixa sem desenho de desligado, lista em pares, XFA, `/Lock`, senha.
+- `qpdf --check` e fuzzing com campos; nenhum `/AcroForm`, `/Widget`, `/V` ou `/AA` no PDF gerado.
+- Playwright no Chromium e no WebKit, 390 × 664 e 1280 × 800: preencher pelo toque, pelo teclado e pelo leitor de tela; painel com o teclado virtual; o PDF.js relê o PDF gerado, e o texto de cada campo fica dentro do `/Rect`; nenhuma violação da CSP.
+- Formulários reais numa pasta fora do repositório (INSS, Receita, TJMG, INPI, Paraná).
+- Formatos: cada estilo de separador do `AFNumber_Format`, moeda antes e depois, negativo, porcentagem, datas válidas e impossíveis, máscaras de CNPJ, CPF, CEP e telefone, chamada com argumentos estranhos (falha fechada: valor como digitado) e função desconhecida.
+
+### Formulários reais analisados
+
+| Formulário | Campos | O que tem de difícil |
+|---|---|---|
+| INSS, recurso à JRPS (1 pág.) | 17: 10 de texto, 2 de várias linhas, 5 caixas | Sem `/TU` ("Caixa de texto 1_2"); ArialMT sem embutir no `/DA`; `NeedAppearances`; caixas em ZapfDingbats com tamanho 0 e ✗; um campo de 319 pt de altura |
+| INSS, revisão de benefício (1 pág.) | 11 de texto | O mesmo gerador do anterior |
+| INSS, RAC (25 pág.) | 846: 835 de texto, 11 caixas | Volume; 31 com tamanho 0; 198 widgets sem aparência; `/TU` em 636 |
+| Receita, pedido de restituição (8 pág.) | 690: 681 de texto, 9 grupos de rádio | Máscara e formato em JavaScript (CNPJ, números); rádios com estados "0" e "1" e `/Opt`; página com `/Rotate 90` e widgets com `/MK /R 90`; 263 sem aparência; obrigatórios, somente leitura e ocultos |
+| TJMG, prioridade de pagamento (2 pág.) | 29: 24 de texto, 5 caixas | Várias linhas; somente leitura já preenchido; caixa só com o estado "On"; Helvetica-Oblique |
+| INPI, FQ002 (3 pág.) | 107: 66 de texto, todos com `/MaxLen`; 41 caixas | Courier e Helvetica; `NeedAppearances`; `/T` com "#20" e "#C3#A7" por extenso: só o `/TU` serve de rótulo |
+| Paraná, férias e requerimento padrão (LibreOffice) | 19 e 12 de texto | Sem `/TU`; Helvetica e ArialMT sem embutir |
+| SEFAZ-SP IPVA, Nova Friburgo IPTU, TJMG certidão e conta bancária | nenhum | São "formulários" sem campo: servem para o Texto da v4.0.0 |
+
+Nenhum deles tinha pente, lista suspensa, XFA, senha ou assinatura: esses casos ficam com PDFs gerados nos testes.
+
+### Decisões
+
+- **Valores fixos na página** (decisão do dono, 2026-10-24).
+- Campos pelo leitor do app; o PDF.js só desenha e dá o texto da página.
+- O valor troca a aparência do widget no achatamento; não vira `page.edits`.
+- Fontes padrão do PDF, sem embutir, no lugar da fonte do formulário.
+- Nenhum script do PDF roda.
+- **Formatos do Acrobat já na v4.1.0** (decisão do dono, 2026-10-24): reconhecidos pela chamada e formatados pelo app, sem rodar o script.
+- **Texto que não cabe** (decisão do dono, 2026-10-24): a letra diminui até 6 pt; se ainda não couber, aviso e texto cortado.
+- **Campo já preenchido com `/NeedAppearances`** (decisão do dono, 2026-10-24, #16): na v4.0.0, aviso ao abrir; na v4.1.0, aparência nova, para o PDF novo sair igual à tela, também ao juntar e dividir.
+- **Carimbo no campo de assinatura vazio do formulário fica para depois** (decisão do dono, 2026-10-24): na v4.1.0, o campo só diz "use Assinar".
+
+### Perguntas em aberto
+
+- Carimbo da assinatura no lugar do campo de assinatura vazio do formulário, se houver pedido.
+- Preencher mantendo a assinatura de outra pessoa (`DocMDP` 2, atualização incremental), junto com o formulário que continua editável.
