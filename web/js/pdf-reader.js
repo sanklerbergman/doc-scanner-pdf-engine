@@ -691,6 +691,44 @@ class PdfDocument {
     return false;
   }
 
+  // Formulário preenchido em outro programa que não desenhou os valores (#16): campo de texto ou lista com valor e
+  // /NeedAppearances no formulário, ou sem aparência (/AP /N). O PDF.js redesenha o campo na tela, mas a cópia
+  // (copyPages) leva a aparência guardada, vazia ou velha, e o valor some do PDF novo. A correção vem com o
+  // preenchimento de formulários (v4.1.0); até lá, o app avisa ao abrir.
+  formValuesWithoutAppearance() {
+    const form = this.resolve(this.catalog().get('AcroForm'));
+    if (!(form instanceof PdfDict)) return false;
+    const redraw = this.resolve(form.get('NeedAppearances')) === true;
+    const filled = (value) => (value instanceof PdfString ? [...value.bytes].some((b) => b > 0x20 && b !== 0xfe && b !== 0xff)
+      : Array.isArray(value) ? value.some((item) => filled(this.resolve(item))) : false);
+    const seen = new Set();
+    const fields = this.resolve(form.get('Fields'));
+    // O tipo (/FT) e o valor (/V) vêm do campo de cima quando o de baixo não tem.
+    const stack = Array.isArray(fields) ? fields.map((ref) => ({ ref, type: null, value: null })) : [];
+    while (stack.length && seen.size < 10000) {
+      const { ref, type, value } = stack.pop();
+      if (ref instanceof PdfRef) {
+        if (seen.has(ref.num)) continue;
+        seen.add(ref.num);
+      }
+      const field = this.resolve(ref);
+      if (!(field instanceof PdfDict)) continue;
+      const own = this.resolve(field.get('FT'));
+      const kind = own instanceof PdfName ? own.value : type;
+      const current = field.has('V') ? this.resolve(field.get('V')) : value;
+      const kids = this.resolve(field.get('Kids'));
+      if (Array.isArray(kids) && kids.length) {
+        stack.push(...kids.map((kid) => ({ ref: kid, type: kind, value: current })));
+        continue;
+      }
+      if ((kind === 'Tx' || kind === 'Ch') && filled(current)) {
+        const appearance = this.resolve(this.resolve(field.get('AP'))?.get?.('N'));
+        if (redraw || !(appearance instanceof PdfStream || appearance instanceof PdfDict)) return true;
+      }
+    }
+    return false;
+  }
+
   // Páginas com links, comentários ou campos de formulário (que não vão para o PDF novo).
   hasAnnotations() {
     return this.pages.some((page) => {

@@ -150,7 +150,11 @@ export async function openPdfFile(file, password = null) {
     notes.push('Este PDF tem camadas ocultas: o conteúdo delas não vai para o PDF novo, como já estava escondido na tela.');
   }
   if (doc.hasAnnotations()) {
-    notes.push('No PDF novo, links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.');
+    // Formulário preenchido em outro programa sem desenhar os valores (#16): a tela mostra, mas o PDF novo leva a
+    // aparência guardada, vazia ou velha. Só o aviso, até o preenchimento de formulários (v4.1.0).
+    notes.push(doc.formValuesWithoutAppearance()
+      ? 'Este formulário foi preenchido em outro programa, que não desenhou os valores nos campos: no PDF novo, os valores preenchidos podem não aparecer. Links e campos também viram parte da página, sem dar para clicar nem editar.'
+      : 'No PDF novo, links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.');
   }
   const pages = doc.pages.map((page, index) => ({ index, width: page.width, height: page.height }));
   const images = compressibleBytes(doc);
