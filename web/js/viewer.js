@@ -9,6 +9,9 @@ const $ = (selector) => document.querySelector(selector);
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const CORNERS = ['superior esquerdo', 'superior direito', 'inferior direito', 'inferior esquerdo'];
 const START_INSET = 0.04; // sem recorte ainda: os cantos começam um pouco para dentro, fáceis de pegar
+const LOUPE_SIZE = 120; // diâmetro da lupa do recorte, em px da tela
+const LOUPE_ZOOM = 3; // ampliação sobre a foto como ela aparece na tela
+const LOUPE_GAP = 48; // do dedo até a borda da lupa: o dedo não cobre
 
 /**
  * @param {object} deps
@@ -39,6 +42,7 @@ export function setupViewer({
   const cropImage = $('#crop-image');
   const polygon = $('#crop-polygon');
   const handles = [...crop.querySelectorAll('.crop-handle')];
+  const loupe = $('#crop-loupe');
   const hint = $('#viewer-hint');
   const viewActions = $('#viewer-view-actions');
   const cropActions = $('#viewer-crop-actions');
@@ -62,6 +66,7 @@ export function setupViewer({
   let marks = []; // tarjas em edição, de 0 a 1 na página como aparece
   let token = 0; // invalida renderizações que terminam depois de a pessoa já ter mudado de tela
   let copying = null; // AbortController da cópia do texto em andamento (o OCR pode levar segundos)
+  let loupeOwner = null; // ponteiro que arrasta o canto mostrado na lupa
   const urls = { view: '', crop: '', redact: '' };
   const editing = () => !crop.hidden || !redact.hidden; // recorte ou tarjas: sem trocar de página
 
@@ -132,6 +137,7 @@ export function setupViewer({
     setUrl('crop', cropImage, blob);
     await cropImage.decode().catch(() => {});
     if (mine !== token) return;
+    hideLoupe(); // a tela pode ter fechado no meio de um arrasto
     crop.hidden = false;
     cropActions.hidden = false;
     hint.textContent = page.redactions?.length
@@ -177,13 +183,21 @@ export function setupViewer({
       event.preventDefault();
       handle.setPointerCapture(event.pointerId);
       handle.focus();
+      showLoupe(index, event, crop.getBoundingClientRect());
     });
     handle.addEventListener('pointermove', (event) => {
       if (!handle.hasPointerCapture(event.pointerId)) return;
       const box = crop.getBoundingClientRect();
       movePoint(index, (event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height);
+      showLoupe(index, event, box);
     });
-    // pointerup, pointercancel e perda de captura soltam o canto sozinhos (a captura acaba junto).
+    // pointerup, pointercancel e perda de captura soltam o canto sozinhos (a captura acaba junto); a lupa some.
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      handle.addEventListener(type, (event) => {
+        if (event.pointerId === loupeOwner) hideLoupe();
+      });
+    }
+    // Pelas setas a lupa não aparece: nada cobre o canto.
     handle.addEventListener('keydown', (event) => {
       const step = event.shiftKey ? 0.05 : 0.01;
       const move = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key];
@@ -192,6 +206,78 @@ export function setupViewer({
       movePoint(index, points[index][0] + move[0], points[index][1] + move[1]);
     });
   });
+
+  // ---------- Lupa do recorte ----------
+  // O dedo cobre o canto que está arrastando: um círculo longe dele mostra a foto ampliada em volta do canto, com
+  // a mira no ponto exato e as duas linhas do recorte que saem dele. Desenha a foto que já está na memória, na
+  // resolução dela e na densidade da tela; nada fica guardado.
+  loupe.style.width = loupe.style.height = `${LOUPE_SIZE}px`;
+
+  // box: retângulo da área de recorte na tela (do tamanho da foto).
+  function showLoupe(index, event, box) {
+    loupeOwner = event.pointerId;
+    const [x, y] = points[index];
+    const corner = { x: box.left + x * box.width, y: box.top + y * box.height };
+    // Nem o dedo nem o canto ficam embaixo da lupa (os dois se separam quando o dedo passa da borda da foto).
+    const spot = {
+      left: Math.min(corner.x, event.clientX), right: Math.max(corner.x, event.clientX),
+      top: Math.min(corner.y, event.clientY), bottom: Math.max(corner.y, event.clientY),
+    };
+    const center = loupeCenter(spot, { width: document.documentElement.clientWidth, height: window.innerHeight });
+    loupe.style.left = `${center.x - LOUPE_SIZE / 2}px`;
+    loupe.style.top = `${center.y - LOUPE_SIZE / 2}px`;
+    drawLoupe(index, box);
+    loupe.hidden = false;
+  }
+
+  function hideLoupe() {
+    loupe.hidden = true;
+    loupeOwner = null;
+  }
+
+  function drawLoupe(index, box) {
+    const side = Math.round(LOUPE_SIZE * (window.devicePixelRatio || 1));
+    const dpr = side / LOUPE_SIZE; // px do canvas por px da tela
+    if (loupe.width !== side) loupe.width = loupe.height = side;
+    const ctx = loupe.getContext('2d');
+    ctx.clearRect(0, 0, side, side);
+    const width = cropImage.naturalWidth;
+    const height = cropImage.naturalHeight;
+    // Px do canvas por unidade da área de recorte (0 a 1) e por px da foto original.
+    const unitX = box.width * LOUPE_ZOOM * dpr;
+    const unitY = box.height * LOUPE_ZOOM * dpr;
+    const kx = unitX / width;
+    const ky = unitY / height;
+    const [cx, cy] = points[index];
+    // Trecho da foto em volta do canto, cortado nas bordas dela (fora da foto aparece o fundo do canvas, no CSS).
+    const x0 = cx * width - side / 2 / kx;
+    const y0 = cy * height - side / 2 / ky;
+    const sx = Math.max(0, x0);
+    const sy = Math.max(0, y0);
+    const ex = Math.min(width, x0 + side / kx);
+    const ey = Math.min(height, y0 + side / ky);
+    ctx.imageSmoothingQuality = 'high';
+    if (ex > sx && ey > sy) ctx.drawImage(cropImage, sx, sy, ex - sx, ey - sy, (sx - x0) * kx, (sy - y0) * ky, (ex - sx) * kx, (ey - sy) * ky);
+    // As duas linhas do recorte que saem do canto, na cor do polígono (vermelha quando os cantos se cruzam).
+    const at = ([px, py]) => [side / 2 + (px - cx) * unitX, side / 2 + (py - cy) * unitY];
+    ctx.lineWidth = 2 * dpr;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = getComputedStyle(polygon).stroke;
+    ctx.beginPath();
+    ctx.moveTo(...at(points[(index + 3) % 4]));
+    ctx.lineTo(side / 2, side / 2);
+    ctx.lineTo(...at(points[(index + 1) % 4]));
+    ctx.stroke();
+    // Mira: um anel em volta do ponto exato, branco com contorno escuro para aparecer em qualquer foto.
+    const ring = 7 * dpr;
+    for (const [color, line] of [['rgba(0, 0, 0, 0.6)', 3.5], ['#fff', 1.5]]) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = line * dpr;
+      ctx.beginPath();
+      ctx.arc(side / 2, side / 2, ring, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
 
   // ---------- Tarjas ----------
   // Arrastar sobre a página marca um retângulo. Pelo teclado: "Nova tarja" cria uma no meio da página, as setas
@@ -535,4 +621,29 @@ export function setupViewer({
   });
 
   return { open };
+}
+
+/**
+ * Centro da lupa do recorte, em px da tela. Fica acima do que ela não pode cobrir (o dedo e o canto arrastado), a
+ * uma distância que o dedo não cobre. Sem espaço em cima, vai para o lado com mais espaço; se também não couber,
+ * para baixo. Nunca sai da tela, nem com o ponteiro fora dela.
+ * @param {{left: number, top: number, right: number, bottom: number}} spot o que fica descoberto
+ * @param {{width: number, height: number}} screen
+ * @returns {{x: number, y: number}}
+ */
+export function loupeCenter(spot, screen, { size = LOUPE_SIZE, gap = LOUPE_GAP, margin = 8 } = {}) {
+  const radius = size / 2;
+  const away = gap + radius; // da borda do que fica descoberto até o centro da lupa
+  const min = margin + radius;
+  const clampX = (x) => Math.max(min, Math.min(screen.width - min, x));
+  const clampY = (y) => Math.max(min, Math.min(screen.height - min, y));
+  const middleX = (spot.left + spot.right) / 2;
+  const above = spot.top - away;
+  if (above >= min) return { x: clampX(middleX), y: clampY(above) };
+  const side = screen.width - spot.right >= spot.left ? spot.right + away : spot.left - away;
+  const middleY = clampY((spot.top + spot.bottom) / 2);
+  if (side >= min && side <= screen.width - min) return { x: side, y: middleY };
+  const below = spot.bottom + away;
+  if (below <= screen.height - min) return { x: clampX(middleX), y: clampY(below) };
+  return { x: clampX(side), y: middleY }; // tela pequena demais: o que couber
 }

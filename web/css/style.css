@@ -465,3 +465,9 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 }
 .crop-handle:active { cursor: grabbing; }
 .crop-handle:active::before, .crop-handle:focus-visible::before { inset: 9px; }
+/* Lupa do recorte: presa à tela, por cima de tudo e sem receber toque; o tamanho e o lugar vêm do viewer.js. O
+   fundo aparece onde ela passa da borda da foto. */
+.crop-loupe {
+  position: fixed; left: 0; top: 0; z-index: 3; border-radius: 50%; pointer-events: none;
+  background: var(--surface-2); box-shadow: 0 0 0 3px #fff, 0 0 0 4px rgb(0 0 0 / 30%), 0 6px 18px rgb(0 0 0 / 40%);
+}
