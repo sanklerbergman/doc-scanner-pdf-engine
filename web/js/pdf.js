@@ -225,8 +225,9 @@ export function fillSignature({ bytes, contents }, der) {
 }
 
 // Tarjas da página na página como aparece (de 0 a 1), para as edições: na foto, as da imagem levadas para a folha;
-// no Word, as caixas do layout (antes do giro) levadas para a página girada.
-function pageCovers(page) {
+// no Word, as caixas do layout (antes do giro) levadas para a página girada. Exportada para a imagem sob a tarja
+// (cutImages, em edit-image.js), que apaga a parte coberta dos pixels antes de montar.
+export function pageCovers(page) {
   if (page.jpeg) {
     const { x, y, w, h } = page.box;
     const top = page.height - y - h;

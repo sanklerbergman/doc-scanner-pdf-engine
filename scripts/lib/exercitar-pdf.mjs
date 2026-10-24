@@ -17,6 +17,7 @@ import { compressObjects, compressibleBytes } from '../../web/js/pdf-compress.js
 import { buildPdf } from '../../web/js/pdf.js';
 import { appendBlocker, buildAppendToSign } from '../../web/js/pdf-append.js';
 import { rotateEdits } from '../../web/js/edits.js';
+import { storeImage, flateImage, rubricFromStrokes, rubricEdit } from '../../web/js/edit-media.js';
 
 // O app recodifica as imagens num canvas; aqui, toda imagem vira o mesmo JPEG pequeno. Basta para passar pela
 // leitura das imagens (descompactar, preditores, cores) e pela montagem do PDF com objetos trocados.
@@ -45,6 +46,18 @@ const EDITS = [
   { type: 'underline', x0: 0.1, y0: 0.36, x1: 0.5, y1: 0.37, color: '#dc2626', width: 2, from: [0, 0.5], to: [1, 0.5] },
   { type: 'watermark', x0: 0, y0: 0, x1: 1, y1: 1, text: 'CÓPIA' },
 ];
+
+// Imagem com e sem transparência e rubrica (fase 4, edit-media.js): imagem com /SMask e Form XObject na página
+// copiada, com nomes que ela ainda não usa.
+const ALPHA = Uint8Array.from({ length: 4 * 3 * 4 }, (_, i) => (i % 4 === 3 ? (i * 40) & 255 : (i * 23) & 255));
+storeImage('exercicio-jpeg', { kind: 'jpeg', width: 16, height: 24, data: SMALL_JPEG });
+storeImage('exercicio-alfa', await flateImage(ALPHA, 4, 3));
+EDITS.push(
+  { type: 'image', x0: 0.55, y0: 0.4, x1: 0.7, y1: 0.55, image: 'exercicio-jpeg' },
+  { type: 'image', x0: 0.75, y0: 0.4, x1: 0.95, y1: 0.5, image: 'exercicio-alfa' },
+  rubricEdit(rubricFromStrokes([[[0.1, 0.6], [0.4, 0.2], [0.9, 0.5]]], { color: '#1d4ed8', width: 3 }, { width: 300, height: 120 }, 1),
+    'bottom-right', 80, { width: 600, height: 800 }),
+);
 
 // Copia as páginas (girando uma sim, outra não, como o app permite), monta o PDF e reabre com o leitor.
 async function rebuild(doc, indices, replace, ocr, edits) {
