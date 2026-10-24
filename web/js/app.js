@@ -1020,6 +1020,9 @@ function setBusy(busy, label = 'Gerando…') {
   if (busy) els.workspace.setAttribute('aria-busy', 'true');
   else els.workspace.removeAttribute('aria-busy');
   for (const control of lockedWhileBusy) control.disabled = busy;
+  // "Em todas as páginas" (numeração, cabeçalho, rodapé, marca d'água, rubrica e "Desenhar de novo") inteiro: o
+  // fieldset desligado desliga todo controle de dentro, e cada um volta ao estado dele ao religar.
+  els.allPages.disabled = busy;
   if (busy) for (const control of els.pages.querySelectorAll('button, select')) control.disabled = true;
   else renderPages(); // recria os cartões liberados (mover nas pontas da lista continua desabilitado)
 }
