@@ -10,7 +10,7 @@
 // Pontos de encaixe das próximas fases:
 // - registerTool: a ferramenta na barra, as propriedades que valem para ela, a criação pelo ponteiro (pointer) e pelo
 //   teclado (keyboard), e o que Enter faz numa edição dela (open). Ferramenta nova: registerTool no módulo dela, que
-//   entra pela lista de imports no fim deste arquivo.
+//   entra na lista TOOL_MODULES (carregada por loadTools antes de a barra ser montada) e no APP_FILES do sw.js.
 // - registerProperty: um controle a mais no painel de propriedades (tamanho da letra, família…).
 // - api (o que pointer, keyboard e open recebem): a página, as edições e as propriedades, mais add, replace, select,
 //   say e point.
@@ -48,6 +48,14 @@ import './edit-types.js';
 
 const TOOLS = [];
 const PROPERTIES = new Map();
+
+// Módulos das ferramentas das próximas fases (texto, marcações, imagem), um por linha. Cada um importa registerTool
+// daqui; por isso entram depois deste arquivo, por loadTools, e não por import no topo (o import circular rodaria
+// antes de TOOLS existir).
+const TOOL_MODULES = [];
+
+/** Carrega as ferramentas de TOOL_MODULES. Quem monta o editor espera por ela antes de setupEditor. */
+export const loadTools = () => Promise.all(TOOL_MODULES.map((path) => import(path)));
 
 /** @param {Tool} tool */
 export function registerTool(tool) {

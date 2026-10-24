@@ -469,9 +469,10 @@ export function setupViewer({
     showView();
     editButton.focus();
   };
-  const loadEditor = () => (loading ??= import('./editor.js').then(({ setupEditor }) => (editor = setupEditor({
-    stage, hint, save: saveEdits, confirm: confirmDiscard, leave: leaveEdit,
-  }))).catch((err) => {
+  const loadEditor = () => (loading ??= import('./editor.js').then(async ({ setupEditor, loadTools }) => {
+    await loadTools(); // as ferramentas das outras fases, antes de a barra ser montada
+    return (editor = setupEditor({ stage, hint, save: saveEdits, confirm: confirmDiscard, leave: leaveEdit }));
+  }).catch((err) => {
     loading = null; // sem rede e sem cache: tenta de novo na próxima vez
     throw err;
   }));
