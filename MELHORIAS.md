@@ -889,24 +889,49 @@ Ficou assim:
 
 #### Fase 2: texto e numeração (#12)
 
-- [ ] Texto novo: painel com `textarea`, tamanho, cor e família; letras fora da WinAnsi avisadas
-- [ ] Numerar páginas, cabeçalho e rodapé, no painel de opções, com prévia
-- [ ] PDF/A com a Liberation embutida para o texto novo
+- [x] Texto novo: painel com `textarea`, tamanho, cor e família; letras fora da WinAnsi avisadas
+- [x] Numerar páginas, cabeçalho e rodapé, no painel de opções, com prévia
+- [x] PDF/A com a Liberation embutida para o texto novo
+
+Ficou assim:
+
+- A caixa tem o tamanho do texto, e as alças mudam a letra, com a proporção travada. A linha só quebra onde a pessoa quebrou.
+- Com a ferramenta Texto, tocar na página cria a caixa ali; "Novo" cria no meio. Um toque a mais na caixa selecionada, ou Enter, reabre o painel. Esc com o painel aberto fecha só o painel.
+- A cor do texto é separada da cor das formas e começa em preto. Acento composto (como o macOS cola) vira a letra acentuada.
+- A numeração usa a grade de seis lugares; cabeçalho e rodapé ficam na linha de cima e na de baixo, à esquerda, no centro ou à direita. O que cai no mesmo lugar fica empilhado, com o número mais perto da borda.
+- O painel que acompanha o teclado virtual (`keyboard-panel.js`) serve também para o dos formulários.
 
 #### Fase 3: marca-texto e marca d'água (#13)
 
-- [ ] `ExtGState` com opacidade e `Multiply`
-- [ ] Marca-texto, sublinhar e riscar (retângulo e linha arrastados à mão)
-- [ ] Marca d'água em todas as páginas, com prévia
+- [x] `ExtGState` com opacidade e `Multiply`
+- [x] Marca-texto, sublinhar e riscar (retângulo e linha arrastados à mão)
+- [x] Marca d'água em todas as páginas, com prévia
+
+Ficou assim:
+
+- Marca-texto com opacidade 0,55 e `Multiply`: o texto embaixo continua preto. Dentro do editor ele aparece só translúcido; na miniatura, na tela cheia e no PDF, multiplica.
+- Sublinhado e riscado até 4° da horizontal ficam retos.
+- Marca d'água em Helvetica-Bold cinza, com opacidade 0,3, na diagonal. As letras sob uma tarja saem do arquivo, gravadas do último trecho para o primeiro: na ordem normal, o PDF.js emendaria "CONF DENCIAL" por cima do buraco e a conferência recusaria o PDF.
+- O PDF/A-2b passa no veraPDF sem `/Group`: o perfil sRGB que o app já grava basta.
 
 #### Fase 4: imagem e rubrica (#14)
 
-- [ ] Imagem PNG com transparência (`/SMask`) e JPEG, com limite de lado
-- [ ] Rubrica desenhada uma vez e repetida em todas as páginas (Form XObject)
+- [x] Imagem PNG com transparência (`/SMask`) e JPEG, com limite de lado
+- [x] Rubrica desenhada uma vez e repetida em todas as páginas (Form XObject)
+
+Ficou assim:
+
+- Lado maior de até 2000 px: uns 240 dpi numa A4 inteira, com o canvas em 16 MB no iPhone. Imagem de 4000 × 3000 no Chromium: pico de 61 MB (JPEG) e 70 MB (PNG transparente), e depois ficam 5 e 9 MB.
+- Vira JPEG quando nenhum pixel tem transparência; com transparência, vai como Flate com o preditor PNG e a `/SMask` (um canal só, se tudo for cinza).
+- A mesma imagem vai uma vez por arquivo (pelo SHA-256 do que foi recodificado); na página copiada de outro PDF, uma vez por PDF de origem, como na fase 1.
+- Tarja sobre parte da imagem apaga essa parte dos pixels antes de montar o PDF; sem essa versão, o PDF não sai.
+- Rubrica com o lado maior de 2, 3 ou 4,5 cm e traço de cerca de 1 pt no PDF. Ela sobe ou desce para não cobrir a numeração, o cabeçalho ou o rodapé no mesmo lugar (4 pt de folga); a marca d'água não conta.
 
 #### Aviso de formulário preenchido em outro programa (#16)
 
-- [ ] Ao abrir um PDF com formulário preenchido em outro programa (`/NeedAppearances`, ou campo com valor sem aparência), aviso de que os valores podem não aparecer no PDF novo. Hoje o PDF.js mostra os valores na tela, mas o PDF gerado leva a aparência guardada, vazia ou velha. A correção vem com os formulários, na v4.1.0 (decisão do dono, 2026-10-24)
+- [x] Ao abrir um PDF com formulário preenchido em outro programa (`/NeedAppearances`, ou campo com valor sem aparência), aviso de que os valores podem não aparecer no PDF novo. Hoje o PDF.js mostra os valores na tela, mas o PDF gerado leva a aparência guardada, vazia ou velha. A correção vem com os formulários, na v4.1.0 (decisão do dono, 2026-10-24)
+
+Ficou assim: o erro se confirmou (com `/NeedAppearances` e a aparência vazia, o PDF.js desenha "Fulano de Tal" e o PDF gerado sai sem o valor; com a aparência velha, sai o valor antigo). O aviso troca a nota antiga ("o que estava preenchido continua visível") e não aparece em formulário em branco nem em caixa de marcar. Campo com valor e sem aparência, mesmo sem `/NeedAppearances`, também avisa: outros programas mostram o valor. A varredura nova (`formValuesWithoutAppearance`) é a terceira dos campos, para juntar com as outras na v4.1.0.
 
 #### Fase 5: formulários, v4.1.0 (#15)
 
