@@ -56,6 +56,7 @@ const PROPERTIES = new Map();
 const TOOL_MODULES = [
   './edit-text-tool.js', // texto (fase 2)
   './edit-mark-tools.js', // marca-texto, sublinhar e riscar (fase 3)
+  './edit-image.js', // imagem (fase 4)
 ];
 
 /** Carrega as ferramentas de TOOL_MODULES. Quem monta o editor espera por ela antes de setupEditor. */

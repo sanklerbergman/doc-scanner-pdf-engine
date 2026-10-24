@@ -9,6 +9,8 @@
 // - produce({position, total, file, files, index, page, size}): as edições (edits.js) a mais numa página. position e
 //   total contam dentro do arquivo: com "um PDF por página" ou por intervalos, cada arquivo começa do 1 (fileExtras,
 //   em edits.js). index e page: a página na lista; size: ela como aparece, em pontos (para spotBox, em edits.js).
+//   placed: as edições que as opções montadas antes já puseram na página, para a opção não cobrir nenhuma (a rubrica
+//   sai de cima da numeração, do cabeçalho e do rodapé no mesmo lugar).
 // - characters (opcional, no tipo de edição que a opção produz): as letras do PDF/A, como nas outras edições.
 import { STAMP_POSITIONS } from './stamp.js';
 
@@ -18,7 +20,7 @@ import { STAMP_POSITIONS } from './stamp.js';
  * @property {(container: HTMLElement, changed: () => void) => void} build
  * @property {() => boolean} active
  * @property {(context: {position: number, total: number, file: number, files: number, index: number, page: object,
- *   size: {width: number, height: number}}) => object[]} produce
+ *   size: {width: number, height: number}, placed: object[]}) => object[]} produce
  */
 
 const OPTIONS = [];
@@ -52,8 +54,8 @@ export function setupAllPages({ section, container, changed }) {
   return {
     /** Alguma opção ligada? */
     active: () => on().length > 0,
-    /** As edições a mais de uma página (ver produce acima). */
-    produce: (context) => on().flatMap((option) => option.produce(context) ?? []),
+    /** As edições a mais de uma página (ver produce acima), na ordem das opções. */
+    produce: (context) => on().reduce((placed, option) => [...placed, ...(option.produce({ ...context, placed }) ?? [])], []),
   };
 }
 

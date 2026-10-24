@@ -18,6 +18,8 @@ import './edit-types.js';
 import { setupAllPages, spotGrid } from './all-pages.js';
 import './all-pages-text.js'; // numeração, cabeçalho e rodapé (fase 2)
 import './watermark.js'; // marca d'água em todas as páginas (fase 3)
+import { forgetMedia, keepImages } from './edit-media.js';
+import './rubric.js'; // rubrica em todas as páginas (fase 4)
 
 // O site oficial já proíbe ser embutido em outro pelo cabeçalho frame-ancestors (web/_headers). Esta checagem
 // fica como segunda camada, e protege cópias hospedadas onde não dá para enviar cabeçalhos: o app se recusa a
@@ -804,6 +806,8 @@ const viewer = setupViewer({
   editBase,
   async saveEdits(page, list) {
     page.edits = list;
+    // Imagem que nenhuma página usa mais (removida, ou escolhida e cancelada) sai da memória (edit-media.js).
+    keepImages([...state.pages, removed?.page].flatMap((each) => each?.edits ?? []));
     discardPdf();
     await refreshThumb(page);
     renderPages();
@@ -972,6 +976,7 @@ els.clear.addEventListener('click', () => {
   for (const page of state.pages) URL.revokeObjectURL(page.thumbUrl);
   if (state.pages.some((page) => page.kind === 'pdf')) loadPdfTools().then((tools) => tools.releasePdfPreviews()).catch(() => {});
   state.pages = [];
+  forgetMedia(); // as imagens das edições e a rubrica (edit-media.js)
   state.compressChosen = false;
   els.pdfCompress.value = 'none';
   discardPdf();
@@ -1252,6 +1257,12 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     let fonts = null;
     const fontPages = groups.flatMap((group, g) => group.map((i, p) => pages[i] && withEdits(pages[i], list[i], editsIn(g, p))))
       .filter(Boolean);
+    // Imagem das edições que uma tarja pega só em parte: essa parte sai dos pixels antes de montar (edit-image.js, já
+    // carregado pelo editor quando há imagem).
+    if (fontPages.some((page) => page.edits?.some((edit) => edit.type === 'image'))) {
+      const { cutImages } = await import('./edit-image.js');
+      await cutImages(fontPages);
+    }
     if (pdfa && (list.some(isDocument) || (signer && stamp) || fontPages.some((page) => editCharacters(page.edits).size))) {
       announce('Preparando as fontes do PDF/A…');
       const { embedFonts } = await loadPdfaFonts().catch(() => {

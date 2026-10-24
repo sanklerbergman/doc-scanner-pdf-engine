@@ -17,6 +17,8 @@ import { editType, rotateEdits, redactEdits, resizeEdit, editsContent, resourceC
 import { layoutPage, buildPdf as buildRaw } from '../web/js/pdf.js';
 import { openPdf, copyPages, unpredict, PdfDict, PdfName, PdfStream } from '../web/js/pdf-reader.js';
 import { embedFonts } from '../web/js/pdfa-fonts.js';
+import { allPagesText } from '../web/js/edit-text.js';
+import { watermarkEdit } from '../web/js/edit-marks.js';
 import { buildPdf } from './helpers/qpdf.js';
 import { makeRawPdf, textPageObjects } from './helpers/pdf.js';
 
@@ -198,6 +200,31 @@ test('rubrica: a caixa envolve os traços, com folga para a espessura; o lado ma
   assert.deepEqual(edit, { type: 'rubric', ...spotBox('bottom-right', [w, h], page), rubric: RUBRIC });
   assert.ok(editType('rubric').keepRatio);
   assert.ok(close((1 - edit.x1) * page.width, 24, 1e-3) && close((1 - edit.y1) * page.height, 24, 1e-3), 'a 24 pontos da borda');
+});
+
+test('rubrica no mesmo lugar da numeração e do rodapé: sai de cima deles, para dentro da página; a marca d\'água não conta', () => {
+  const page = { width: 595.28, height: 841.89 };
+  const overlaps = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+  // Numeração e rodapé embaixo, à direita, empilhados pela fase 2; cabeçalho em cima, à esquerda.
+  const texts = allPagesText({
+    number: { format: 'page-n-of', spot: 'bottom-right' },
+    footer: { text: 'Rodapé do contrato', spot: 'bottom-right' },
+    header: { text: 'Cabeçalho', spot: 'top-left' },
+  }, { position: 2, total: 7, size: page });
+  const placed = [watermarkEdit('CÓPIA'), ...texts];
+  const alone = rubricEdit(RUBRIC, 'bottom-right', RUBRIC_SIZES.medium.side, page);
+  assert.ok(texts.some((text) => overlaps(text, alone)), 'sem o placed, ela cairia em cima do texto');
+  for (const spot of ['bottom-right', 'top-left']) {
+    const edit = rubricEdit(RUBRIC, spot, RUBRIC_SIZES.medium.side, page, placed);
+    assert.ok(texts.every((text) => !overlaps(text, edit)), `${spot}: não cobre a numeração, o rodapé nem o cabeçalho`);
+    const first = rubricEdit(RUBRIC, spot, RUBRIC_SIZES.medium.side, page);
+    assert.ok(close(edit.x1 - edit.x0, first.x1 - first.x0) && close(edit.y1 - edit.y0, first.y1 - first.y0), 'mesmo tamanho');
+    assert.ok(spot.startsWith('top') ? edit.y0 > first.y0 : edit.y1 < first.y1, 'para dentro da página');
+    const near = spot.startsWith('top') ? edit.y0 - Math.max(...texts.filter((t) => t.y1 < 0.5).map((t) => t.y1)) : Math.min(...texts.filter((t) => t.y0 > 0.5).map((t) => t.y0)) - edit.y1;
+    assert.ok(close(near * page.height, 4, 0.01), `${spot}: logo depois do texto (${near * page.height} pt)`);
+  }
+  // Lugar livre: fica onde estava, mesmo com a marca d'água na página inteira.
+  assert.deepEqual(rubricEdit(RUBRIC, 'top-right', 60, page, placed), rubricEdit(RUBRIC, 'top-right', 60, page));
 });
 
 test('rubrica em todas as páginas: um Form XObject só no arquivo, chamado em cada página na escala da caixa', async () => {

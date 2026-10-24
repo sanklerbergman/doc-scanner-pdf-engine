@@ -340,16 +340,34 @@ export function rubricFromStrokes(strokes, props, pad, id) {
   };
 }
 
+const RUBRIC_GAP = 4; // pontos entre a rubrica e o texto que ela evita
+
 /**
- * A rubrica num dos seis lugares da página, com o lado maior de `side` pontos.
+ * A rubrica num dos seis lugares da página, com o lado maior de `side` pontos. Se o lugar já tem numeração, cabeçalho
+ * ou rodapé (placed), ela sai de cima deles: para dentro da página, logo depois do último. A marca d'água (a página
+ * inteira, transparente) não conta.
  * @param {Rubric} rubric
  * @param {string} spot 'bottom-right'…
  * @param {number} side em pontos
  * @param {{width: number, height: number}} page a página como aparece, em pontos
+ * @param {object[]} [placed] as edições que já estão na página (de 0 a 1)
  */
-export function rubricEdit(rubric, spot, side, page) {
+export function rubricEdit(rubric, spot, side, page, placed = []) {
   const scale = side / Math.max(rubric.w, rubric.h);
-  return { type: 'rubric', ...spotBox(spot, [rubric.w * scale, rubric.h * scale], page), rubric };
+  const box = spotBox(spot, [rubric.w * scale, rubric.h * scale], page);
+  const height = box.y1 - box.y0;
+  const gap = RUBRIC_GAP / page.height;
+  const down = spot.startsWith('top');
+  const others = placed.filter((edit) => edit.type !== 'watermark' && !(edit.x0 <= 0 && edit.y0 <= 0 && edit.x1 >= 1 && edit.y1 >= 1));
+  // Cada passo passa do que ela cobre; para quando não cobre mais nada (no máximo um passo por edição).
+  for (let step = 0; step < others.length; step++) {
+    const hit = others.filter((o) => o.x0 < box.x1 && o.x1 > box.x0 && o.y0 < box.y1 && o.y1 > box.y0);
+    if (!hit.length) break;
+    box.y0 = down ? Math.max(...hit.map((o) => o.y1)) + gap : Math.min(...hit.map((o) => o.y0)) - gap - height;
+    box.y0 = Math.min(1 - height, Math.max(0, box.y0));
+    box.y1 = box.y0 + height;
+  }
+  return { type: 'rubric', ...box, rubric };
 }
 
 // O desenho da rubrica como um desenho à mão, no quadro dela (w × h).

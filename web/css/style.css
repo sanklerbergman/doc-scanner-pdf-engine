@@ -249,6 +249,16 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 /* Marca d'água (js/watermark.js): os textos lado a lado, quebrando no celular; o texto livre embaixo deles. */
 .watermark-choices { margin: 4px 0 0; padding: 0; border: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 0 18px; }
 .watermark-choices .field, .watermark-choices .field-note { flex: 1 1 100%; }
+/* Rubrica em todas as páginas (js/rubric.js): a amostra do desenho, o lugar e o tamanho; o quadro numa janela. */
+.rubric-options { display: grid; gap: 12px; }
+.rubric-drawn, .rubric-place { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
+.rubric-drawn { align-items: center; }
+.rubric-sample { width: 120px; height: 48px; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.rubric-pad {
+  display: block; width: 100%; height: 180px; margin: 0 0 12px; border: 1px dashed var(--muted); border-radius: 8px;
+  background: #fff; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.rubric-colors { margin: 0 0 4px; }
 .protect-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 4px; }
 .settings {
   margin-top: 20px; padding: 16px; background: var(--surface);
