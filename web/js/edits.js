@@ -32,9 +32,12 @@
  *   mesmo quadro, só ASCII (cada edição já vai entre q e Q)
  * @property {[number, number]} [size] tamanho, em pontos, da edição criada pelo teclado ("Novo") ou por um toque
  * @property {boolean} [keepRatio] a proporção fica travada ao mudar o tamanho
+ * @property {(edit: Edit) => string} [describe] o nome da edição para o leitor de tela, no lugar do label
+ *   (o texto diz o que está escrito)
  * @property {(edit: Edit) => Map<string, string>} [characters] letras usadas, por fonte padrão do PDF
- * @property {(edit: Edit, rects: object[]) => Edit[]} [redact] a edição sem o que fica sob as tarjas (rects, na página
- *   como aparece); sem isso, a edição inteira sob uma tarja sai, e a que só encosta fica, coberta
+ * @property {(edit: Edit, rects: object[], page: {width: number, height: number}) => Edit[]} [redact] a edição sem o
+ *   que fica sob as tarjas (rects, na página como aparece; page em pontos); sem isso, a edição inteira sob uma tarja
+ *   sai, e a que só encosta fica, coberta
  */
 
 const TYPES = new Map();
@@ -317,12 +320,13 @@ export function pdfValue(value, refOf) {
  * (redact) tira; dos outros, sai a edição inteira sob uma tarja, e a que só encosta fica (a tarja vai por cima).
  * @param {Edit[]} edits
  * @param {Array<{x0: number, y0: number, x1: number, y1: number}>} rects
+ * @param {{width: number, height: number}} [page] a página como aparece, em pontos (para o tipo medir as letras)
  */
-export function redactEdits(edits, rects) {
+export function redactEdits(edits, rects, page) {
   if (!rects?.length) return edits ?? [];
   return (edits ?? []).flatMap((edit) => {
     const type = editType(edit.type);
-    if (type?.redact) return type.redact(edit, rects);
+    if (type?.redact && page) return type.redact(edit, rects, page);
     const covered = rects.some((r) => edit.x0 >= r.x0 && edit.y0 >= r.y0 && edit.x1 <= r.x1 && edit.y1 <= r.y1);
     return covered ? [] : [edit];
   });

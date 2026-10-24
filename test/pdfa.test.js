@@ -23,6 +23,7 @@ import { inflate } from '../web/js/inflate.js';
 import { stampCharacters } from '../web/js/stamp.js';
 import { readSignedData } from '../web/js/cms.js';
 import { textWidth, winAnsiCode } from '../web/js/fonts.js';
+import { allPagesText } from '../web/js/edit-text.js';
 
 const fixture = (name) => new Uint8Array(readFileSync(new URL(`./fixtures/${name}`, import.meta.url)));
 const latin1 = (bytes) => Buffer.from(bytes).toString('latin1');
@@ -302,6 +303,18 @@ const EDITS = [
   { type: 'ink', x0: 0.1, y0: 0.8, x1: 0.5, y1: 0.9, color: '#000000', width: 2, strokes: [[[0, 0.5], [0.3, 0.1], [0.6, 0.9], [1, 0.5]], [[0.5, 0.5]]] },
 ];
 
+// Texto novo (fase 2), nas três famílias, e numeração com cabeçalho em todas as páginas.
+const TEXTS = [
+  { type: 'text', x0: 0.1, y0: 0.4, x1: 0.5, y1: 0.43, text: 'Recebido em 24/10/2026 — ação', family: 'sans', color: '#1d4ed8' },
+  { type: 'text', x0: 0.1, y0: 0.5, x1: 0.4, y1: 0.53, text: 'Com serifa: “citação”', family: 'serif', color: '#000000' },
+  { type: 'text', x0: 0.1, y0: 0.6, x1: 0.4, y1: 0.66, text: 'De máquina\nnº 0123', family: 'mono', color: '#dc2626', turn: 90 },
+];
+const numbered = (pages) => pages.map((page, i) => ({
+  ...page,
+  edits: [...(page.edits ?? []), ...allPagesText({ number: { format: 'page-n-of', spot: 'bottom-right' }, header: { text: 'Contrato nº 12', spot: 'top-center' } },
+    { position: i + 1, total: pages.length, size: page.jpeg || !(page.rotation % 180) ? page : { width: page.height, height: page.width } })],
+}));
+
 test('veraPDF (perfil PDF/A-2B): fotos, OCR, Word com as fontes embutidas, PDF assinado, carimbo e edições', async (t) => {
   const verapdf = process.env.VERAPDF;
   if (!verapdf) {
@@ -318,6 +331,7 @@ test('veraPDF (perfil PDF/A-2B): fotos, OCR, Word com as fontes embutidas, PDF a
   const stamped = async (pages, stamp = STAMP) => signer.sign(pages, new Date(), {
     pdfa: true, stamp, fonts: await embedFonts(pages, stampCharacters(signer.name)),
   });
+  const withFonts = async (pages) => buildPdf(pages, { pdfa: true, fonts: await embedFonts(pages) });
   const files = {
     'fotos.pdf': buildPdf(photos, { pdfa: true }),
     'ocr.pdf': buildPdf(PAGES, { pdfa: true }),
@@ -335,6 +349,10 @@ test('veraPDF (perfil PDF/A-2B): fotos, OCR, Word com as fontes embutidas, PDF a
     'fotos-edicoes.pdf': buildPdf([{ ...PAGES[0], edits: EDITS, redactions: [{ x0: 0, y0: 0, x1: 0.3, y1: 0.3 }] }, PAGES[1]], { pdfa: true }),
     'word-edicoes.pdf': buildPdf([{ ...WORD, rotation: 90, edits: EDITS }], { pdfa: true, fonts: await embedFonts([WORD]) }),
     'edicoes-carimbo.pdf': await stamped([{ ...PAGES[0], edits: EDITS }]),
+    // Texto novo e numeração: a Liberation embutida, com as letras deles (e a Helvetica do OCR junto).
+    'texto-fotos.pdf': await withFonts(numbered([{ ...PAGES[0], edits: TEXTS }, PAGES[1]])),
+    'texto-word.pdf': await withFonts(numbered([{ ...WORD, rotation: 90, edits: TEXTS }, PAGES[0]])),
+    'texto-carimbo.pdf': await stamped(numbered([{ ...PAGES[0], edits: TEXTS }])),
   };
   signer.discard();
   const dir = mkdtempSync(join(tmpdir(), 'verapdf-'));

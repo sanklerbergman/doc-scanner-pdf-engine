@@ -31,13 +31,15 @@ const WORDS = [
   { text: '(reconhecido)', x0: 0.32, y0: 0.1, x1: 0.6, y1: 0.14, baseline: 0.135, size: 0.04, last: true },
 ];
 
-// Edições simuladas (edits.js): as cinco da fase 1, que viram conteúdo da página, com recursos de nomes novos.
+// Edições simuladas (edits.js): as formas e o desenho da fase 1 e o texto da fase 2 (com fonte nos recursos), que viram
+// conteúdo da página, com recursos de nomes novos.
 const EDITS = [
   { type: 'rect', x0: 0.1, y0: 0.2, x1: 0.4, y1: 0.3, color: '#dc2626', width: 2 },
   { type: 'arrow', x0: 0.2, y0: 0.5, x1: 0.6, y1: 0.6, color: '#1d4ed8', width: 2, from: [0.06, 0.88], to: [0.94, 0.12] },
   { type: 'check', x0: 0.6, y0: 0.1, x1: 0.65, y1: 0.14, color: '#15803d', width: 2 },
   { type: 'cross', x0: 0.7, y0: 0.7, x1: 0.75, y1: 0.74, color: '#000000', width: 4 },
   { type: 'ink', x0: 0.1, y0: 0.8, x1: 0.5, y1: 0.9, color: '#000000', width: 2, strokes: [[[0, 0.5], [0.3, 0.1], [1, 0.5]], [[0.5, 0.5]]] },
+  { type: 'text', x0: 0.1, y0: 0.05, x1: 0.5, y1: 0.08, text: 'Texto (novo) \\ ação', family: 'serif', color: '#000000' },
 ];
 
 // Copia as páginas (girando uma sim, outra não, como o app permite), monta o PDF e reabre com o leitor.

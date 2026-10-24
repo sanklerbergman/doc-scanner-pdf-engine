@@ -247,7 +247,8 @@ function prepareEdits(page) {
   const covers = pageCovers(page);
   const res = resourceCollector();
   const frame = { box: [0, 0, page.width, page.height], rotate: page.jpeg ? 0 : page.rotation ?? 0 };
-  const ops = editsContent(redactEdits(page.edits, covers), frame, res);
+  const visible = frame.rotate % 180 ? { width: page.height, height: page.width } : { width: page.width, height: page.height };
+  const ops = editsContent(redactEdits(page.edits, covers, visible), frame, res);
   return ops ? { ops, res, covers } : null;
 }
 

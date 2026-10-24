@@ -32,7 +32,8 @@ import './edit-types.js';
  *   stroke desenha à mão; uma função recebe a api e devolve {move?, up?, cancel?} para aquele toque
  * @property {true | ((api: object) => void)} [keyboard] "Novo": true cria o tipo no meio da página, no tamanho dele
  *   (EditType.size); uma função faz o que a ferramenta precisa (abrir o painel de texto, escolher a imagem)
- * @property {(api: object, index: number) => void} [open] Enter numa edição do tipo da ferramenta (reabrir o painel)
+ * @property {(api: object, index: number) => void} [open] Enter, ou um toque a mais, numa edição do tipo da ferramenta
+ *   (reabrir o painel)
  * @property {string[]} [props] as propriedades (registerProperty) que valem para ela
  * @property {string} hint o que aparece ao escolher a ferramenta
  *
@@ -52,21 +53,28 @@ const PROPERTIES = new Map();
 // Módulos das ferramentas das próximas fases (texto, marcações, imagem), um por linha. Cada um importa registerTool
 // daqui; por isso entram depois deste arquivo, por loadTools, e não por import no topo (o import circular rodaria
 // antes de TOOLS existir).
-const TOOL_MODULES = [];
+const TOOL_MODULES = [
+  './edit-text-tool.js', // texto (fase 2)
+];
 
 /** Carrega as ferramentas de TOOL_MODULES. Quem monta o editor espera por ela antes de setupEditor. */
 export const loadTools = () => Promise.all(TOOL_MODULES.map((path) => import(path)));
 
-/** @param {Tool} tool */
+/** @param {Tool & {after?: string}} tool after: a ferramenta depois da qual ela entra na barra (sem isso, no fim) */
 export function registerTool(tool) {
   if (TOOLS.some(({ id }) => id === tool.id)) throw new Error(`Ferramenta repetida: ${tool.id}`);
-  TOOLS.push(tool);
+  const at = TOOLS.findIndex(({ id }) => id === tool.after);
+  if (at >= 0) TOOLS.splice(at + 1, 0, tool);
+  else TOOLS.push(tool);
 }
 
 /** @param {string} id @param {Property} property */
 export function registerProperty(id, property) {
   PROPERTIES.set(id, property);
 }
+
+/** Uma propriedade registrada (as opções de cor, por exemplo, para o painel de uma ferramenta). */
+export const propertyOf = (id) => PROPERTIES.get(id);
 
 registerProperty('color', {
   label: 'Cor', look: 'swatch', value: DEFAULT_COLOR,
@@ -364,7 +372,7 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
       const type = typeOf(item);
       const box = el('div', {
         className: `edit-box${i === selected ? ' selected' : ''}`, tabIndex: 0, role: 'group', 'data-index': i,
-        'aria-label': `${type.label} (edição ${i + 1} de ${items.length}): as setas movem, Shift e setas mudam o tamanho, Delete remove`,
+        'aria-label': `${type.describe?.(item) ?? type.label} (edição ${i + 1} de ${items.length}): as setas movem, Shift e setas mudam o tamanho, Delete remove`,
       });
       place(box, item);
       if (i === selected) box.append(...handles(item));
@@ -598,7 +606,7 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     } else if (handle && index === selected) {
       drag = { ...base, kind: 'resize', corner: Number(handle.dataset.corner), start: items[index] };
     } else if (index >= 0 && (tool.pointer === 'select' || index === selected)) {
-      drag = { ...base, kind: 'move', start: items[index] };
+      drag = { ...base, kind: 'move', start: items[index], again: index === selected };
       select(index);
     } else if (tool.pointer === 'select') {
       select(-1);
@@ -658,6 +666,9 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
       const type = typeOf(items[selected]);
       say(finished.kind === 'move' ? `${done(type, 'movid')}.` : `${type.label}: tamanho mudado.`);
       render();
+    } else if (finished.kind === 'move' && finished.again) {
+      // Tocar de novo na edição selecionada faz o mesmo que Enter: a ferramenta dela reabre o painel (o do texto).
+      toolOf(items[selected])?.open?.(api, selected);
     }
   });
 

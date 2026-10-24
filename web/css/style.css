@@ -551,6 +551,27 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .edit-prop-swatch .edit-sample { width: 28px; height: 28px; border-radius: 50%; box-shadow: 0 0 0 1px rgb(0 0 0 / 25%); }
 .edit-prop-line .edit-sample { width: 28px; background: var(--text); border-radius: 3px; }
 #edit-props-done { justify-self: end; }
+/* Painel do texto (js/edit-text-tool.js): abre de baixo e fica acima do teclado virtual (js/keyboard-panel.js põe o
+   bottom e a altura máxima). Letra de 16 px no campo: abaixo disso, o iPhone amplia a tela ao tocar nele. */
+.text-panel {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; max-width: 640px; max-height: 85dvh; margin: 0 auto;
+  overflow: auto; overscroll-behavior: contain; display: grid; gap: 8px; padding: 12px 16px 14px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-bottom: 0;
+  border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgb(0 0 0 / 22%); touch-action: manipulation;
+}
+.text-input {
+  width: 100%; min-height: 88px; padding: 8px 10px; resize: vertical;
+  font: inherit; font-size: 16px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.text-warning:empty { display: none; }
+.text-warning { color: var(--danger); font-weight: 600; }
+.text-options { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
+.text-options .field { flex: 1 1 120px; }
+.text-options .edit-prop { flex: 1 1 100%; }
+/* Numeração, cabeçalho e rodapé (js/all-pages-text.js): cada um com os detalhes embaixo, que só aparecem ligado. */
+.all-pages-group + .all-pages-group { border-top: 1px solid var(--border); padding-top: 8px; }
+.all-pages-detail { display: grid; gap: 8px; padding: 0 0 8px 32px; }
 
 .crop { position: relative; flex: none; touch-action: none; }
 .crop img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; }
