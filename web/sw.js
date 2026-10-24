@@ -51,6 +51,8 @@ const APP_FILES = [
   './js/edits.js',
   './js/edit-shapes.js',
   './js/edit-types.js',
+  './js/editor.js',
+  './js/all-pages.js',
   './icon.svg',
   './sankler-logo-reduzido-fundo-claro.svg',
   './sankler-logo-reduzido-fundo-escuro.svg',

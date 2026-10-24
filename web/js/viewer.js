@@ -1,6 +1,6 @@
 // Tela cheia de uma página: mostra como ela vai sair no PDF, deixa ajustar o recorte arrastando os quatro
-// cantos sobre a foto original, marcar tarjas (retângulos que apagam o que está embaixo, redact.js) e copiar o
-// texto da página para a área de transferência.
+// cantos sobre a foto original, marcar tarjas (retângulos que apagam o que está embaixo, redact.js), editar a página
+// (desenho, formas e marcas que ficam fixos no PDF, editor.js) e copiar o texto da página para a área de transferência.
 import { FULL_QUAD, fromRotated, toRotated, isConvex, isFullFrame } from './geometry.js';
 import { normalizeRect } from './redact.js';
 import { wordCount } from './page-text.js';
@@ -28,11 +28,14 @@ const LOUPE_GAP = 48; // do dedo até a borda da lupa: o dedo não cobre
  * @param {(page, options: {signal: AbortSignal, progress: (message: string) => void}) => Promise<string>} deps.copyText
  *   texto da página, sem o que está sob as tarjas (o OCR roda na hora se precisar; signal cancela)
  * @param {(page) => boolean} deps.canCopy false enquanto o app gera o PDF
+ * @param {(page) => Promise<{blob: Blob, width: number, height: number, redactions: object[]}>} deps.editBase a
+ *   página para o modo Editar: como vai sair no PDF, sem as edições; o tamanho dela em pontos e as tarjas nela
+ * @param {(page, list: object[]) => Promise<void>} deps.saveEdits grava as edições e atualiza a miniatura
  * @param {(page) => void} deps.onClose chamado ao fechar, para devolver o foco ao cartão da página
  */
 export function setupViewer({
   renderProcessed, canCrop, viewHint = () => null, renderOriginal, detect, applyCrop, step, renderPlain, redactHint,
-  saveRedactions, copyText, canCopy, onClose,
+  saveRedactions, copyText, canCopy, editBase, saveEdits, onClose,
 }) {
   const dialog = $('#viewer');
   const title = $('#viewer-title');
@@ -59,6 +62,8 @@ export function setupViewer({
   const redactUndo = $('#redact-undo');
   const redactApply = $('#redact-apply');
   const copyButton = $('#viewer-copy');
+  const editButton = $('#viewer-edit');
+  const discard = $('#discard-dialog');
 
   let page = null;
   let label = '';
@@ -67,8 +72,10 @@ export function setupViewer({
   let token = 0; // invalida renderizações que terminam depois de a pessoa já ter mudado de tela
   let copying = null; // AbortController da cópia do texto em andamento (o OCR pode levar segundos)
   let loupeOwner = null; // ponteiro que arrasta o canto mostrado na lupa
+  let editor = null; // modo Editar (editor.js), carregado na primeira vez
   const urls = { view: '', crop: '', redact: '' };
-  const editing = () => !crop.hidden || !redact.hidden; // recorte ou tarjas: sem trocar de página
+  // Recorte, tarjas ou edição: sem trocar de página.
+  const editing = () => !crop.hidden || !redact.hidden || !!editor?.active();
 
   function setUrl(kind, img, blob) {
     if (urls[kind]) URL.revokeObjectURL(urls[kind]);
@@ -100,6 +107,7 @@ export function setupViewer({
     cropActions.hidden = true;
     redact.hidden = true;
     redactActions.hidden = true;
+    editor?.close();
     viewActions.hidden = false;
     cropButton.hidden = !canCrop(page);
     copyButton.hidden = !canCopy(page) || !clipboardWorks();
@@ -140,8 +148,9 @@ export function setupViewer({
     hideLoupe(); // a tela pode ter fechado no meio de um arrasto
     crop.hidden = false;
     cropActions.hidden = false;
-    hint.textContent = page.redactions?.length
-      ? 'Arraste os quatro cantos até as bordas do papel. Mudar o recorte apaga as tarjas desta página.'
+    const lost = [page.redactions?.length && 'as tarjas', page.edits?.length && 'as edições'].filter(Boolean).join(' e ');
+    hint.textContent = lost
+      ? `Arraste os quatro cantos até as bordas do papel. Mudar o recorte apaga ${lost} desta página.`
       : 'Arraste os quatro cantos até as bordas do papel.';
     fitCrop();
     drawPoints();
@@ -435,7 +444,8 @@ export function setupViewer({
     drawMarks();
     hint.textContent = marks.length ? 'Última tarja desfeita.' : 'Última tarja desfeita. Nenhuma tarja nesta página.';
   });
-  $('#redact-cancel').addEventListener('click', showView);
+  const redactDirty = () => !redact.hidden && JSON.stringify(marks) !== JSON.stringify(page?.redactions ?? []);
+  $('#redact-cancel').addEventListener('click', () => leaveIfSure(showView));
   redactApply.addEventListener('click', async () => {
     redactApply.disabled = true;
     hint.textContent = 'Aplicando as tarjas…';
@@ -448,6 +458,102 @@ export function setupViewer({
   });
   $('#viewer-redact').addEventListener('click', showRedact);
   new ResizeObserver(fitRedact).observe(stage);
+
+  // ---------- Editar ----------
+  // O modo Editar (editor.js) carrega na primeira vez. A página aparece como vai sair no PDF, sem as edições, que o
+  // editor desenha por cima; as tarjas ficam por cima de tudo.
+
+  let loading = null;
+  // Ao sair do modo Editar (Aplicar ou Cancelar), o foco volta para o botão "Editar".
+  const leaveEdit = () => {
+    showView();
+    editButton.focus();
+  };
+  const loadEditor = () => (loading ??= import('./editor.js').then(({ setupEditor }) => (editor = setupEditor({
+    stage, hint, save: saveEdits, confirm: confirmDiscard, leave: leaveEdit,
+  }))).catch((err) => {
+    loading = null; // sem rede e sem cache: tenta de novo na próxima vez
+    throw err;
+  }));
+
+  async function showEdit() {
+    const mine = nextToken();
+    title.textContent = `Editar: ${label}`;
+    updateNav(false);
+    image.hidden = true;
+    viewActions.hidden = true;
+    stage.classList.remove('zoomed');
+    hint.textContent = 'Preparando a página…';
+    let base;
+    try {
+      [, base] = await Promise.all([loadEditor(), editBase(page)]);
+    } catch (err) {
+      console.error(err);
+      if (mine !== token) return;
+      image.hidden = false;
+      viewActions.hidden = false;
+      updateNav(true);
+      hint.textContent = 'Não deu para preparar a página para editar. Confira a conexão e tente de novo.';
+      return;
+    }
+    if (mine !== token) return;
+    await editor.open(page, base, () => mine === token);
+  }
+  editButton.addEventListener('click', showEdit);
+
+  // ---------- Sair sem aplicar ----------
+  // Tarjas ou edições que não foram aplicadas: fechar, cancelar ou Esc perguntam antes, numa janela do próprio app.
+
+  let settle = null; // resposta da confirmação aberta
+  $('#discard-keep').addEventListener('click', () => settle?.(false));
+  $('#discard-confirm').addEventListener('click', () => settle?.(true));
+  discard.addEventListener('cancel', (event) => { // Esc: continua editando
+    event.preventDefault();
+    settle?.(false);
+  });
+
+  /** @returns {Promise<boolean>} true: descartar */
+  function confirmDiscard(message) {
+    if (settle) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      settle = (ok) => {
+        settle = null;
+        discard.close();
+        resolve(ok);
+      };
+      $('#discard-text').textContent = message;
+      discard.showModal();
+      $('#discard-keep').focus();
+    });
+  }
+
+  const unsaved = () => (editor?.dirty() ? 'As edições desta página ainda não foram aplicadas. Se sair agora, elas se perdem.'
+    : redactDirty() ? 'As tarjas desta página ainda não foram aplicadas. Se sair agora, elas se perdem.' : '');
+
+  async function leaveIfSure(action) {
+    const message = unsaved();
+    if (message && !(await confirmDiscard(message))) return;
+    action();
+  }
+
+  // Esc: no modo Editar, fecha antes o painel ou o traço em andamento; com mudança não aplicada, pergunta. O keydown
+  // cancelado não chega a fechar a tela; o cancel é a reserva, para o navegador que fechar mesmo assim.
+  dialog.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !dialog.open) return;
+    if (editor?.active() && editor.escape()) {
+      event.preventDefault();
+      return;
+    }
+    if (unsaved()) {
+      event.preventDefault();
+      leaveIfSure(() => dialog.close());
+    }
+  }, true);
+  dialog.addEventListener('cancel', (event) => {
+    if (!unsaved()) return;
+    event.preventDefault();
+    leaveIfSure(() => dialog.close());
+  });
 
   // ---------- Copiar o texto ----------
   // O texto vai só para a área de transferência do aparelho: nunca para o console nem para o HTML da página.
@@ -568,7 +674,7 @@ export function setupViewer({
   });
 
   $('#viewer-crop').addEventListener('click', showCrop);
-  $('#viewer-close').addEventListener('click', () => dialog.close());
+  $('#viewer-close').addEventListener('click', () => leaveIfSure(() => dialog.close()));
   image.addEventListener('click', () => {
     if (swiped) { swiped = false; return; }
     stage.classList.toggle('zoomed');
@@ -615,6 +721,7 @@ export function setupViewer({
     redact.hidden = true;
     redactActions.hidden = true;
     marks = [];
+    editor?.close();
     const closed = page;
     page = null;
     setTimeout(() => onClose(closed), 0); // depois de o navegador devolver o foco por conta própria

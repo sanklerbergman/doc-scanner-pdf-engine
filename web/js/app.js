@@ -13,6 +13,9 @@ import { textWidth } from './fonts.js';
 import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex, stampCharacters } from './stamp.js';
 import { ocrWorkers, progressNote } from './ocr-plan.js';
 import { moveItem, setupReorder } from './reorder.js';
+import { paintEdits, rotateEdits, fileExtras, editCharacters } from './edits.js';
+import './edit-types.js';
+import { setupAllPages, spotGrid } from './all-pages.js';
 
 // O site oficial já proíbe ser embutido em outro pelo cabeçalho frame-ancestors (web/_headers). Esta checagem
 // fica como segunda camada, e protege cópias hospedadas onde não dá para enviar cabeçalhos: o app se recusa a
@@ -158,6 +161,9 @@ const els = {
   pdfa: $('#pdfa'),
   pdfaBlocked: $('#pdfa-blocked'),
   protectBlocked: $('#protect-blocked'),
+  allPages: $('#all-pages'),
+  allPagesOptions: $('#all-pages-options'),
+  allPagesPreview: $('#all-pages-preview'),
 };
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
@@ -171,6 +177,17 @@ const lockedWhileBusy = [
 // cancel: durante o OCR, interrompe a geração (botão Cancelar).
 const state = { pages: [], busy: false, output: null, compressChosen: false, cancel: null }; // output: PDFs gerados, [{file, url}]
 let nextId = 1;
+
+// "Em todas as páginas" (all-pages.js): numeração, cabeçalho, rodapé, marca d'água e rubrica entram nas próximas
+// fases. Mudar uma opção descarta o PDF gerado e redesenha a prévia.
+const allPages = setupAllPages({
+  section: els.allPages,
+  container: els.allPagesOptions,
+  changed() {
+    discardPdf();
+    drawAllPagesPreview();
+  },
+});
 
 function announce(message, kind = 'info') {
   els.status.textContent = message;
@@ -350,11 +367,77 @@ async function refreshThumb(page) {
     ? await drawPdfPage(page, THUMB_SIDE)
     : isDocument(page)
     ? await drawDocument(page, THUMB_SIDE)
-    : await canvasToBlob(renderPage(page.preview, page.preview.width, page.preview.height, {
-      rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: THUMB_SIDE, redactions: page.redactions,
-    }), 'image/jpeg', 0.8);
+    : await photoThumb(page);
   if (page.thumbUrl) URL.revokeObjectURL(page.thumbUrl);
   page.thumbUrl = URL.createObjectURL(blob);
+}
+
+// Miniatura da foto: a imagem recortada, filtrada e girada; com edição, a folha inteira (photoOnSheet). Guarda o
+// tamanho da imagem (page.shape): a proporção dela decide a folha (photoSheet).
+async function photoThumb(page) {
+  const picture = renderPage(page.preview, page.preview.width, page.preview.height, {
+    rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: THUMB_SIDE, redactions: page.redactions,
+  });
+  page.shape = { width: picture.width, height: picture.height };
+  const canvas = page.edits?.length ? photoOnSheet(picture, page, THUMB_SIDE) : picture;
+  try {
+    return await canvasToBlob(canvas, 'image/jpeg', 0.8);
+  } finally {
+    canvas.width = canvas.height = 0;
+    picture.width = picture.height = 0;
+  }
+}
+
+// ---------- Folha e edições ----------
+// As edições (edits.js) ficam de 0 a 1 na página como ela aparece; na foto, na folha inteira, com a margem.
+
+// Folha da foto como vai sair no PDF (layoutPage, com o tamanho e a margem escolhidos): o tamanho em pontos e onde a
+// imagem entra, com a origem em cima. shape: a foto recortada e girada (só a proporção conta).
+function photoSheet(shape) {
+  const { width, height, box } = layoutPage(shape.width, shape.height, els.pageSize.value, MARGINS[els.margin.value]);
+  return { width, height, image: { x: box.x, y: height - box.y - box.h, w: box.w, h: box.h } };
+}
+
+// Tarjas da foto (de 0 a 1 na imagem) levadas para a folha.
+const sheetRects = (rects, { width, height, image }) => (rects ?? []).map(({ x0, y0, x1, y1 }) => ({
+  x0: (image.x + x0 * image.w) / width, x1: (image.x + x1 * image.w) / width,
+  y0: (image.y + y0 * image.h) / height, y1: (image.y + y1 * image.h) / height,
+}));
+
+// A página como aparece, em pontos (a espessura dos traços das edições). Foto: a folha.
+function visibleSize(page) {
+  if (isPhoto(page)) {
+    const { width, height } = photoSheet(page.shape ?? { width: page.width, height: page.height });
+    return { width, height };
+  }
+  const size = page.kind === 'pdf' ? page.size : page.layout;
+  return page.rotation % 180 ? { width: size.height, height: size.width } : { width: size.width, height: size.height };
+}
+
+// Foto com edição: a folha inteira (com a margem e o formato escolhidos), a imagem no lugar, as edições e, por cima de
+// tudo, as tarjas. É assim que ela sai no PDF. Sem edição, a miniatura e a tela cheia continuam só com a imagem.
+// picture: a imagem já tarjada (nos pixels).
+function photoOnSheet(picture, page, maxSide, { edits = true, redact = true } = {}) {
+  const sheet = photoSheet({ width: picture.width, height: picture.height });
+  const scale = maxSide / Math.max(sheet.width, sheet.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(sheet.width * scale));
+  canvas.height = Math.max(1, Math.round(sheet.height * scale));
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(picture, sheet.image.x * scale, sheet.image.y * scale, sheet.image.w * scale, sheet.image.h * scale);
+  if (edits) paintEdits(ctx, page.edits, sheet);
+  if (redact) paintRedactions(ctx, sheetRects(page.redactions, sheet), canvas.width, canvas.height);
+  return canvas;
+}
+
+// Edições e, por cima, tarjas, num canvas que é a página como aparece (Word e página de PDF).
+function paintOver(canvas, page, { redact = true, edits = true } = {}) {
+  const ctx = canvas.getContext('2d');
+  if (edits) paintEdits(ctx, page.edits, visibleSize(page));
+  if (redact) paintRedactions(ctx, page.redactions, canvas.width, canvas.height);
 }
 
 // Pede a senha de um PDF protegido. Devolve a senha, ou null se a pessoa pular o arquivo. O campo é limpo na hora.
@@ -406,15 +489,16 @@ function askPdfPassword(name, wrong) {
 }
 
 // Página de PDF desenhada pelo PDF.js; se não der, um cartão com o formato da folha e o número.
-// redact: com as tarjas da página por cima (false na tela de tarjar, que desenha as caixas à parte).
-async function drawPdfPage(page, maxSide, redact = true) {
+// redact: com as tarjas da página por cima (false na tela de tarjar, que desenha as caixas à parte); edits: com as
+// edições (false no modo Editar, que as desenha à parte).
+async function drawPdfPage(page, maxSide, { redact = true, edits = true } = {}) {
   const tools = await loadPdfTools();
   const { canvas, real } = await tools.drawPdfPage(page.doc, { index: page.index, ...page.size }, {
     maxSide, rotation: page.rotation, number: page.number,
   });
   page.drawn = real;
   try {
-    if (redact) paintRedactions(canvas.getContext('2d'), page.redactions, canvas.width, canvas.height);
+    paintOver(canvas, page, { redact, edits });
     return await canvasToBlob(canvas, 'image/png');
   } finally {
     canvas.width = canvas.height = 0;
@@ -422,10 +506,10 @@ async function drawPdfPage(page, maxSide, redact = true) {
 }
 
 // Página de documento desenhada como vai sair no PDF. PNG: texto nítido, sem os borrões do JPEG.
-async function drawDocument(page, maxSide, redact = true) {
+async function drawDocument(page, maxSide, { redact = true, edits = true } = {}) {
   const { drawDocumentPage } = await loadDocuments();
   const canvas = drawDocumentPage(page.layout, { maxSide, rotation: page.rotation });
-  if (redact) paintRedactions(canvas.getContext('2d'), page.redactions, canvas.width, canvas.height);
+  paintOver(canvas, page, { redact, edits });
   try {
     return await canvasToBlob(canvas, 'image/png');
   } finally {
@@ -569,6 +653,7 @@ els.pages.addEventListener('click', async (event) => {
     case 'rotate':
       page.rotation = (page.rotation + 90) % 360;
       if (page.redactions?.length) page.redactions = rotateRedactions(page.redactions, 90);
+      if (page.edits?.length) page.edits = rotateEdits(page.edits, 90); // a folha da foto gira junto com a imagem
       page.ocr = null; // o OCR lê a página de pé: com outro giro, lê de novo
       await refreshThumb(page);
       renderPages();
@@ -606,22 +691,65 @@ setupReorder(els.pages, {
 
 // ---------- Tela cheia e recorte ----------
 
-async function renderProcessed(page, { redact = true } = {}) {
-  if (page.kind === 'pdf') return drawPdfPage(page, VIEW_SIDE, redact);
-  if (isDocument(page)) return drawDocument(page, VIEW_SIDE, redact);
-  const image = await decodeFile(page.file);
-  let canvas;
+// Página em tela cheia, como vai sair no PDF. redact e edits: com as tarjas e com as edições.
+async function renderProcessed(page, { redact = true, edits = true } = {}) {
+  if (page.kind === 'pdf') return drawPdfPage(page, VIEW_SIDE, { redact, edits });
+  if (isDocument(page)) return drawDocument(page, VIEW_SIDE, { redact, edits });
+  const picture = await renderPhoto(page, redact);
+  const canvas = edits && page.edits?.length ? photoOnSheet(picture, page, VIEW_SIDE, { redact }) : picture;
   try {
-    canvas = await renderPageAsync(image.source, image.width, image.height, {
+    return await canvasToBlob(canvas, 'image/jpeg', 0.9);
+  } finally {
+    canvas.width = canvas.height = 0;
+    picture.width = picture.height = 0;
+  }
+}
+
+// A foto em tela cheia: recortada, filtrada, girada e, com redact, tarjada.
+async function renderPhoto(page, redact = true) {
+  const image = await decodeFile(page.file);
+  try {
+    return await renderPageAsync(image.source, image.width, image.height, {
       rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: VIEW_SIDE,
       redactions: redact ? page.redactions : null,
     });
   } finally {
     image.release();
   }
-  const blob = await canvasToBlob(canvas, 'image/jpeg', 0.9);
-  canvas.width = canvas.height = 0;
-  return blob;
+}
+
+// Foto para a tela das tarjas: só a imagem (as tarjas da foto são marcadas nela), sem as tarjas e com a parte das
+// edições que cai sobre a imagem.
+async function photoForRedaction(page) {
+  const picture = await renderPhoto(page, false);
+  try {
+    if (page.edits?.length) {
+      const sheet = photoSheet({ width: picture.width, height: picture.height });
+      const scale = picture.width / sheet.image.w;
+      paintEdits(picture.getContext('2d'), page.edits, sheet, {
+        x: -sheet.image.x * scale, y: -sheet.image.y * scale, width: sheet.width * scale, height: sheet.height * scale,
+      });
+    }
+    return await canvasToBlob(picture, 'image/jpeg', 0.9);
+  } finally {
+    picture.width = picture.height = 0;
+  }
+}
+
+// Página para o modo Editar: como vai sair no PDF, mas sem as edições (o editor as desenha por cima), com o tamanho em
+// pontos e as tarjas na página como aparece (o editor as mostra por cima das edições). Foto: a folha inteira.
+async function editBase(page) {
+  if (!isPhoto(page)) return { blob: await renderProcessed(page, { edits: false }), ...visibleSize(page), redactions: page.redactions ?? [] };
+  const picture = await renderPhoto(page);
+  const sheet = photoSheet({ width: picture.width, height: picture.height });
+  const canvas = photoOnSheet(picture, page, VIEW_SIDE, { edits: false });
+  try {
+    const blob = await canvasToBlob(canvas, 'image/jpeg', 0.9);
+    return { blob, width: sheet.width, height: sheet.height, redactions: sheetRects(page.redactions, sheet) };
+  } finally {
+    canvas.width = canvas.height = 0;
+    picture.width = picture.height = 0;
+  }
 }
 
 const viewer = setupViewer({
@@ -642,16 +770,19 @@ const viewer = setupViewer({
     const changed = JSON.stringify(quad) !== JSON.stringify(page.quad);
     page.quad = quad;
     page.ocr = null;
-    // As tarjas ficam na foto já recortada: com outro recorte, elas cobririam outro lugar. Saem, com aviso.
-    if (changed && page.redactions?.length) {
+    // As tarjas e as edições ficam sobre a foto já recortada: com outro recorte, cobririam outro lugar. Saem, com aviso.
+    const lost = changed ? [page.redactions?.length && 'As tarjas', page.edits?.length && 'As edições'].filter(Boolean) : [];
+    if (lost.length) {
       page.redactions = [];
-      announce(`As tarjas da página ${state.pages.indexOf(page) + 1} foram apagadas porque o recorte mudou: marque de novo.`, 'error');
+      page.edits = [];
+      const what = lost.length === 2 ? 'As tarjas e as edições' : lost[0];
+      announce(`${what} da página ${state.pages.indexOf(page) + 1} foram apagadas porque o recorte mudou: marque de novo.`, 'error');
     }
     discardPdf();
     await refreshThumb(page);
     renderPages();
   },
-  renderPlain: (page) => renderProcessed(page, { redact: false }),
+  renderPlain: (page) => (isPhoto(page) ? photoForRedaction(page) : renderProcessed(page, { redact: false })),
   redactHint: (page) => (page.kind === 'pdf'
     ? 'Arraste sobre o que esconder. O que fica sob a tarja é apagado, não só coberto. Esta página é de um PDF: com tarja, ela sai como imagem, e o texto dela deixa de ser selecionável.'
     : 'Arraste sobre o que esconder. O que fica sob a tarja é apagado do PDF, não só coberto.'),
@@ -668,6 +799,17 @@ const viewer = setupViewer({
   },
   copyText: pageText,
   canCopy: () => !state.busy, // gerando o PDF ou procurando dados, o OCR e as páginas estão em uso
+  editBase,
+  async saveEdits(page, list) {
+    page.edits = list;
+    discardPdf();
+    await refreshThumb(page);
+    renderPages();
+    const index = state.pages.indexOf(page) + 1;
+    announce(list.length
+      ? `Página ${index}: ${list.length === 1 ? '1 edição' : `${list.length} edições`}, fixas na página do PDF.`
+      : `Página ${index}: sem edições.`);
+  },
   // A lista pode ter sido recriada enquanto a tela cheia estava aberta: devolve o foco ao cartão da página.
   onClose(page) {
     const index = state.pages.indexOf(page);
@@ -746,6 +888,15 @@ els.filterAll.addEventListener('change', async () => {
 });
 
 for (const select of [els.pageSize, els.margin, els.quality, els.ocr]) select.addEventListener('change', discardPdf);
+// A folha da foto com edição muda com o tamanho e a margem: as edições vão junto, na mesma posição relativa, e a
+// miniatura é desenhada de novo.
+for (const select of [els.pageSize, els.margin]) {
+  select.addEventListener('change', async () => {
+    const edited = state.pages.filter((page) => isPhoto(page) && page.edits?.length);
+    for (const page of edited) await refreshThumb(page);
+    if (edited.length) renderPages();
+  });
+}
 // Ligou o OCR: o código e o modelo (uns 2 MB) já começam a baixar, para o reconhecimento começar mais cedo ao gerar.
 els.ocr.addEventListener('change', () => {
   if (els.ocr.checked) loadOcr().then(({ preloadOcr }) => preloadOcr(), () => {});
@@ -1084,16 +1235,28 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     els.cancel.hidden = true;
     state.cancel = null;
 
-    // PDF/A com página de Word ou com carimbo: as fontes vão embutidas, só com as letras usadas (as mesmas para todos
-    // os arquivos). O carimbo leva as letras do nome e todas as que a data e a hora da assinatura podem usar.
+    // Edições de cada página em cada arquivo: as da própria página e as de "em todas as páginas" (all-pages.js), que
+    // contam a posição dentro do arquivo. Páginas montadas acima (foto, Word, PDF tarjado) recebem as edições na hora
+    // de montar cada arquivo; as de PDF copiadas, pelo copyPages.
+    const sizeOf = (i) => (pages[i]?.jpeg ? { width: pages[i].width, height: pages[i].height } : visibleSize(list[i]));
+    const extras = fileExtras(groups, (context) => allPages.produce({ ...context, page: list[context.index], size: sizeOf(context.index) }));
+    const editsIn = (g, p) => [...(list[groups[g][p]].edits ?? []), ...extras[g][p]];
+    const withEdits = (built, page, edits) => (!edits.length ? built
+      : { ...built, edits, ...(built.jpeg && page.redactions?.length ? { redactions: page.redactions } : {}) });
+
+    // PDF/A com página de Word, com texto nas edições ou com carimbo: as fontes vão embutidas, só com as letras usadas
+    // (as mesmas para todos os arquivos). O carimbo leva as letras do nome e todas as que a data e a hora da assinatura
+    // podem usar.
     let fonts = null;
-    if (pdfa && (list.some(isDocument) || (signer && stamp))) {
+    const fontPages = groups.flatMap((group, g) => group.map((i, p) => pages[i] && withEdits(pages[i], list[i], editsIn(g, p))))
+      .filter(Boolean);
+    if (pdfa && (list.some(isDocument) || (signer && stamp) || fontPages.some((page) => editCharacters(page.edits).size))) {
       announce('Preparando as fontes do PDF/A…');
       const { embedFonts } = await loadPdfaFonts().catch(() => {
         throw fontError();
       });
       const extra = signer && stamp ? stampCharacters(signer.name) : undefined;
-      fonts = await embedFonts(pages.filter(Boolean), extra).catch((err) => {
+      fonts = await embedFonts(fontPages, extra).catch((err) => {
         if (!(err instanceof TypeError) && err?.name !== 'TrueTypeError') throw err;
         throw fontError();
       });
@@ -1134,14 +1297,24 @@ async function generate({ signer, stamp = null, append = null } = {}) {
         if (!wanted.has(page.doc)) wanted.set(page.doc, []);
         wanted.get(page.doc).push(page.index);
       }
+      // Edições das páginas de PDF copiadas neste arquivo, por PDF de origem: pela posição da página, com o giro do app.
+      const editedCopies = new Map();
+      group.forEach((i, p) => {
+        const page = list[i];
+        const edits = editsIn(g, p);
+        if (page.kind !== 'pdf' || pages[i] || !edits.length) return;
+        if (!editedCopies.has(page.doc)) editedCopies.set(page.doc, new Map());
+        editedCopies.get(page.doc).set(page.index, { edits, rotation: page.rotation });
+      });
       const pagesOf = (compressed) => {
         const copies = new Map([...wanted].map(([doc, indices]) => [doc, tools.copyPages(doc, indices, {
           replace: compressed ? replacements.get(doc) : undefined,
           ocr: useOcr ? scannedWords(list, doc) : undefined,
+          edits: editedCopies.get(doc),
         })]));
-        return group.map((i) => {
+        return group.map((i, p) => {
           const page = list[i];
-          if (pages[i]) return pages[i];
+          if (pages[i]) return withEdits(pages[i], page, editsIn(g, p));
           const source = copies.get(page.doc);
           return { copy: { source, page: source.pages.get(page.index) }, rotation: page.rotation };
         });
@@ -1454,6 +1627,7 @@ function renderOutputPreview() {
       el('div', { className: 'output-thumbs' }, thumbs),
     ]);
   }));
+  drawAllPagesPreview(); // a primeira página do primeiro arquivo pode ter mudado
 }
 
 // Tocar numa miniatura da prévia abre a página em tela cheia.
@@ -1894,25 +2068,24 @@ function resetSigning() {
 }
 
 // Assinar sem reescrever: a lista é um PDF só, inteiro e na ordem, e nada do que foi escolhido muda o arquivo (giro,
-// tarja, compressão, OCR, senha, dividir). Aí a assinatura entra no fim do arquivo, e as que ele já tinha continuam
-// valendo. O PDF/A não vale para páginas de PDF.
-function unchangedPdf() {
-  const doc = state.pages[0]?.doc;
-  if (!doc || state.pages.length !== doc.pages.length) return null;
-  const same = state.pages.every((page, i) => page.kind === 'pdf' && page.doc === doc && page.index === i && !page.rotation && !page.redactions?.length);
-  if (!same || els.pdfCompress.value !== 'none' || els.protect.checked || els.ocr.checked) return null;
-  let groups;
+// tarja, edição, compressão, OCR, senha, dividir, "em todas as páginas"): unchangedSource, em pdf-append.js. Aí a
+// assinatura entra no fim do arquivo, e as que ele já tinha continuam valendo. O PDF/A não vale para páginas de PDF.
+async function unchangedPdf() {
+  if (state.pages[0]?.kind !== 'pdf') return null;
+  const { unchangedSource } = await loadAppend();
+  let groups = null;
   try {
     groups = outputGroups(state.pages.length);
   } catch {
-    return null;
+    // intervalos inválidos: o PDF não sai como veio
   }
-  return groups.length === 1 && groups[0].length === doc.pages.length && groups[0].every((n, i) => n === i) ? doc : null;
+  const changes = els.pdfCompress.value !== 'none' || els.protect.checked || els.ocr.checked || allPages.active();
+  return unchangedSource(state.pages, { changes, groups });
 }
 
 // Passo 2 da janela: como a assinatura entra (PDF novo ou o PDF como veio) e se o carimbo pode ser usado.
 async function prepareSignOptions() {
-  const doc = unchangedPdf();
+  const doc = await unchangedPdf();
   let blocker = null;
   let certified = false;
   if (doc) {
@@ -1934,7 +2107,10 @@ async function prepareSignOptions() {
       ? 'Este PDF já tem assinatura. A sua entra no fim do arquivo, e as que ele tem continuam valendo. O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos).'
       : 'O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos): a sua assinatura entra no fim do arquivo, sem mudar nada nele.';
   } else if (signedSources.size) {
-    mode = 'O PDF vai ser montado de novo, e as assinaturas que ele já tinha deixam de valer. Para manter, assine o PDF sozinho, sem mudar nada nele (sem juntar, girar, tarjar, comprimir nem ligar o OCR).';
+    // Edição fixa na página (ou em todas as páginas) muda o conteúdo: o aviso diz isso primeiro.
+    mode = state.pages.some((page) => page.edits?.length) || allPages.active()
+      ? 'As edições ficam fixas nas páginas: o PDF vai ser montado de novo, e as assinaturas que ele já tinha deixam de valer. Para manter, assine o PDF sozinho, sem editar nem mudar nada nele.'
+      : 'O PDF vai ser montado de novo, e as assinaturas que ele já tinha deixam de valer. Para manter, assine o PDF sozinho, sem mudar nada nele (sem juntar, girar, tarjar, editar, comprimir nem ligar o OCR).';
   }
   els.signMode.hidden = !mode;
   els.signMode.firstElementChild.textContent = mode;
@@ -1976,10 +2152,7 @@ function stampChoice() {
 }
 
 // Os seis lugares: três em cima e três embaixo, numa folha em miniatura. Embaixo, à direita, é o padrão.
-for (const [value, label] of Object.entries(STAMP_POSITIONS)) {
-  const input = el('input', { type: 'radio', name: 'stamp-position', value, checked: value === 'bottom-right' });
-  els.stampGrid.append(el('label', { className: 'stamp-spot', title: label }, [input, el('span', { className: 'sr-only', textContent: label })]));
-}
+spotGrid(els.stampGrid, 'stamp-position');
 
 const loadImage = (url) => new Promise((resolve, reject) => {
   const image = new Image();
@@ -1988,41 +2161,28 @@ const loadImage = (url) => new Promise((resolve, reject) => {
   image.src = url;
 });
 
-// Tamanho da página como ela vai sair (em pontos) e onde a miniatura entra nela. A foto ganha a margem e o
-// formato de folha escolhidos (layoutPage); página de PDF e de Word já é a folha inteira.
-function pageGeometry(page, image) {
-  if (isPhoto(page)) {
-    const { width, height, box } = layoutPage(image.naturalWidth, image.naturalHeight, els.pageSize.value, MARGINS[els.margin.value]);
-    return { width, height, image: { x: box.x, y: height - box.y - box.h, w: box.w, h: box.h } };
-  }
-  const size = page.kind === 'pdf' ? page.size : page.layout;
-  const sideways = (page.rotation ?? 0) % 180 !== 0;
-  const width = sideways ? size.height : size.width;
-  const height = sideways ? size.width : size.height;
-  return { width, height, image: { x: 0, y: 0, w: width, h: height } };
+// Tamanho da página como ela vai sair (em pontos) e onde a miniatura entra nela. A foto ganha a margem e o formato de
+// folha escolhidos (layoutPage), e a miniatura dela é só a imagem (com edição, já é a folha inteira); página de PDF e
+// de Word já é a folha inteira.
+function pageGeometry(page) {
+  const { width, height } = visibleSize(page);
+  const image = isPhoto(page) && !page.edits?.length ? photoSheet(page.shape).image : { x: 0, y: 0, w: width, h: height };
+  return { width, height, image };
 }
 
-// Prévia: a página escolhida com o carimbo no lugar e no tamanho em que ele vai sair (stamp.js).
-let previewToken = 0;
-async function drawStampPreview() {
-  const token = ++previewToken;
-  if (els.stampOptions.hidden || !signing.signer) return;
-  const { pages } = stampTarget();
-  const choice = stampChoice();
-  const page = pages[stampPageIndex(choice.page, pages.length)];
-  let image;
+// Miniatura e geometria de uma página, para as prévias (carimbo, "em todas as páginas"). Sem a miniatura, uma folha
+// A4 em branco.
+async function previewSource(page) {
   try {
-    image = await loadImage(page.thumbUrl);
+    return { image: await loadImage(page.thumbUrl), geometry: pageGeometry(page) };
   } catch {
-    image = null;
+    return { image: null, geometry: { width: 595.28, height: 841.89, image: null } };
   }
-  if (token !== previewToken) return;
-  const geometry = image ? pageGeometry(page, image) : { width: 595.28, height: 841.89, image: null };
-  const layout = stampLayout(signing.signer.name, new Date(), geometry.width);
-  const { visible } = placeStamp({ box: [0, 0, geometry.width, geometry.height], rotate: 0 }, choice.position, layout);
+}
 
-  // Até 130 px de largura: cabe ao lado da folha dos lugares no celular, mesmo com barra de rolagem.
-  const canvas = els.stampPreview;
+// Desenha a página da prévia no canvas, com até 130 px de largura (cabe ao lado da folha dos lugares no celular, mesmo
+// com barra de rolagem). Devolve o contexto em pontos da página, com a origem em cima, para o que vai por cima.
+function paintPreview(canvas, { image, geometry }) {
   const cssWidth = Math.min(130, (130 * geometry.width) / Math.max(geometry.width, geometry.height * 0.75));
   const scale = cssWidth / geometry.width;
   const ratio = window.devicePixelRatio || 1;
@@ -2035,6 +2195,47 @@ async function drawStampPreview() {
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, geometry.width, geometry.height);
   if (image && geometry.image) ctx.drawImage(image, geometry.image.x, geometry.image.y, geometry.image.w, geometry.image.h);
+  return ctx;
+}
+
+// Prévia de "em todas as páginas": a primeira página do primeiro arquivo, com o que as opções ligadas acrescentam.
+let allPagesToken = 0;
+async function drawAllPagesPreview() {
+  const token = ++allPagesToken;
+  if (els.allPages.hidden || !state.pages.length) return;
+  let groups;
+  try {
+    groups = outputGroups(state.pages.length);
+  } catch {
+    return; // intervalos inválidos: o aviso já está na prévia do resultado
+  }
+  const index = groups[0][0];
+  const page = state.pages[index];
+  const source = await previewSource(page);
+  if (token !== allPagesToken) return;
+  const ctx = paintPreview(els.allPagesPreview, source);
+  const size = { width: source.geometry.width, height: source.geometry.height };
+  const extras = allPages.produce({ position: 1, total: groups[0].length, file: 1, files: groups.length, index, page, size });
+  paintEdits(ctx, extras, size);
+  els.allPagesPreview.setAttribute('aria-label', `Prévia da página ${index + 1}${extras.length ? ', com o que entra em todas as páginas' : ''}`);
+}
+
+// Prévia: a página escolhida com o carimbo no lugar e no tamanho em que ele vai sair (stamp.js).
+let previewToken = 0;
+async function drawStampPreview() {
+  const token = ++previewToken;
+  if (els.stampOptions.hidden || !signing.signer) return;
+  const { pages } = stampTarget();
+  const choice = stampChoice();
+  const page = pages[stampPageIndex(choice.page, pages.length)];
+  const source = await previewSource(page);
+  if (token !== previewToken) return;
+  const { geometry } = source;
+  const layout = stampLayout(signing.signer.name, new Date(), geometry.width);
+  const { visible } = placeStamp({ box: [0, 0, geometry.width, geometry.height], rotate: 0 }, choice.position, layout);
+
+  const canvas = els.stampPreview;
+  const ctx = paintPreview(canvas, source);
   ctx.strokeStyle = '#294a8c';
   ctx.lineWidth = 0.75;
   ctx.strokeRect(visible.x + 0.5, visible.y + 0.5, visible.w - 1, visible.h - 1);
