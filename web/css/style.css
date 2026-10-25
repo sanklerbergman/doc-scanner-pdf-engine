@@ -440,6 +440,9 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
   margin: 0; padding: 0; border: 0; background: var(--bg); color: var(--text);
 }
 .viewer[open] { display: flex; flex-direction: column; }
+/* Com a tela cheia (ou a câmera) aberta, a página de trás não rola: quando nada na tela cheia tinha o que rolar, o
+   gesto passava para a página do scanner, que rolava solta por baixo (no iPhone e com a roda do mouse). */
+html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .viewer-head h2 { margin: 0; font-size: 1.05rem; }
 .viewer-frame { flex: 1 1 0; min-height: 0; position: relative; display: flex; }
@@ -460,7 +463,7 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 }
 .viewer-image { max-width: 100%; max-height: 100%; display: block; cursor: zoom-in; box-shadow: var(--shadow), 0 0 0 1px var(--border); touch-action: pan-y pinch-zoom; }
 /* Ampliado: a imagem passa a ter 2,2× a largura da tela e a área rola nos dois sentidos. */
-.viewer-stage.zoomed { display: block; overflow: auto; -webkit-overflow-scrolling: touch; }
+.viewer-stage.zoomed { display: block; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .viewer-stage.zoomed .viewer-image { max-width: none; max-height: none; width: 220%; cursor: zoom-out; touch-action: auto; }
 /* Altura fixa (duas linhas): trocar o texto não pode mexer no tamanho da foto no meio de um arrasto. */
 .viewer-hint { margin: 0; padding: 8px 16px 0; height: 3.8em; overflow: hidden; text-align: center; font-size: 0.9rem; color: var(--muted); background: var(--surface); }
@@ -585,7 +588,7 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 /* Preencher (js/form-panel.js): a página como vai sair, com uma caixa sobre cada campo. Com o campo em foco ampliado,
    a área rola nos dois sentidos; a margem automática centraliza sem esconder a ponta. O fundo do palco vai até o alto
    do painel (o JS põe o padding de baixo), para o último campo da página também subir acima dele. */
-.viewer-stage.filling { overflow: auto; justify-content: flex-start; align-items: flex-start; -webkit-overflow-scrolling: touch; }
+.viewer-stage.filling { overflow: auto; overscroll-behavior: contain; justify-content: flex-start; align-items: flex-start; -webkit-overflow-scrolling: touch; }
 .fill { position: relative; flex: none; margin: auto; }
 .fill img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; box-shadow: 0 0 0 1px var(--border); }
 .fill-boxes { position: absolute; inset: 0; }
