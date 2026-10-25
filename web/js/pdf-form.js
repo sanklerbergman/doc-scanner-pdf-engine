@@ -9,6 +9,7 @@ import { Parser, PdfDict, PdfName, PdfRef, PdfStream, PdfString, Keyword, isName
 import { textWidth, winAnsiCode, pdfFont } from './fonts.js';
 import { editType, circlePath, pathOps, pdfNumber, pageMatrix } from './edits.js';
 import './edit-shapes.js'; // ✓ e ✗ (os caminhos da v4.0.0)
+import { readFieldFormat, formatFieldValue, fieldInputHints } from './pdf-form-format.js';
 
 const encoder = new TextEncoder();
 
@@ -243,6 +244,9 @@ async function buildField(doc, id, { kind, node, nodes, widgets }, { order, lock
     }
   }
   field.calculated = field.scripts.calculate !== undefined || nodes.some((n) => n.ref && order.has(n.ref.num));
+  // Formato do Acrobat (número, data, máscara…), reconhecido pelo texto da chamada (pdf-form-format.js): o valor vai
+  // formatado para a aparência. null: sai como digitado.
+  field.format = kind === 'text' ? readFieldFormat(field.scripts.format, field.scripts.keystroke) : null;
   field.locked = kind !== 'signature' && locks(node.name);
 
   // Quem não dá para preencher, e por quê (o painel mostra o motivo).
@@ -590,12 +594,12 @@ export class PdfForm {
   }
 
   /**
-   * O que acontece com o valor atual de um campo no PDF novo, sem mudar nada.
+   * O que acontece com o valor de um campo no PDF novo, sem mudar nada: o atual ou, com value, um que ainda não foi
+   * gravado (o que a pessoa está digitando no painel).
    * @returns {{clipped: boolean, missing: string}}
    */
-  check(id) {
+  check(id, value = this.value(id)) {
     const field = this.fields[id];
-    const value = this.value(id);
     let clipped = false;
     const missing = new Set();
     if (!field?.fillable) return { clipped, missing: '' };
@@ -772,6 +776,76 @@ function normalizeValue(field, value) {
 
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
+// ---------- Painel de preenchimento ----------
+// Lógica do painel (form-panel.js) que não depende da tela: o contador, a dica e o teclado do campo, a formatação ao
+// sair do campo e os obrigatórios vazios.
+
+/** "12 de 34": a posição do campo entre os da página. */
+export const counterText = (position, total) => `${position} de ${total}`;
+
+/**
+ * Dica (placeholder), teclado do celular (inputmode) e limite do que se digita (maxlength) de um campo de texto.
+ * @returns {{placeholder: string, inputMode: string, maxLength: number | null}}
+ */
+export function inputHints(field) {
+  const hints = field.format ? fieldInputHints(field.format) : { placeholder: '', inputMode: 'text' };
+  return { ...hints, maxLength: field.maxLen ?? null };
+}
+
+/**
+ * O que o controle do painel mostra quando a pessoa sai do campo: o valor formatado pelo formato do Acrobat ou, se não
+ * serve para o formato, o digitado, com o aviso (sem bloquear). O negativo que o PDF mostra em vermelho, sem o sinal,
+ * fica com o sinal no controle: formatado de novo na aparência, ele continua negativo (e vermelho).
+ * @param {object} field
+ * @param {string} typed
+ * @returns {{ok: boolean, text: string, message?: string, red?: boolean}}
+ */
+export function formatTyped(field, typed) {
+  if (!field.format) return { ok: true, text: String(typed ?? '') };
+  const result = formatFieldValue(field.format, typed);
+  if (result.ok && result.red && !/\(.*\)/.test(result.text)) return { ...result, text: `-${result.text}` };
+  return result;
+}
+
+const isEmpty = (value) => value == null || (Array.isArray(value) ? !value.length : !String(value).trim());
+
+/**
+ * Campos obrigatórios que ficaram vazios (avisados ao aplicar, sem bloquear).
+ * @param {object[]} fields
+ * @param {(field: object) => unknown} valueOf o valor de cada campo (o do painel ou o gravado)
+ */
+export function requiredEmpty(fields, valueOf) {
+  return fields.filter((field) => field.required && field.editable && isEmpty(valueOf(field)));
+}
+
+// Nome de opção que não diz nada: número, estado padrão ("On", "Yes", "Escolha1") ou repetido entre as opções.
+const MEANINGLESS = /^(\d+|on|off|yes|choice\s*\d*|escolha\s*\d*|op[cç][aã]o\s*\d*|option\s*\d*)$/i;
+
+/**
+ * Nomes das opções da caixa e do rádio para o painel: o do /Opt ou do estado e, quando ele não diz nada, o texto da
+ * página à direita do widget daquela opção (nearbyText).
+ * @param {object} field
+ * @param {number} index a página
+ * @param {Array<{str: string, x0: number, y0: number, x1: number, y1: number}>} [items] o texto da página
+ * @returns {Map<string, string>} estado → nome
+ */
+export function optionLabels(field, index, items = []) {
+  const counts = new Map();
+  for (const option of field.options) counts.set(option.label, (counts.get(option.label) ?? 0) + 1);
+  const out = new Map();
+  field.options.forEach((option, i) => {
+    const { label } = option;
+    const blank = MEANINGLESS.test(label.trim());
+    if (!blank && counts.get(label) === 1) {
+      out.set(option.value, label);
+      return;
+    }
+    const widget = field.widgets.find((w) => w.page === index && w.onState === option.value);
+    out.set(option.value, (widget && nearbyText(widget.box, items, 'right')) || (blank ? `Opção ${i + 1}` : `${label} (${i + 1})`));
+  });
+  return out;
+}
+
 // ---------- Aparências ----------
 
 /**
@@ -875,12 +949,12 @@ function formStream({ w, h, matrix }, ops, font) {
   return new PdfStream(dict, encoder.encode(content));
 }
 
-// Texto posicionado, com a fonte, o tamanho e a cor do /DA, recortado na área útil, entre /Tx BMC e EMC.
-function textBlock(frame, widget, size, runs) {
+// Texto posicionado, com a fonte, o tamanho e a cor do /DA (ou color), recortado na área útil, entre /Tx BMC e EMC.
+function textBlock(frame, widget, size, runs, color = widget.da.color) {
   const { w, h, inner } = frame;
   const ops = ['/Tx BMC', 'q', `${n(inner)} ${n(inner)} ${n(w - 2 * inner)} ${n(h - 2 * inner)} re W n`];
   if (runs.length) {
-    ops.push('BT', `/F1 ${n(size)} Tf`, widget.da.color ? colorOp(widget.da.color) : '0 g');
+    ops.push('BT', `/F1 ${n(size)} Tf`, color ? colorOp(color) : '0 g');
     for (const { x, y, text } of runs) ops.push(`1 0 0 1 ${n(x)} ${n(y)} Tm ${pdfString(text)} Tj`);
     ops.push('ET');
   }
@@ -898,9 +972,13 @@ function alignX(align, width, { w, inner }) {
 function textAppearance(field, widget, frame, value) {
   const { w, h, inner } = frame;
   const font = widget.da.font;
-  let { text, missing } = winAnsi(value);
+  // Com formato do Acrobat, o texto formatado; o negativo pintado de vermelho (sem o sinal) sai em vermelho.
+  const shown = field.format ? formatFieldValue(field.format, value) : { text: value };
+  let { text, missing } = winAnsi(shown.text);
   let clipped = false;
-  if (field.maxLen && [...text].length > field.maxLen) {
+  // /MaxLen limita o que se digita; o texto formatado pode passar dele (decisão do dono). No pente, as casas são as
+  // do /MaxLen.
+  if (field.maxLen && (field.comb || !field.format) && [...text].length > field.maxLen) {
     text = [...text].slice(0, field.maxLen).join('');
     clipped = true;
   }
@@ -982,7 +1060,7 @@ function textAppearance(field, widget, frame, value) {
     for (let i = 1; i < field.maxLen; i++) lines.push(`${n((i * w) / field.maxLen)} 0 m ${n((i * w) / field.maxLen)} ${n(h)} l`);
     ops.push(`q ${colorOp(widget.borderColor, true)} ${n(frame.bw)} w ${lines.join(' ')} S Q`);
   }
-  ops.push(...textBlock(frame, widget, size, runs));
+  ops.push(...textBlock(frame, widget, size, runs, shown.red ? [1, 0, 0] : widget.da.color));
   return { stream: formStream(frame, ops, font), clipped, missing };
 }
 

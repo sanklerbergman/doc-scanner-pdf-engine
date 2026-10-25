@@ -349,7 +349,9 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     render(-1, { keepFocus: true });
   }
   // No quadro seguinte, fora do aviso do ResizeObserver: mudar a superfície dentro dele dava "ResizeObserver loop" no WebKit.
-  new ResizeObserver(() => requestAnimationFrame(fit)).observe(stage);
+  // O próprio observador também começa no quadro seguinte: o módulo carrega sob demanda, e criado no meio da entrega dos
+  // avisos dos outros (a promessa do import resolvida entre um aviso e outro), o WebKit dava o mesmo erro.
+  requestAnimationFrame(() => new ResizeObserver(() => requestAnimationFrame(fit)).observe(stage));
 
   // ---------- Desenho e caixas ----------
 

@@ -1,6 +1,7 @@
 // Tela cheia de uma página: mostra como ela vai sair no PDF, deixa ajustar o recorte arrastando os quatro
 // cantos sobre a foto original, marcar tarjas (retângulos que apagam o que está embaixo, redact.js), editar a página
-// (desenho, formas e marcas que ficam fixos no PDF, editor.js) e copiar o texto da página para a área de transferência.
+// (desenho, formas e marcas que ficam fixos no PDF, editor.js), preencher os campos do formulário de uma página de PDF
+// (form-panel.js) e copiar o texto da página para a área de transferência.
 import { FULL_QUAD, fromRotated, toRotated, isConvex, isFullFrame } from './geometry.js';
 import { normalizeRect } from './redact.js';
 import { wordCount } from './page-text.js';
@@ -31,11 +32,18 @@ const LOUPE_GAP = 48; // do dedo até a borda da lupa: o dedo não cobre
  * @param {(page) => Promise<{blob: Blob, width: number, height: number, redactions: object[]}>} deps.editBase a
  *   página para o modo Editar: como vai sair no PDF, sem as edições; o tamanho dela em pontos e as tarjas nela
  * @param {(page, list: object[]) => Promise<void>} deps.saveEdits grava as edições e atualiza a miniatura
+ * @param {(page) => boolean} [deps.canFill] a página é de um PDF com campos que dá para preencher
+ * @param {(page) => Promise<{blob: Blob, width: number, height: number, form: object, index: number, rotation: number}>}
+ *   [deps.fillBase] a página para o modo Preencher, como vai sair; o formulário, a página no PDF e o giro do app
+ * @param {(page, changes: Map<number, unknown>, problems: object) => Promise<string>} [deps.saveForm] grava os valores
+ *   do formulário (form-panel.js) e devolve o aviso
+ * @param {(page) => Promise<object[] | null>} [deps.fillText] o texto da página, para os rótulos dos campos
  * @param {(page) => void} deps.onClose chamado ao fechar, para devolver o foco ao cartão da página
  */
 export function setupViewer({
   renderProcessed, canCrop, viewHint = () => null, renderOriginal, detect, applyCrop, step, renderPlain, redactHint,
   saveRedactions, copyText, canCopy, editBase, saveEdits, onClose,
+  canFill = () => false, fillBase, saveForm, fillText = async () => null,
 }) {
   const dialog = $('#viewer');
   const title = $('#viewer-title');
@@ -63,6 +71,7 @@ export function setupViewer({
   const redactApply = $('#redact-apply');
   const copyButton = $('#viewer-copy');
   const editButton = $('#viewer-edit');
+  const fillButton = $('#viewer-fill');
   const discard = $('#discard-dialog');
 
   let page = null;
@@ -73,9 +82,10 @@ export function setupViewer({
   let copying = null; // AbortController da cópia do texto em andamento (o OCR pode levar segundos)
   let loupeOwner = null; // ponteiro que arrasta o canto mostrado na lupa
   let editor = null; // modo Editar (editor.js), carregado na primeira vez
+  let filler = null; // modo Preencher (form-panel.js), carregado na primeira vez
   const urls = { view: '', crop: '', redact: '' };
   // Recorte, tarjas ou edição: sem trocar de página.
-  const editing = () => !crop.hidden || !redact.hidden || !!editor?.active();
+  const editing = () => !crop.hidden || !redact.hidden || !!editor?.active() || !!filler?.active();
 
   function setUrl(kind, img, blob) {
     if (urls[kind]) URL.revokeObjectURL(urls[kind]);
@@ -100,7 +110,9 @@ export function setupViewer({
     else showView();
   }
 
-  async function showView() {
+  // note: aviso que fica na dica depois de carregar (o resultado de "Aplicar" no Preencher). Como ouvinte de clique,
+  // recebe o evento: aí não há aviso.
+  async function showView(note = '') {
     const mine = nextToken();
     title.textContent = label;
     crop.hidden = true;
@@ -108,21 +120,24 @@ export function setupViewer({
     redact.hidden = true;
     redactActions.hidden = true;
     editor?.close();
+    filler?.close();
     viewActions.hidden = false;
     cropButton.hidden = !canCrop(page);
+    fillButton.hidden = !canFill(page);
     copyButton.hidden = !canCopy(page) || !clipboardWorks();
     updateNav(true);
     image.hidden = false;
     stage.classList.remove('zoomed');
     image.src = page.thumbUrl; // aparece na hora; a versão nítida entra em seguida
     image.alt = `${label}, como vai sair no PDF`;
-    hint.textContent = 'Carregando em alta qualidade…';
+    const message = typeof note === 'string' ? note : '';
+    hint.textContent = message || 'Carregando em alta qualidade…';
     try {
       const blob = await renderProcessed(page);
       if (mine !== token) return;
       setUrl('view', image, blob);
       // Com a cópia do texto em andamento, o aviso dela continua na tela.
-      if (!copying) hint.textContent = viewHint(page) ?? 'É assim que a página vai sair no PDF. Toque na imagem para ampliar.';
+      if (!copying) hint.textContent = message || (viewHint(page) ?? 'É assim que a página vai sair no PDF. Toque na imagem para ampliar.');
     } catch (err) {
       console.error(err);
       if (mine === token && !copying) hint.textContent = 'Mostrando a miniatura (não deu para carregar em alta qualidade).';
@@ -502,6 +517,49 @@ export function setupViewer({
   }
   editButton.addEventListener('click', showEdit);
 
+  // ---------- Preencher ----------
+  // O modo Preencher (form-panel.js) carrega na primeira vez. A página aparece como vai sair (com os valores já
+  // aplicados, as edições e as tarjas), com uma caixa sobre cada campo; os campos ficam num painel que abre de baixo.
+
+  let fillLoading = null;
+  // Ao sair do modo Preencher (Aplicar ou Cancelar), o foco volta para o botão "Preencher"; o aviso fica na dica.
+  const leaveFill = (note) => {
+    showView(note);
+    fillButton.focus();
+  };
+  const loadFill = () => (fillLoading ??= import('./form-panel.js').then(({ setupFill }) => (filler = setupFill({
+    stage, hint, save: saveForm, confirm: confirmDiscard, leave: leaveFill, textItems: fillText,
+  }))).catch((err) => {
+    fillLoading = null; // sem rede e sem cache: tenta de novo na próxima vez
+    throw err;
+  }));
+
+  async function showFill() {
+    if (!canFill(page)) return;
+    const mine = nextToken();
+    title.textContent = `Preencher: ${label}`;
+    updateNav(false);
+    image.hidden = true;
+    viewActions.hidden = true;
+    stage.classList.remove('zoomed');
+    hint.textContent = 'Preparando a página…';
+    let base;
+    try {
+      [, base] = await Promise.all([loadFill(), fillBase(page)]);
+    } catch (err) {
+      console.error(err);
+      if (mine !== token) return;
+      image.hidden = false;
+      viewActions.hidden = false;
+      updateNav(true);
+      hint.textContent = 'Não deu para preparar a página para preencher. Confira a conexão e tente de novo.';
+      return;
+    }
+    if (mine !== token) return;
+    await filler.open(page, base, () => mine === token);
+  }
+  fillButton.addEventListener('click', showFill);
+
   // ---------- Sair sem aplicar ----------
   // Tarjas ou edições que não foram aplicadas: fechar, cancelar ou Esc perguntam antes, numa janela do próprio app.
 
@@ -529,7 +587,8 @@ export function setupViewer({
   }
 
   const unsaved = () => (editor?.dirty() ? 'As edições desta página ainda não foram aplicadas. Se sair agora, elas se perdem.'
-    : redactDirty() ? 'As tarjas desta página ainda não foram aplicadas. Se sair agora, elas se perdem.' : '');
+    : redactDirty() ? 'As tarjas desta página ainda não foram aplicadas. Se sair agora, elas se perdem.'
+    : filler?.dirty() ? 'Os valores desta página ainda não foram aplicados. Se sair agora, eles se perdem.' : '');
 
   async function leaveIfSure(action) {
     const message = unsaved();
@@ -541,7 +600,7 @@ export function setupViewer({
   // cancelado não chega a fechar a tela; o cancel é a reserva, para o navegador que fechar mesmo assim.
   dialog.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || !dialog.open) return;
-    if (editor?.active() && editor.escape()) {
+    if ((editor?.active() && editor.escape()) || (filler?.active() && filler.escape())) {
       event.preventDefault();
       return;
     }
@@ -725,6 +784,7 @@ export function setupViewer({
     redactActions.hidden = true;
     marks = [];
     editor?.close();
+    filler?.close();
     const closed = page;
     page = null;
     setTimeout(() => onClose(closed), 0); // depois de o navegador devolver o foco por conta própria

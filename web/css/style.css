@@ -582,6 +582,52 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .text-options { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
 .text-options .field { flex: 1 1 120px; }
 .text-options .edit-prop { flex: 1 1 100%; }
+/* Preencher (js/form-panel.js): a página como vai sair, com uma caixa sobre cada campo. Com o campo em foco ampliado,
+   a área rola nos dois sentidos; a margem automática centraliza sem esconder a ponta. O fundo do palco vai até o alto
+   do painel (o JS põe o padding de baixo), para o último campo da página também subir acima dele. */
+.viewer-stage.filling { overflow: auto; justify-content: flex-start; align-items: flex-start; -webkit-overflow-scrolling: touch; }
+.fill { position: relative; flex: none; margin: auto; }
+.fill img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; box-shadow: 0 0 0 1px var(--border); }
+.fill-boxes { position: absolute; inset: 0; }
+.fill-box {
+  position: absolute; box-sizing: border-box; padding: 0; border: 2px solid rgb(15 118 110 / 55%); border-radius: 3px;
+  background: rgb(45 212 191 / 12%); cursor: pointer; touch-action: manipulation;
+}
+/* Alvo de toque maior que o campo: uma caixa de 10 pt ainda dá para pegar com o dedo. */
+.fill-box::before { content: ""; position: absolute; inset: -6px; }
+.fill-box.filled { background: rgb(45 212 191 / 30%); }
+.fill-box.locked { border-style: dashed; border-color: rgb(91 100 112 / 60%); background: rgb(91 100 112 / 10%); }
+.fill-box.warning { border-color: #b42318; }
+.fill-box.current { z-index: 1; border: 3px solid #0f766e; box-shadow: 0 0 0 2px #fff, 0 0 0 5px rgb(15 118 110 / 45%); }
+.fill-panel {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; max-width: 640px; max-height: 85dvh; margin: 0 auto;
+  overflow: auto; overscroll-behavior: contain; display: grid; gap: 8px; padding: 10px 16px 12px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-bottom: 0;
+  border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgb(0 0 0 / 22%); touch-action: manipulation;
+}
+.fill-head { display: flex; align-items: center; gap: 8px; }
+.fill-title { flex: 1 1 auto; min-width: 0; margin: 0; font-weight: 700; }
+.fill-count { font-weight: normal; color: var(--muted); white-space: nowrap; }
+.fill-head .btn, .fill-nav .btn { min-height: 44px; padding: 6px 12px; }
+.fill-nav { display: flex; gap: 8px; }
+.fill-nav .btn { flex: 1 1 0; min-width: 0; padding: 6px 8px; }
+.fill-nav .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.fill-field { display: grid; gap: 6px; min-width: 0; }
+.fill-field fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 2px; }
+.fill-label, .fill-field legend { padding: 0; font-weight: 600; font-size: 0.95rem; overflow-wrap: anywhere; }
+.fill-required { margin-left: 6px; font-size: 0.8rem; font-weight: 600; color: var(--danger); white-space: nowrap; }
+/* Letra de 16 px nos controles: abaixo disso, o iPhone amplia a tela ao tocar no campo. */
+.fill-input {
+  width: 100%; min-height: 44px; padding: 8px 10px; font: inherit; font-size: 16px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+textarea.fill-input { min-height: 88px; resize: vertical; }
+select.fill-input[multiple] { min-height: 120px; }
+.fill-input:disabled { opacity: 0.6; cursor: not-allowed; }
+.fill-field .check { font-size: 16px; }
+.fill-note:empty { display: none; }
+.fill-note[data-kind="warning"] { color: var(--danger); font-weight: 600; }
+
 /* Numeração, cabeçalho e rodapé (js/all-pages-text.js): cada um com os detalhes embaixo, que só aparecem ligado. */
 .all-pages-group + .all-pages-group { border-top: 1px solid var(--border); padding-top: 8px; }
 .all-pages-detail { display: grid; gap: 8px; padding: 0 0 8px 32px; }

@@ -29,6 +29,7 @@ const APP_FILES = [
   './js/pdf-render.js',
   './js/pdf-compress.js',
   './js/pdf-form.js',
+  './js/form-panel.js',
   './js/config.js',
   './js/ocr.js',
   './js/ocr-plan.js',

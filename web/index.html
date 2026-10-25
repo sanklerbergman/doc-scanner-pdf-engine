@@ -55,6 +55,7 @@
     <symbol id="i-rect" viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="12" rx="1"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 19L18 6"/><path d="M9 5h10v10"/></symbol>
     <symbol id="i-check-mark" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
+    <symbol id="i-form" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M7 8.5h3M12 8.5h5M7 12h3M12 12h5M7 15.5h3M12 15.5h5"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/></symbol>
   </svg>
 
@@ -326,6 +327,12 @@
           <div id="edit-cover" class="edit-cover" aria-hidden="true"></div>
           <div id="edit-boxes" class="edit-boxes"></div>
         </div>
+        <!-- Preenchimento (js/form-panel.js e js/pdf-form.js): a página como vai sair, com uma caixa sobre cada campo; tocar
+             numa caixa escolhe o campo no painel. A página amplia no campo em foco. -->
+        <div id="fill" class="fill" hidden>
+          <img id="fill-image" alt="Página, para preencher">
+          <div id="fill-boxes" class="fill-boxes"></div>
+        </div>
       </div>
       <!-- Propriedades da edição (cor e espessura): um painel que abre de baixo, por cima da página. -->
       <div id="edit-props" class="edit-props" role="group" aria-labelledby="edit-props-title" hidden>
@@ -341,6 +348,7 @@
       <button id="viewer-crop" type="button" class="btn btn-primary"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-crop"/></svg> Ajustar recorte</button>
       <button id="viewer-redact" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-redact"/></svg> Tarjar</button>
       <button id="viewer-edit" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-edit"/></svg> Editar</button>
+      <button id="viewer-fill" type="button" class="btn" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-form"/></svg> Preencher</button>
       <button id="viewer-copy" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-copy"/></svg> Copiar texto</button>
     </div>
     <!-- Ferramentas do modo Editar, numa linha só (rola de lado no celular): js/editor.js põe os botões. -->
@@ -357,6 +365,22 @@
       <button id="redact-cancel" type="button" class="btn">Cancelar</button>
       <button id="redact-apply" type="button" class="btn btn-primary">Aplicar tarjas</button>
     </div>
+    <!-- Campos do formulário (js/form-panel.js): um por vez, com os controles do navegador, num painel que abre de baixo e
+         fica acima do teclado virtual (js/keyboard-panel.js). Nada sai do aparelho: sem name, fora de <form>. -->
+    <section id="fill-panel" class="fill-panel" role="group" aria-labelledby="fill-title" hidden>
+      <div class="fill-head">
+        <p id="fill-title" class="fill-title">Preencher <span id="fill-count" class="fill-count"></span></p>
+        <button id="fill-cancel" type="button" class="btn">Cancelar</button>
+        <button id="fill-apply" type="button" class="btn btn-primary">Aplicar</button>
+      </div>
+      <div id="fill-field" class="fill-field"></div>
+      <p id="fill-note" class="field-note fill-note" role="status"></p>
+      <div class="fill-nav">
+        <button id="fill-prev" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-left"/></svg> Anterior</button>
+        <button id="fill-zoom" type="button" class="btn" aria-pressed="true" title="Mostrar o campo ampliado na página">Ampliar</button>
+        <button id="fill-next" type="button" class="btn">Próximo <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-right"/></svg></button>
+      </div>
+    </section>
     <div id="viewer-crop-actions" class="viewer-actions" hidden>
       <button id="crop-detect" type="button" class="btn">Achar o papel</button>
       <button id="crop-full" type="button" class="btn">Foto inteira</button>

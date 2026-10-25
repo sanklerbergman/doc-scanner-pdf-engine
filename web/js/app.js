@@ -514,6 +514,30 @@ async function formChanged(doc, changed) {
   if (affected.length) renderPages();
 }
 
+// Valores do painel de preenchimento (form-panel.js) gravados no formulário do PDF: o mesmo campo vale em todas as
+// páginas e arquivos com ele, e as páginas são desenhadas de novo pelo onChange (formChanged). Devolve o aviso, que
+// também vai para a tela cheia: quantos campos, o que não coube, o que não serviu para o formato e os obrigatórios que
+// ficaram vazios (avisados, sem bloquear).
+async function saveFormValues(page, changes, { empty = [], invalid = [] } = {}) {
+  const { form } = page.doc;
+  let clipped = 0;
+  for (const [id, value] of changes) if (form.setValue(id, value).clipped) clipped++;
+  const index = state.pages.indexOf(page) + 1;
+  const names = (list) => {
+    const shown = list.slice(0, 3);
+    return list.length > 3 ? `${shown.join(', ')} e mais ${list.length - 3}` : shown.length > 1 ? `${shown.slice(0, -1).join(', ')} e ${shown.at(-1)}` : shown[0];
+  };
+  const parts = [changes.size
+    ? `Página ${index}: ${changes.size === 1 ? '1 campo preenchido, fixo' : `${changes.size} campos preenchidos, fixos`} na página do PDF.`
+    : `Página ${index}: nenhum valor mudou.`];
+  if (clipped) parts.push(clipped === 1 ? 'Um valor não coube no campo e sai cortado.' : `${clipped} valores não couberam no campo e saem cortados.`);
+  if (invalid.length) parts.push(`Fora do formato do formulário, como digitado: ${names(invalid)}.`);
+  if (empty.length) parts.push(`${empty.length === 1 ? 'Ficou vazio o campo obrigatório' : 'Ficaram vazios os campos obrigatórios'} ${names(empty)}.`);
+  const message = parts.join(' ');
+  announce(message, empty.length || invalid.length || clipped ? 'error' : 'info');
+  return message;
+}
+
 // Página de PDF desenhada pelo PDF.js; se não der, um cartão com o formato da folha e o número.
 // redact: com as tarjas da página por cima (false na tela de tarjar, que desenha as caixas à parte); edits: com as
 // edições (false no modo Editar, que as desenha à parte).
@@ -837,6 +861,20 @@ const viewer = setupViewer({
     announce(list.length
       ? `Página ${index}: ${list.length === 1 ? '1 edição' : `${list.length} edições`}, fixas na página do PDF.`
       : `Página ${index}: sem edições.`);
+  },
+  // Preencher (form-panel.js): página de PDF com campos que dá para preencher (o XFA puro não dá).
+  canFill: (page) => page.kind === 'pdf' && !!page.doc.form?.fillable && page.doc.form.pageFields(page.index).length > 0,
+  // A página como vai sair (com os valores já aplicados, as edições e as tarjas), o formulário e onde ela está.
+  async fillBase(page) {
+    return { blob: await renderProcessed(page), ...visibleSize(page), form: page.doc.form, index: page.index, rotation: page.rotation };
+  },
+  // O texto da página (PDF.js), para os rótulos pelo texto em volta dos campos. Sem o PDF.js, ficam os do formulário.
+  async fillText(page) {
+    const tools = await loadPdfTools();
+    return (await tools.pdfPageTextItems(page.doc, page.index).catch(() => null))?.items ?? null;
+  },
+  async saveForm(page, changes, problems) {
+    return saveFormValues(page, changes, problems);
   },
   // A lista pode ter sido recriada enquanto a tela cheia estava aberta: devolve o foco ao cartão da página.
   onClose(page) {
