@@ -74,6 +74,10 @@ h2 { font-size: 1.25rem; }
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 .hero { padding: 40px 0 24px; }
+/* Título sem palavra sobrando sozinha na última linha: no celular, as linhas se equilibram; na tela larga, uma frase
+   por linha (antes, "pra ninguém." caía sozinho na segunda). */
+.hero h1 { text-wrap: balance; }
+@media (min-width: 600px) { .hero-line { display: block; } }
 .lead { font-size: 1.1rem; color: var(--muted); max-width: 640px; margin: 0; }
 
 /* Botões */
