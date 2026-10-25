@@ -1054,6 +1054,7 @@ Ficou assim:
 - Rótulo: `/TU`, o `/T` limpo ou "Campo 12"; nome que o programa deu sozinho ("Caixa de texto 1_2", "Text3", `/TU` "undefined") não serve. O texto da página em volta do campo entra pelo painel (`pageLabels`, com o `pdfPageTextItems`).
 - Nota ao abrir: "Este PDF tem um formulário com 17 campos."; XFA puro diz que só o Adobe Reader preenche.
 - Nos 8 formulários reais (INSS, Receita, TJMG, INPI, Paraná), os campos batem com os da tabela, menos os ocultos da Receita (680 de 690).
+- PDF malicioso (review da v4.1.0) tem limites: até 50 mil entradas de `/Fields` e `/Kids`, pente de até 1000 casas, rótulo do texto vizinho sem expressão quadrática, e nome do PDF nunca cai em propriedade herdada ("constructor"). Se a leitura dos campos falhar, o PDF abre como na v4.0.0, sem "Preencher", com uma nota.
 
 #### Fase 5.2: fixar
 
@@ -1080,6 +1081,7 @@ Ficou assim:
 - O rótulo vem do `/TU`; sem ele, ou com um genérico, do texto da página em volta do campo. As opções do rádio também: na Receita, todas se chamam "Escolha1".
 - O rádio tem a opção "Nenhuma". Os rádios levam `name`, porque sem ele as setas e o leitor de tela não tratam as opções como um grupo; os outros controles ficam sem `name`.
 - Ao aplicar, a dica diz quantos campos mudaram, o que não coube, o que ficou fora do formato e os obrigatórios vazios.
+- "Formulário" sem campos: na tela cheia, a página de PDF sem campos que parece um formulário (linhas para preencher, quadrinhos, "requerimento") mostra, no lugar da dica de sempre, que dá para escrever nos espaços com "Editar" e "Texto". Num PDF comum, nada muda.
 - No WebKit, os observadores de tamanho do palco do Preencher e do Editar passaram a começar no quadro seguinte. Criados no meio da entrega dos avisos, porque o módulo carrega sob demanda, davam "ResizeObserver loop".
 
 #### Fase 5.4: formatos do Acrobat
