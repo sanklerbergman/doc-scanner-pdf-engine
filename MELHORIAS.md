@@ -1070,19 +1070,35 @@ Ficou assim:
 
 #### Fase 5.3: painel
 
-- [ ] Painel por página, foco ampliado, Anterior e Próximo, Aplicar, Cancelar e Esc
-- [ ] Obrigatório, somente leitura, calculado, letras fora da WinAnsi, texto que não cabe
-- [ ] Leitor de tela: `label` ligado ao controle, `fieldset` e `legend` no rádio, `aria-required`
+- [x] Painel por página, foco ampliado, Anterior e Próximo, Aplicar, Cancelar e Esc
+- [x] Obrigatório, somente leitura, calculado, letras fora da WinAnsi, texto que não cabe
+- [x] Leitor de tela: `label` ligado ao controle, `fieldset` e `legend` no rádio, `aria-required`
+
+Ficou assim:
+
+- Um campo por vez no painel (`form-panel.js`), com o contador ("12 de 34"). Em cima, a página como vai sair, com uma caixa sobre cada campo: tocar numa caixa escolhe o campo. "Ampliar", ligado de início, amplia a página no campo em foco (até 4×) e rola até ele, acima do painel e do teclado.
+- O rótulo vem do `/TU`; sem ele, ou com um genérico, do texto da página em volta do campo. As opções do rádio também: na Receita, todas se chamam "Escolha1".
+- O rádio tem a opção "Nenhuma". Os rádios levam `name`, porque sem ele as setas e o leitor de tela não tratam as opções como um grupo; os outros controles ficam sem `name`.
+- Ao aplicar, a dica diz quantos campos mudaram, o que não coube, o que ficou fora do formato e os obrigatórios vazios.
+- No WebKit, os observadores de tamanho do palco do Preencher e do Editar passaram a começar no quadro seguinte. Criados no meio da entrega dos avisos, porque o módulo carrega sob demanda, davam "ResizeObserver loop".
 
 #### Fase 5.4: formatos do Acrobat
 
-- [ ] `pdf-form-format.js`: leitura das chamadas `AFNumber`, `AFPercent`, `AFDate`, `AFTime` e `AFSpecial` e formatação do valor, com testes
-- [ ] No painel: dica da máscara, `inputmode`, formatação ao sair do campo e aviso de valor que não serve
+- [x] `pdf-form-format.js`: leitura das chamadas `AFNumber`, `AFPercent`, `AFDate`, `AFTime` e `AFSpecial` e formatação do valor, com testes
+- [x] No painel: dica da máscara, `inputmode`, formatação ao sair do campo e aviso de valor que não serve
+
+Ficou assim:
+
+- O texto formatado vai para a aparência; o negativo dos estilos 1 e 3 sai em vermelho. No controle, esse negativo fica com o sinal ("-R$ 1.234,50"), para continuar negativo.
+- Valor fora do formato: aviso no campo e caixa vermelha na página; ele sai como digitado.
+- Campo já preenchido em outro programa (#16) também sai formatado, como no Acrobat: o `/V` cru "1234.5" vira "R$ 1.234,50".
 
 #### Fase 5.5: formulários reais
 
-- [ ] `varrer-pdfs.mjs --preencher`: todo campo recebe um valor de teste, e o PDF gerado passa no `qpdf --check`
+- [x] `varrer-pdfs.mjs --preencher`: todo campo recebe um valor de teste, e o PDF gerado passa no `qpdf --check`
 - [ ] Conferir no iPhone com os formulários do INSS, da Receita e do TJMG
+
+Ficou assim: o `--preencher` liga o `--qpdf`, e campo com formato recebe um valor do formato. Nos 8 formulários reais, todos os campos editáveis foram preenchidos (INPI 107, INSS JRPS 17, RAC 846, revisão 11, Paraná 19 e 12, Receita 680, TJMG 26 de 29, menos os 3 somente leitura), e todos os PDFs gerados passaram no `qpdf --check`. O texto de teste não coube em parte dos campos pequenos, que saem com a letra menor e o fim cortado.
 
 ### Segurança e privacidade
 
@@ -1124,6 +1140,13 @@ Nenhum deles tinha pente, lista suspensa, XFA, senha ou assinatura: esses casos 
 - **Texto que não cabe** (decisão do dono, 2026-10-24): a letra diminui até 6 pt; se ainda não couber, aviso e texto cortado.
 - **Campo já preenchido com `/NeedAppearances`** (decisão do dono, 2026-10-24, #16): na v4.0.0, aviso ao abrir; na v4.1.0, aparência nova, para o PDF novo sair igual à tela, também ao juntar e dividir.
 - **Carimbo no campo de assinatura vazio do formulário fica para depois** (decisão do dono, 2026-10-24): na v4.1.0, o campo só diz "use Assinar".
+- **Detalhes dos formatos** (decisão do dono, 2026-10-24):
+  - porcentagem "15" vira 15%;
+  - os nomes de mês saem em inglês, como no Acrobat, e a digitação aceita português e inglês;
+  - "1.234" é milhar só em campo com vírgula decimal;
+  - o `/MaxLen` não corta o texto já formatado: na Receita, o do número é de 10 a 14, e o formatado pode passar disso. O `maxlength` do controle vale para o que se digita;
+  - no iPhone, o teclado `decimal` não tem o sinal de menos: limitação conhecida, fica assim;
+  - na Receita, "99/99/9999" é máscara, não data.
 
 ### Perguntas em aberto
 
