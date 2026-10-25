@@ -3,9 +3,11 @@
 // Só para quem desenvolve. Os arquivos são de terceiros e não confiáveis: ficam numa pasta fora do repositório,
 // e o script só os lê (nada do PDF é executado; o leitor só lê a estrutura).
 //
-// Uso: node scripts/varrer-pdfs.mjs <pasta> [--qpdf] [--saida relatorio.json] [--tempo 30] [--lento 3]
+// Uso: node scripts/varrer-pdfs.mjs <pasta> [--qpdf] [--preencher] [--saida relatorio.json] [--tempo 30] [--lento 3]
 //        [--memoria 1536] [--paralelo 8]
 //   --qpdf: confere a entrada e os PDFs gerados com o qpdf --check (o programa vem da variável QPDF ou do PATH)
+//   --preencher: formulários (liga o --qpdf): todo campo recebe um valor de teste, e o PDF gerado com os valores tem
+//     que passar no qpdf --check; o resumo diz, por arquivo, quantos campos foram preenchidos e quantos não couberam
 //   --saida: grava o resultado de cada arquivo em JSON
 //
 // Conjunto de teste do PDF.js (cerca de mil PDFs, muitos quebrados de propósito), numa pasta fora do repositório:
@@ -23,6 +25,7 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     qpdf: { type: 'boolean', default: false },
+    preencher: { type: 'boolean', default: false },
     saida: { type: 'string' },
     tempo: { type: 'string', default: String(DEFAULTS.timeout / 1000) },
     lento: { type: 'string', default: '3' },
@@ -35,7 +38,7 @@ if (!folder) {
   console.error('Uso: node scripts/varrer-pdfs.mjs <pasta> [--qpdf] [--saida relatorio.json] [--tempo 30] [--lento 3]');
   process.exit(2);
 }
-const qpdf = values.qpdf ? process.env.QPDF || 'qpdf' : null;
+const qpdf = values.qpdf || values.preencher ? process.env.QPDF || 'qpdf' : null;
 if (qpdf && spawnSync(qpdf, ['--version']).error) {
   console.error(`qpdf não encontrado (${qpdf}). Instale ou aponte o programa na variável QPDF.`);
   process.exit(2);
@@ -100,5 +103,19 @@ if (qpdf) {
   section('Recusados que o qpdf lê sem nenhum aviso', readable, (r) => `${r.file}: ${r.message}`);
 }
 
-const failures = by('erro').length + by('tempo').length + by('memoria').length + worse.length;
+// Formulários preenchidos: o PDF gerado com um valor em cada campo passa no qpdf --check (o que a entrada já tinha de
+// errado, como nos outros PDFs gerados, não conta).
+let unfilled = [];
+if (values.preencher) {
+  const forms = report.filter((r) => r.form);
+  const status = (r) => r.qpdf?.outputs[r.form.output]?.status;
+  unfilled = forms.filter((r) => status(r) !== 0 && !(r.qpdf.input.status !== 0 && !newQpdfProblems(r).length));
+  section('Formulários preenchidos', forms, (r) => `${r.file}: ${r.form.filled} de ${r.form.fields} campos preenchidos`
+    + `${!r.form.clipped ? '' : r.form.clipped === 1 ? ', 1 não coube (letra menor e fim cortado)' : `, ${r.form.clipped} não couberam (letra menor e fim cortado)`}`
+    + `${r.form.missing ? `, letras fora das fontes: ${r.form.missing}` : ''}; qpdf: ${status(r) === 0 ? 'ok' : `saída ${status(r)}`}`);
+  section('Formulário preenchido que o qpdf recusa', unfilled, (r) => `${r.file}: ${r.qpdf.outputs[r.form.output].text.slice(0, 3).join(' / ')}`);
+  if (!forms.length) console.log('\nNenhum PDF da pasta tem formulário.');
+}
+
+const failures = by('erro').length + by('tempo').length + by('memoria').length + worse.length + unfilled.length;
 process.exitCode = failures ? 1 : 0;

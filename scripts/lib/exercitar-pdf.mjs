@@ -18,7 +18,7 @@ import { compressObjects, compressibleBytes } from '../../web/js/pdf-compress.js
 import { buildPdf } from '../../web/js/pdf.js';
 import { appendBlocker, buildAppendToSign } from '../../web/js/pdf-append.js';
 import { rotateEdits } from '../../web/js/edits.js';
-import { readForm } from '../../web/js/pdf-form.js';
+import { readForm, formatTyped } from '../../web/js/pdf-form.js';
 import { storeImage, flateImage, rubricFromStrokes, rubricEdit } from '../../web/js/edit-media.js';
 
 // O app recodifica as imagens num canvas; aqui, toda imagem vira o mesmo JPEG pequeno. Basta para passar pela
@@ -62,11 +62,17 @@ EDITS.push(
 );
 
 // Valor de teste para cada tipo de campo (pdf-form.js): texto com parênteses, barra e acento; a última opção do rádio;
-// a primeira das listas.
+// a primeira das listas. Campo com formato do Acrobat recebe um valor do formato, que vai formatado, como o painel faz.
+const FORMAT_SAMPLES = { number: '1234,5', percent: '15', date: '10/10/2026', time: '10:30', special: '12345678' };
 function sampleValue(field) {
   if (field.kind === 'checkbox') return true;
   if (field.kind === 'radio') return field.options.at(-1)?.value ?? null;
   if (field.kind === 'combo' || field.kind === 'list') return field.options[0]?.value ?? '';
+  const { format } = field;
+  if (format) {
+    const typed = format.kind === 'mask' ? format.mask.replace(/[9O]/g, '1').replace(/[AX]/g, 'A') : FORMAT_SAMPLES[format.kind] ?? '1';
+    return formatTyped(field, typed).text;
+  }
   return field.multiline ? 'Texto (preenchido) \\ ação\nsegunda linha' : 'Texto (preenchido) \\ ação';
 }
 
@@ -151,13 +157,26 @@ export async function exercise(bytes) {
     stage = 'edição';
     outputs.push(await rebuild(doc, all, undefined, undefined, new Map(all.map((i) => [i, { edits: rotateEdits(EDITS, (i % 2) * 90), rotation: (i % 2) * 90 }]))));
     stage = 'formulário';
-    for (const field of doc.form.fields) if (field.editable) doc.form.setValue(field.id, sampleValue(field));
+    let form = null;
+    if (doc.form.fields.length) {
+      // Todo campo editável recebe um valor de teste (varrer-pdfs.mjs --preencher confere o PDF gerado no qpdf).
+      form = { fields: doc.form.fields.length, filled: 0, clipped: 0, missing: '', output: outputs.length };
+      const missing = new Set();
+      for (const field of doc.form.fields) {
+        if (!field.editable) continue;
+        const result = doc.form.setValue(field.id, sampleValue(field));
+        form.filled++;
+        if (result.clipped) form.clipped++;
+        for (const char of result.missing) missing.add(char);
+      }
+      form.missing = [...missing].join('');
+    }
     outputs.push(await rebuild(doc, all));
     doc.form.clear();
     stage = 'assinar sem reescrever';
     const signed = await append(doc);
     if (signed) outputs.push(signed);
-    return done({ status: 'ok', pages: doc.pages.length, appended: signed ? outputs.length - 1 : -1 });
+    return done({ status: 'ok', pages: doc.pages.length, appended: signed ? outputs.length - 1 : -1, form });
   } catch (err) {
     if (stage === 'abrir' && err instanceof PdfError) return done({ status: 'recusado', message: err.message });
     const message = err instanceof OutputError ? err.message : `${err?.name}: ${err?.message}`;
