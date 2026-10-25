@@ -284,6 +284,15 @@ test('rótulos: /TU; o nome limpo; "Campo N"; e o texto da página em volta, pel
   assert.deepEqual([...labels.values()], ['Nome do segurado', 'Endereço', 'CPF do titular', 'Concordo com os termos']);
   assert.deepEqual([...doc.form.pageLabels(0).values()], ['Nome do segurado', 'Campo 2', 'cpf titular', 'Campo 4'], 'sem o texto da página');
   assert.equal(nearbyText({ x0: 0.5, y0: 0.5, x1: 0.6, y1: 0.52 }, items), '', 'nada perto');
+  // Os dois-pontos longe da palavra, num trecho só deles (o requerimento de revisão do INSS): vale a palavra.
+  const bairro = { x0: 0.2, y0: 0.2, x1: 0.42, y1: 0.215 };
+  assert.equal(nearbyText(bairro, [item('BAIRRO', 37, 621, 76, 631), item(':', 113, 621, 116, 631)]), 'BAIRRO');
+  assert.equal(nearbyText(bairro, [item(':', 113, 621, 116, 631)]), '', 'só os dois-pontos: sem rótulo');
+  // A vírgula de "____, ____ de ____" não é rótulo, e não pula para a legenda de outra lacuna ("(local)").
+  assert.equal(nearbyText(bairro, [item('(local)', 37, 621, 76, 631), item(',', 113, 621, 116, 631)]), '');
+  // A lacuna de sublinhado no fim do rótulo sai (o requerimento de acerto do INSS).
+  assert.equal(nearbyText(bairro, [item('24. Nº CNH: ____________', 37, 621, 120, 631)]), '24. Nº CNH');
+  assert.equal(nearbyText(bairro, [item('Data de Emissão: ____/____/______', 37, 621, 120, 631)]), 'Data de Emissão');
 });
 
 test('ordem de leitura: de cima para baixo e, na mesma linha, da esquerda para a direita, na página como aparece', async () => {

@@ -483,7 +483,9 @@ const generic = (text) => !/\p{L}/u.test(text) || GENERIC.test(text);
 
 /**
  * Rótulo pelo texto da página em volta do widget: o trecho à esquerda na mesma linha ou, sem ele, logo acima (texto,
- * lista); à direita na caixa e no rádio. Trechos colados na mesma linha se juntam ("Nome do" + "segurado:").
+ * lista); à direita na caixa e no rádio. Trechos colados na mesma linha se juntam ("Nome do" + "segurado:"). A
+ * lacuna de sublinhado no fim sai ("Nº CNH: ______" vira "Nº CNH"). Com os dois-pontos longe da palavra, num trecho só
+ * deles ("ENDEREÇO      :", no INSS), vale a palavra. Rótulo sem letra nem algarismo não vale.
  * @param {{x0: number, y0: number, x1: number, y1: number}} box o widget na página como aparece (de 0 a 1)
  * @param {Array<{str: string, x0: number, y0: number, x1: number, y1: number}>} items o texto da página, na mesma
  *   medida (pageTextItems, em pdf-render.js)
@@ -513,18 +515,23 @@ export function nearbyText(box, items, side = 'left') {
     return parts.map((item) => item.str.slice(0, MAX_NEARBY)).join(' ');
   };
   const label = (text) => {
-    const clean = trimEnd(tidy(text.slice(0, MAX_NEARBY * 12)), ' :–—-');
+    const clean = trimEnd(tidy(text.slice(0, MAX_NEARBY * 12)), ' :–—-_/');
     return clean.length > 80 ? `${clean.slice(0, 79).replace(/\s+\S*$/, '')}…` : clean;
   };
+  // Rótulo só de pontuação (a vírgula de "____, ____ de ____") não diz nada: vazio, e o painel usa o nome do campo.
+  const worded = (text) => (/[\p{L}\p{N}]/u.test(text) ? text : '');
   if (side === 'right') {
     const right = line.filter((item) => item.x0 >= box.x1 - 0.005 && item.x0 - box.x1 < 0.2).sort((a, b) => a.x0 - b.x0)[0];
-    return right ? label(join(right, 1)) : '';
+    return right ? worded(label(join(right, 1))) : '';
   }
-  const left = line.filter((item) => item.x1 <= box.x0 + 0.005 && box.x0 - item.x1 < 0.25).sort((a, b) => b.x1 - a.x1)[0];
-  if (left) return label(join(left, -1));
+  const left = line.filter((item) => item.x1 <= box.x0 + 0.005 && box.x0 - item.x1 < 0.25).sort((a, b) => b.x1 - a.x1);
+  // Os dois-pontos sozinhos fecham o rótulo que vem antes deles, mesmo longe ("ENDEREÇO      :", no INSS).
+  const start = /^[\s:]+$/.test(left[0]?.str ?? '') ? left[1] : left[0];
+  const found = start ? worded(label(join(start, -1))) : '';
+  if (found) return found;
   const above = list.filter((item) => item.y1 <= box.y0 + height * 0.25 && box.y0 - item.y1 < Math.max(height * 1.5, 0.03)
     && item.x1 > box.x0 - 0.01 && item.x0 < box.x1).sort((a, b) => b.y1 - a.y1 || a.x0 - b.x0)[0];
-  return above ? label(above.str.slice(0, MAX_NEARBY)) : '';
+  return above ? worded(label(above.str.slice(0, MAX_NEARBY))) : '';
 }
 
 // ---------- Estado dos valores ----------
