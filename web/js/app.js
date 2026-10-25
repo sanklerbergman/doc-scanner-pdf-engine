@@ -8,7 +8,7 @@ import { CONFIG } from './config.js';
 import { parseRanges } from './ranges.js';
 import { paintRedactions, rotateRedactions, toUnrotated, toRotatedRects, redactLayout, filterWords, textUnderRedactions } from './redact.js';
 import { findInPieces, padRect, TYPE_LABELS } from './find-data.js';
-import { plainText, linesText, documentText } from './page-text.js';
+import { plainText, linesText, documentText, looksLikeForm } from './page-text.js';
 import { textWidth } from './fonts.js';
 import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex, stampCharacters } from './stamp.js';
 import { ocrWorkers, progressNote } from './ocr-plan.js';
@@ -810,6 +810,16 @@ const viewer = setupViewer({
     return next ? { page: next, label: `Página ${index + 1} de ${state.pages.length}` } : null;
   },
   canCrop: isPhoto,
+  // "Formulário" sem campos (muitos dos públicos): a dica da tela cheia aponta para o Texto da v4.0.0. Só na página de
+  // PDF sem campos que parece um formulário (linhas para preencher, quadrinhos), para não aparecer em todo PDF.
+  formHint(page) {
+    if (page.kind !== 'pdf' || page.doc.form?.fields.length) return Promise.resolve(null);
+    page.formHint ??= loadPdfTools()
+      .then((tools) => tools.pdfPageTextItems(page.doc, page.index))
+      .then(({ items }) => (looksLikeForm(items) ? 'Este PDF não tem campos para preencher: para escrever nos espaços, use "Editar" e depois "Texto".' : null))
+      .catch(() => null);
+    return page.formHint;
+  },
   viewHint: (page) => (page.kind === 'pdf' && !page.drawn
     ? 'Não deu para desenhar esta página aqui, mas no PDF novo ela sai igualzinha ao original.'
     : null),
@@ -1345,7 +1355,16 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     // Valores do formulário de cada PDF de origem (os preenchidos no app e os que outro programa não desenhou, #16): a
     // aparência nova de cada widget, a mesma em todos os arquivos.
     const fills = new Map(list.filter((page) => page.kind === 'pdf' && page.doc.form).map((page) => [page.doc, null]));
-    for (const doc of fills.keys()) fills.set(doc, doc.form.fill());
+    for (const doc of fills.keys()) {
+      try {
+        fills.set(doc, doc.form.fill());
+      } catch (err) {
+        // PDF estranho: sem valor preenchido no app, ele sai como na v4.0.0, com os campos como estão; com valor, não sai.
+        if (doc.form.hasValues()) throw err;
+        console.warn('Campos do formulário sem desenho:', err);
+        fills.set(doc, undefined);
+      }
+    }
 
     // Comprimir: as imagens de cada PDF de origem são recodificadas uma vez só, para todos os arquivos.
     const level = tools ? els.pdfCompress.value : 'none';

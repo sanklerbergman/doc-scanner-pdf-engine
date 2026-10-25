@@ -56,7 +56,15 @@ function filledPage(doc, index) {
   const version = form.pageVersion(index);
   const cached = copies.get(index);
   if (cached?.version === version) return cached.key;
-  const fill = form.fill([index]);
+  let fill;
+  try {
+    fill = form.fill([index]);
+  } catch (err) {
+    // Com valor preenchido no app, a página sem ele mentiria: vira o cartão (drawPdfPage). Sem, sai como está.
+    if (form.hasValues(index)) throw err;
+    console.warn('Campos do formulário sem desenho:', err);
+    fill = new Map();
+  }
   let key = null;
   if (fill.size) {
     const copy = copyPages(doc, [index], { fill });
@@ -163,9 +171,11 @@ export async function openPdfFile(file, password = null) {
   if (file.size > MAX_FILE) throw new PdfError('O PDF passa de 200 MB.');
   const doc = await openPdf(new Uint8Array(await file.arrayBuffer()), { password });
   // Formulário: os campos e os valores (pdf-form.js), carregado só quando o PDF tem campos ou é um formulário XFA.
+  let formNotes = [];
   if (doc.formFields().some((node) => node.terminal) || doc.acroForm()?.has('XFA')) {
-    const { readForm } = await import('./pdf-form.js');
-    doc.form = await readForm(doc);
+    const loaded = await loadForm(doc);
+    doc.form = loaded.form;
+    formNotes = loaded.notes;
   }
   const notes = [];
   if (doc.security?.hadPassword) {
@@ -177,7 +187,7 @@ export async function openPdfFile(file, password = null) {
     // O PDF.js desenha uma cópia já decifrada, com as mesmas páginas que vão para o PDF novo: assim a senha não
     // precisa ficar guardada para as miniaturas.
     const all = doc.pages.map((_, index) => index);
-    const copy = copyPages(doc, all, { fill: doc.form?.fill() });
+    const copy = copyPages(doc, all, { fill: safeFill(doc) });
     doc.previewBytes = buildPdf(all.map((index) => ({ copy: { source: copy, page: copy.pages.get(index) } })));
   }
   if (doc.isSigned()) {
@@ -189,7 +199,7 @@ export async function openPdfFile(file, password = null) {
   if (doc.layers?.removed) {
     notes.push('Este PDF tem camadas ocultas: o conteúdo delas não vai para o PDF novo, como já estava escondido na tela.');
   }
-  if (doc.form) notes.push(...formNotes(doc.form));
+  notes.push(...formNotes);
   if (doc.hasAnnotations()) {
     notes.push('No PDF novo, links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.');
   }
@@ -199,10 +209,41 @@ export async function openPdfFile(file, password = null) {
   return { doc, pages, notes, heavy };
 }
 
+const FORM_ERROR = 'Não deu para ler os campos do formulário deste PDF: ele sai com os campos como estão, e não dá para preenchê-lo aqui.';
+
+/**
+ * Os campos do formulário (pdf-form.js) e as notas ao abrir. Rede de segurança: se a leitura falhar num PDF estranho
+ * (ou o módulo não carregar, sem rede), o PDF abre como na v4.0.0, sem "Preencher" e com os campos achatados como
+ * estão, e uma nota diz isso.
+ * @param {object} doc documento do pdf-reader
+ * @param {(doc: object) => Promise<object> | object} [read] quem lê o formulário (os testes trocam)
+ * @returns {Promise<{form: object | null, notes: string[]}>}
+ */
+export async function loadForm(doc, read = async (target) => (await import('./pdf-form.js')).readForm(target)) {
+  try {
+    const form = await read(doc);
+    // As notas desenham os campos já preenchidos em outro programa (#16): um erro no desenho também cai aqui.
+    return { form, notes: describeForm(form) };
+  } catch (err) {
+    console.warn('Campos do formulário sem leitura:', err);
+    return { form: null, notes: [FORM_ERROR] };
+  }
+}
+
+// Os campos desenhados de novo para a prévia do PDF com senha; com erro, sem eles (como na v4.0.0).
+function safeFill(doc) {
+  try {
+    return doc.form?.fill();
+  } catch (err) {
+    console.warn('Campos do formulário sem desenho:', err);
+    return undefined;
+  }
+}
+
 // Notas do formulário ao abrir: quantos campos ele tem, o XFA puro (que o app não preenche) e, no formulário preenchido
 // em outro programa sem desenhar os valores (#16), o que o app não consegue desenhar igual. O resto ele desenha de
 // novo, e o PDF novo sai como a tela.
-function formNotes(form) {
+function describeForm(form) {
   const count = form.fields.length;
   if (form.xfa === 'pure') {
     return ['Este PDF é um formulário XFA, que só o Adobe Reader mostra e preenche: aqui não dá para preencher, e as páginas podem aparecer vazias ou só com um aviso do Adobe.'];

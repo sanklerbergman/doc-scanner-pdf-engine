@@ -266,6 +266,7 @@ export function unpredict(data, params) {
 // ---------- Documento ----------
 
 const INHERITED = ['Resources', 'MediaBox', 'CropBox', 'Rotate'];
+const MAX_FIELD_ENTRIES = 50000; // entradas de /Fields e /Kids lidas no formulário (formFields)
 const A4_BOX = [0, 0, 595.28, 841.89];
 
 /**
@@ -717,7 +718,9 @@ class PdfDocument {
    * (isSigned e pdf-append.js) e pelo preenchimento (pdf-form.js). Cada nó vem com o que herda do campo de cima: tipo
    * (/FT), opções (/Ff), valor (/V e /DV), aparência do texto (/DA, que cai na do /AcroForm), alinhamento (/Q) e
    * tamanho máximo (/MaxLen). Filho sem nome (/T) e sem /Kids é widget do campo; com nome, é outro campo.
-   * Cada objeto conta uma vez (referência repetida ou em ciclo é pulada), até 10000 objetos e 32 níveis.
+   * Cada objeto conta uma vez (referência repetida ou em ciclo é pulada), até 10000 objetos e 32 níveis. As entradas
+   * de /Fields e /Kids também têm um teto (50000, contando as repetidas): 10 mil campos com o mesmo filho 10 mil vezes
+   * seriam 100 milhões de voltas.
    * Nada é interpretado nem executado: /DA e /AA ficam como estão no arquivo.
    * @returns {Array<{ref: PdfRef | null, dict: PdfDict, parent: object | null, name: string, partial: string,
    *   top: boolean, terminal: boolean, type: string | null, flags: number, value: unknown, defaultValue: unknown,
@@ -746,8 +749,10 @@ class PdfDocument {
       return dict;
     };
     const own = (dict, key, inherited) => (dict.has(key) ? this.resolve(dict.get(key)) : inherited);
+    let entries = MAX_FIELD_ENTRIES;
     // Pilha na ordem do arquivo (o primeiro campo sai primeiro).
     const stack = fields.slice(0, 10000).reverse().map((ref) => ({ ref, parent: null, depth: 0 }));
+    entries -= stack.length;
     while (stack.length && count < 10000) {
       const { ref, parent, depth } = stack.pop();
       const dict = visit(ref);
@@ -771,7 +776,9 @@ class PdfDocument {
       const kids = this.resolve(dict.get('Kids'));
       const children = [];
       if (Array.isArray(kids) && depth < 32) {
-        for (const kid of kids.slice(0, 10000)) {
+        for (const kid of kids) {
+          if (entries-- <= 0) break;
+          if (kid instanceof PdfRef && seen.has(kid.num)) continue; // já lido: nem entra na pilha
           const kidDict = this.resolve(kid);
           if (!(kidDict instanceof PdfDict)) continue;
           if (kidDict.has('T') || kidDict.has('Kids')) children.push(kid);

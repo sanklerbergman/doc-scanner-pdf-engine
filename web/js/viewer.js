@@ -38,12 +38,13 @@ const LOUPE_GAP = 48; // do dedo até a borda da lupa: o dedo não cobre
  * @param {(page, changes: Map<number, unknown>, problems: object) => Promise<string>} [deps.saveForm] grava os valores
  *   do formulário (form-panel.js) e devolve o aviso
  * @param {(page) => Promise<object[] | null>} [deps.fillText] o texto da página, para os rótulos dos campos
+ * @param {(page) => Promise<string | null>} [deps.formHint] a dica da página de PDF sem campos que parece um formulário
  * @param {(page) => void} deps.onClose chamado ao fechar, para devolver o foco ao cartão da página
  */
 export function setupViewer({
   renderProcessed, canCrop, viewHint = () => null, renderOriginal, detect, applyCrop, step, renderPlain, redactHint,
   saveRedactions, copyText, canCopy, editBase, saveEdits, onClose,
-  canFill = () => false, fillBase, saveForm, fillText = async () => null,
+  canFill = () => false, fillBase, saveForm, fillText = async () => null, formHint = async () => null,
 }) {
   const dialog = $('#viewer');
   const title = $('#viewer-title');
@@ -138,6 +139,12 @@ export function setupViewer({
       setUrl('view', image, blob);
       // Com a cópia do texto em andamento, o aviso dela continua na tela.
       if (!copying) hint.textContent = message || (viewHint(page) ?? 'É assim que a página vai sair no PDF. Toque na imagem para ampliar.');
+      // Página de PDF sem campos que parece um formulário: a dica de sempre dá lugar à do Editar → Texto.
+      if (!message && !viewHint(page)) {
+        formHint(page).then((tip) => {
+          if (tip && mine === token && !copying) hint.textContent = tip;
+        }, () => {});
+      }
     } catch (err) {
       console.error(err);
       if (mine === token && !copying) hint.textContent = 'Mostrando a miniatura (não deu para carregar em alta qualidade).';

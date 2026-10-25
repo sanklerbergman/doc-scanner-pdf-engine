@@ -22,6 +22,12 @@ const FF = {
 const HIDDEN = 2 | 32; // widget oculto (/F 2) ou que não aparece na tela (/F 32)
 
 const MIN_SIZE = 6; // texto que não cabe: a letra diminui até aqui; se ainda não couber, sai cortado
+// PDF malicioso: /MaxLen absurdo não vira um maxlength inválido no controle nem um pente de bilhões de casas. O pente
+// tem até 1000 casas, de 1 pt ou mais; fora disso, o campo é desenhado como uma linha.
+const MAX_LENGTH = 100000;
+const MAX_COMB = 1000;
+const MIN_CELL = 1;
+const MAX_NEARBY = 300; // letras de cada trecho do texto da página considerado para o rótulo
 const LINE = 1.35; // entrelinha, em tamanhos de letra (a mesma do PDF.js)
 const MULTILINE_AUTO = 12; // tamanho 0 em várias linhas: a maior letra até esta em que tudo cabe
 const PAD = 2; // folga do texto até a borda, em pontos
@@ -183,7 +189,7 @@ async function buildField(doc, id, { kind, node, nodes, widgets }, { order, lock
     return undefined;
   };
   const flags = node.flags;
-  const maxLen = Number.isInteger(node.maxLen) && node.maxLen > 0 ? node.maxLen : null;
+  const maxLen = Number.isInteger(node.maxLen) && node.maxLen > 0 ? Math.min(node.maxLen, MAX_LENGTH) : null;
   const field = {
     id, name: node.name, kind,
     tooltip: generic(tidy(textString(own('TU'), 500))) ? '' : tidy(textString(own('TU'), 500)),
@@ -194,7 +200,7 @@ async function buildField(doc, id, { kind, node, nodes, widgets }, { order, lock
     multiline: kind === 'text' && !!(flags & FF.multiline),
     password: kind === 'text' && !!(flags & FF.password),
     file: kind === 'text' && !!(flags & FF.file),
-    comb: kind === 'text' && !!(flags & FF.comb) && maxLen !== null && !(flags & (FF.multiline | FF.password | FF.file)),
+    comb: kind === 'text' && !!(flags & FF.comb) && maxLen !== null && maxLen <= MAX_COMB && !(flags & (FF.multiline | FF.password | FF.file)),
     editable: false,
     multiSelect: kind === 'list' && !!(flags & FF.multiSelect),
     custom: kind === 'combo' && !!(flags & FF.edit), // lista suspensa que aceita texto livre
@@ -406,7 +412,7 @@ const SHORT_NAMES = {
  * @param {string} name a BaseFont (ou o nome do recurso, quando não há fonte)
  */
 export function standardFont(name) {
-  if (SHORT_NAMES[name]) return SHORT_NAMES[name];
+  if (Object.hasOwn(SHORT_NAMES, name)) return SHORT_NAMES[name]; // nunca uma propriedade herdada ("constructor")
   const text = String(name).replace(/^[A-Z]{6}\+/, '').toLowerCase();
   const family = /courier|mono|consol|typewriter|lucidaconsole/.test(text) ? 'mono'
     : !/sans/.test(text) && /times|serif|georgia|garamond|cambria|minion|palatino|schoolbook|bodoni|baskerville|constantia/.test(text) ? 'serif'
@@ -438,6 +444,14 @@ function nameText(name) {
 }
 
 const tidy = (text) => text.replace(/\s+/g, ' ').trim();
+
+// Tira do fim os caracteres da lista, num laço (uma expressão regular como /[:-]+$/ fica quadrática num texto com
+// muitos ":" que não terminam nele).
+function trimEnd(text, chars) {
+  let end = text.length;
+  while (end > 0 && chars.includes(text[end - 1])) end--;
+  return text.slice(0, end);
+}
 
 // Nome genérico, que o programa deu sozinho ("Caixa de texto 1_2", "Text3", "Check Box12"): não serve de rótulo.
 const GENERIC = /^(text|texto|textfield|text field|campo|campo de texto|caixa|caixa de texto|caixa de seleção|caixa de selecao|caixa de verificação|check box|checkbox|botão de opção|radio button|field|fill|untitled|undefined|group)[\s\d._-]*$/i;
@@ -496,10 +510,10 @@ export function nearbyText(box, items, side = 'left') {
       parts[step < 0 ? 'unshift' : 'push'](next);
       current = next;
     }
-    return parts.map((item) => item.str).join(' ');
+    return parts.map((item) => item.str.slice(0, MAX_NEARBY)).join(' ');
   };
   const label = (text) => {
-    const clean = tidy(text).replace(/[\s:–—-]+$/, '');
+    const clean = trimEnd(tidy(text.slice(0, MAX_NEARBY * 12)), ' :–—-');
     return clean.length > 80 ? `${clean.slice(0, 79).replace(/\s+\S*$/, '')}…` : clean;
   };
   if (side === 'right') {
@@ -510,7 +524,7 @@ export function nearbyText(box, items, side = 'left') {
   if (left) return label(join(left, -1));
   const above = list.filter((item) => item.y1 <= box.y0 + height * 0.25 && box.y0 - item.y1 < Math.max(height * 1.5, 0.03)
     && item.x1 > box.x0 - 0.01 && item.x0 < box.x1).sort((a, b) => b.y1 - a.y1 || a.x0 - b.x0)[0];
-  return above ? label(above.str) : '';
+  return above ? label(above.str.slice(0, MAX_NEARBY)) : '';
 }
 
 // ---------- Estado dos valores ----------
@@ -978,7 +992,8 @@ function textAppearance(field, widget, frame, value) {
   let clipped = false;
   // /MaxLen limita o que se digita; o texto formatado pode passar dele (decisão do dono). No pente, as casas são as
   // do /MaxLen.
-  if (field.maxLen && (field.comb || !field.format) && [...text].length > field.maxLen) {
+  const comb = field.comb && w / field.maxLen >= MIN_CELL; // casas estreitas demais: uma linha
+  if (field.maxLen && (comb || !field.format) && [...text].length > field.maxLen) {
     text = [...text].slice(0, field.maxLen).join('');
     clipped = true;
   }
@@ -1021,7 +1036,7 @@ function textAppearance(field, widget, frame, value) {
       if (y + ASCENT * size < inner) return; // abaixo da área: cortado
       if (line) runs.push({ x: alignX(widget.align, textWidth(line, font, size), frame), y, text: line });
     });
-  } else if (field.comb) {
+  } else if (comb) {
     // Pente: uma letra centrada em cada casa.
     const cells = field.maxLen;
     const cell = w / cells;
@@ -1054,7 +1069,7 @@ function textAppearance(field, widget, frame, value) {
     if (line) runs.push({ x, y, text: line });
   }
   const ops = ['q', ...frameOps(widget, frame), 'Q'];
-  if (field.comb && widget.borderColor && frame.bw) {
+  if (comb && widget.borderColor && frame.bw) {
     // As divisórias do pente, na cor da borda.
     const lines = [];
     for (let i = 1; i < field.maxLen; i++) lines.push(`${n((i * w) / field.maxLen)} 0 m ${n((i * w) / field.maxLen)} ${n(h)} l`);
@@ -1144,6 +1159,9 @@ function buttonAppearance(field, widget, value) {
   return { stream: formStream(frame, ops, null), ...none };
 }
 
+// Caractere da ZapfDingbats (/MK /CA) → marca. Map: o /CA vem do PDF e não pode cair em propriedade herdada.
+const SYMBOLS = new Map([['4', 'check'], ['3', 'check'], ['8', 'cross'], ['7', 'cross'], ['l', 'circle'], ['n', 'square'], ['u', 'diamond']]);
+
 // Marca da caixa ou do rádio sem o desenho do estado marcado, pelo caractere da ZapfDingbats em /MK /CA: ✓ (4), ✗ (8),
 // ● (l), ■ (n) ou ◆ (u). Caminhos, como os ✓ e ✗ da v4.0.0: a ZapfDingbats não é embutida.
 function symbolOps(field, widget, { w, h, inner }) {
@@ -1153,8 +1171,7 @@ function symbolOps(field, widget, { w, h, inner }) {
   const x = (w - side) / 2;
   const y = (h - side) / 2;
   const caption = widget.caption || (field.kind === 'radio' ? 'l' : '4');
-  const kind = { 4: 'check', 3: 'check', 8: 'cross', 7: 'cross', l: 'circle', n: 'square', u: 'diamond' }[caption]
-    ?? (field.kind === 'radio' ? 'circle' : 'check');
+  const kind = SYMBOLS.get(caption) ?? (field.kind === 'radio' ? 'circle' : 'check');
   if (kind === 'check' || kind === 'cross') {
     const hex = `#${rgbOf(color).map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('')}`;
     const stroke = editType(kind).pdf({ color: hex, width: Math.max(0.5, side * 0.12) }, { w: side, h: side });

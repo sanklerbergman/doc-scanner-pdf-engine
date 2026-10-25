@@ -100,3 +100,32 @@ export function documentText(layout, rects = []) {
 
 /** Quantas palavras tem o texto (para a mensagem de "copiado"). */
 export const wordCount = (text) => text.split(/\s+/).filter(Boolean).length;
+
+// "Formulário" sem campos (#15): linhas para preencher (____ ou ........, menos o pontilhado de sumário, que termina em
+// número de página) e quadrinhos de marcar; e palavras de formulário.
+const BLANK = /_{5,}|\.{8,}|…{3,}|\(\s?\)|\[\s?\]|[☐□]/g;
+const FORM_WORDS = /\b(formul[aá]rio|requerimento|preencha|preencher|ficha|solicita[çc][aã]o)\b/i;
+
+/**
+ * A página parece um formulário para preencher à mão: três linhas ou quadrinhos, ou um com uma palavra de formulário
+ * ("requerimento", "preencha"). Para o PDF sem campos, a tela cheia aponta para o Texto da v4.0.0 só nesse caso, e não
+ * em todo PDF (uma linha de assinatura sozinha não faz formulário). Cada trecho conta até 2000 letras.
+ * @param {Array<{str: string}>} items o texto da página (pageTextItems, em pdf-render.js)
+ */
+export function looksLikeForm(items) {
+  let blanks = 0;
+  let words = false;
+  for (const item of items ?? []) {
+    const text = String(item?.str ?? '').slice(0, 2000);
+    for (const match of text.matchAll(BLANK)) {
+      // Pontilhado que termina num número é sumário, não espaço para preencher (olhado à mão: com (?!\s*\d), a
+      // expressão voltaria um ponto e casaria assim mesmo).
+      const end = match.index + match[0].length;
+      if (match[0][0] === '.' && /^\s{0,3}\d/.test(text.slice(end, end + 4))) continue;
+      blanks++;
+    }
+    words ||= FORM_WORDS.test(text);
+    if (blanks >= 3 || (words && blanks >= 1)) return true;
+  }
+  return false;
+}
