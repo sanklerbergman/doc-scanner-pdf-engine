@@ -405,8 +405,10 @@ class PdfDocument {
       }
     }
     // Tabela em stream (PDF 1.5+)
+    // Objeto 0 não existe: uma posição um pouco errada que cai no meio de "10 0 obj" acha um "0 0 obj". Os outros
+    // leitores (o qpdf) recusam e varrem o arquivo; aceitar faria a assinatura acrescentada apontar (/Prev) para lá (#17).
     const object = this.parseObjectAt(offset);
-    if (!(object?.value instanceof PdfStream) || !isName(object.value.dict.get('Type'), 'XRef')) return null;
+    if (!(object?.num >= 1) || !(object.value instanceof PdfStream) || !isName(object.value.dict.get('Type'), 'XRef')) return null;
     const { dict } = object.value;
     const data = await this.decode(object.value);
     const widths = dict.get('W');

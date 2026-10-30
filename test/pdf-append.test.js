@@ -265,6 +265,24 @@ test('estrutura danificada que o leitor ainda abre: o app monta um PDF novo em v
   assert.equal(appendBlocker(await openPdf(makeRawPdf(objects()).bytes)), null);
 });
 
+test('startxref um byte adiante, no meio de "10 0 obj": o leitor reconstrói e o app monta um PDF novo (#17)', async () => {
+  // Objeto 9 só para a xref em stream ser o objeto 10.
+  const { bytes, xrefOffset } = makeRawPdf({
+    1: '<< /Type /Catalog /Pages 2 0 R >>',
+    2: '<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 595 842] >>',
+    ...textPageObjects('Xref deslocada'),
+    9: '<< >>',
+  }, { xref: 'stream' });
+  assert.equal(latin1(bytes.subarray(xrefOffset, xrefOffset + 8)), '10 0 obj');
+  assert.equal(appendBlocker(await openPdf(bytes)), null);
+  // startxref aponta para "0 0 obj": não existe objeto 0, e o qpdf também não aceita essa tabela.
+  const text = latin1(bytes).replace(`startxref\n${xrefOffset}\n`, `startxref\n${xrefOffset + 1}\n`);
+  const doc = await openPdf(new Uint8Array(Buffer.from(text, 'latin1')));
+  assert.equal(doc.repaired, true);
+  assert.equal(doc.pages.length, 1);
+  assert.equal(appendBlocker(doc)?.kind, 'rewrite');
+});
+
 test('arquivo que não termina na tabela xref que o leitor usou (atualização cortada): o app monta um PDF novo', async () => {
   const { bytes: base } = makeRawPdf({
     1: '<< /Type /Catalog /Pages 2 0 R >>',
