@@ -1,11 +1,12 @@
 // Reconhecimento de texto (OCR) das fotos, com o Tesseract (web/vendor/tesseract). Tudo no aparelho.
-// Carregado só quando a pessoa liga "Texto pesquisável (OCR)": o motor e o modelo somam uns 5,5 MB.
+// Carregado só quando a pessoa liga "Texto pesquisável (OCR)": o motor e o modelo somam uns 5,5 MB (uns 7 MB no inglês).
 //
 // Segurança:
 // - O worker nasce de um blob que importa o worker.min.js, então herda a política da página, incluindo o
 //   connect-src 'none': ele não consegue abrir conexão nenhuma. O núcleo (.wasm.js) traz o WebAssembly embutido.
-// - O modelo vem de um módulo JS do próprio site (por.traineddata.js) e chega ao worker em bytes: o Tesseract
-//   nunca usa fetch. Se algum caminho dele tentar, a política bloqueia e o OCR falha, em vez de vazar.
+// - O modelo vem de um módulo JS do próprio site (por.traineddata.js; eng.traineddata.js na página em inglês, #22)
+//   e chega ao worker em bytes: o Tesseract nunca usa fetch. Se algum caminho dele tentar, a política bloqueia e o
+//   OCR falha, em vez de vazar.
 // - Nada guardado: sem cache no IndexedDB (cacheMethod 'none'), sem logs, e o texto só existe na memória.
 // - Um worker por vez (dois só onde sobra memória, ocr-plan.js), encerrado no fim: a memória do WebAssembly
 //   (centenas de MB) volta para o aparelho.
@@ -13,11 +14,13 @@
 // O app conversa direto com o worker do Tesseract.js, sem a biblioteca da página (tesseract.esm.min.js): na
 // versão 7.0.0 ela manda os bytes do modelo no lugar do nome do idioma ao inicializar, e o Tesseract não inicia.
 import { textSkew, unskew, unskewRect } from './geometry.js';
-import { t } from './i18n.js';
+import { LANG, t } from './i18n.js';
 
 const VENDOR = new URL('../vendor/tesseract/', import.meta.url).href;
 const OEM_LSTM_ONLY = 1;
 const PSM_AUTO = 3; // página inteira, com colunas e blocos, sem detectar a orientação
+// Modelo do idioma da página (#22): o OCR lê o texto na língua de quem usa.
+const MODEL = LANG === 'en' ? 'eng' : 'por';
 
 export class OcrError extends Error {
   name = 'OcrError';
@@ -32,7 +35,9 @@ export class OcrCancelled extends Error {
 let model; // promessa do módulo com o modelo em base64; sem rede e sem cache, tenta de novo na próxima vez
 
 function loadModel() {
-  model ??= import('../vendor/tesseract/por.traineddata.js').catch((err) => {
+  // Caminhos literais, um por idioma: só o do idioma da página é baixado.
+  const load = () => (MODEL === 'eng' ? import('../vendor/tesseract/eng.traineddata.js') : import('../vendor/tesseract/por.traineddata.js'));
+  model ??= load().catch((err) => {
     model = undefined;
     throw err;
   });
@@ -95,16 +100,16 @@ function spawn() {
   };
 }
 
-// Um worker do Tesseract pronto para ler: o núcleo, o modelo de português e os parâmetros.
+// Um worker do Tesseract pronto para ler: o núcleo, o modelo do idioma da página e os parâmetros.
 async function startEngine(base64, engine = spawn()) {
   try {
     await engine.call('load', { options: { lstmOnly: true, corePath: VENDOR, logging: false } });
     const data = decodeBase64(base64);
     await engine.call('loadLanguage', {
-      langs: [{ code: 'por', data }],
+      langs: [{ code: MODEL, data }],
       options: { cacheMethod: 'none', gzip: true, lstmOnly: true },
     }, [data.buffer]);
-    await engine.call('initialize', { langs: 'por', oem: OEM_LSTM_ONLY, config: { tessedit_pageseg_mode: PSM_AUTO } });
+    await engine.call('initialize', { langs: MODEL, oem: OEM_LSTM_ONLY, config: { tessedit_pageseg_mode: PSM_AUTO } });
   } catch (err) {
     engine.stop(err);
     throw err;
@@ -177,7 +182,7 @@ function pool(engines, restart) {
 }
 
 /**
- * Liga o motor de OCR com o modelo de português.
+ * Liga o motor de OCR com o modelo do idioma da página (português ou inglês).
  * @param {{workers?: number}} [options] workers: quantos workers do Tesseract ligar (ocr-plan.js). Cada um tem a
  *   própria memória do WebAssembly; as leituras vão para o que estiver livre.
  * @returns {Promise<{recognize: (canvas: HTMLCanvasElement, options?: {dpi?: number}) => Promise<OcrWord[]>,

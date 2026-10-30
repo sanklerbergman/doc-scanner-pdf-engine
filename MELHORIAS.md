@@ -1224,8 +1224,14 @@ Ficou assim (2026-10-30):
 
 #### Fase 3: OCR em inglês
 
-- [ ] `eng.traineddata.js` em `web/vendor/tesseract/`, gerado pelo `scripts/gerar-modelo-ocr.mjs`
-- [ ] Modelo escolhido pelo idioma da página; calibragem do aviso de confiança baixa
+- [x] `eng.traineddata.js` em `web/vendor/tesseract/`, gerado pelo `scripts/gerar-modelo-ocr.mjs`
+- [x] Modelo escolhido pelo idioma da página; calibragem do aviso de confiança baixa
+
+Ficou assim (2026-10-30):
+
+- Modelo `eng` do `@tesseract.js-data/eng@1.0.0` (`4.0.0_best_int`), com a integridade do pacote conferida com a do registro do npm. O `.gz` tem 2,9 MB (o `por`, 1,4 MB): na página em inglês, quem liga o OCR baixa uns 7 MB na primeira vez, e o texto da tela diz isso.
+- Cada página baixa só o modelo do seu idioma (conferido nas requisições, no Chromium e no WebKit).
+- Medido com uma foto de documento em inglês e a mesma em português, nítida, com desfoque leve e médio, com pouca resolução e ruim (imagens sintéticas): nas nítidas e com desfoque leve, média de 94 a 96 e de 97% a 100% das palavras certas, sem aviso; na média e na ruim, média de 42 a 75, de 26% a 60% certas, com aviso, nos dois idiomas. O limite do aviso fica como está. Falta medir com fotos de câmera de verdade.
 
 #### Fase 4: conferência
 
