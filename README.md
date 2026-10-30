@@ -1,9 +1,11 @@
 # Scanner Doc
 
+**Português** · [English](README.en.md)
+
 Foto, Word ou PDF: tudo vira PDF, **100% no navegador**. Sem upload, sem cadastro, sem rastreio.
 Feito pela comunidade, para a comunidade.
 
-**Usar agora: https://scanner.sankler.com.br/**
+**Usar agora: https://scanner.sankler.com.br/** (em inglês: https://scanner.sankler.com.br/en/)
 
 ## O que faz
 
@@ -22,9 +24,10 @@ Feito pela comunidade, para a comunidade.
 - Abre **PDFs com senha** (contracheques, extratos, faturas): o app pede a senha, que só é usada no aparelho e não fica guardada. PDF que só tem restrições do autor abre direto. O PDF novo sai sem senha, a não ser que você ligue "Proteger o PDF com senha"
 - **Protege o PDF gerado com senha** (AES-256): quem receber precisa da senha para abrir. O app não guarda a senha nem tem como recuperá-la
 - **Junta, separa e comprime PDFs**: abra um ou mais PDFs, reordene, remova ou misture as páginas com fotos e documentos, e gere um PDF só, um por página ou um por intervalo (ex.: 1-3, 4-10). Dá para ver cada página antes e conferir, numa prévia, os arquivos que vão sair. As páginas vão como estão no original, com o texto selecionável; links, scripts, metadados e o conteúdo de camadas ocultas ficam de fora, e os campos de formulário ficam fixos na página, com o que estiver preenchido. Para diminuir PDFs escaneados ou de fotos, as imagens podem ser recomprimidas, com o "antes → depois" do tamanho. Avisa quando o PDF tem assinatura digital, que deixa de valer no arquivo novo (para mantê-la, assine o PDF sem mudar nada nele)
-- **Texto pesquisável (OCR)** nas fotos e nos PDFs escaneados: o texto impresso é reconhecido no próprio aparelho e vai para o PDF como uma camada invisível por cima da imagem, que dá para buscar, selecionar e copiar. Página de PDF que já tem texto fica como está. Folha torta (foto sem fundo para recortar ou folha que entrou torta no scanner) é lida como reta, até 15° de inclinação, e o app avisa em quais páginas parte do texto pode ter saído errada (foto tremida, escura ou com letra pequena). Opcional e desligado por padrão: na primeira vez, o app baixa uns 5 MB do próprio site
+- **Texto pesquisável (OCR)** nas fotos e nos PDFs escaneados: o texto impresso é reconhecido no próprio aparelho e vai para o PDF como uma camada invisível por cima da imagem, que dá para buscar, selecionar e copiar. Página de PDF que já tem texto fica como está. Folha torta (foto sem fundo para recortar ou folha que entrou torta no scanner) é lida como reta, até 15° de inclinação, e o app avisa em quais páginas parte do texto pode ter saído errada (foto tremida, escura ou com letra pequena). Opcional e desligado por padrão: na primeira vez, o app baixa uns 5 MB do próprio site (na página em inglês, o modelo de inglês, uns 7 MB)
 - **Assina o PDF com certificado digital A1** (e-CPF ou e-CNPJ, arquivo .pfx ou .p12), no padrão PAdES, que o Acrobat reconhece. O certificado, a senha e o documento não saem do aparelho e não ficam guardados. Um carimbo visível ("Assinado digitalmente por", nome, data e hora) é opcional, na página e no lugar escolhidos, com prévia. Um PDF que já existe, aberto e assinado sem mudar nada, recebe a assinatura no fim do arquivo, sem ser reescrito: as assinaturas que ele já tinha continuam valendo, e duas pessoas podem assinar o mesmo contrato, uma depois da outra. PDF certificado pelo autor sem permitir alterações é recusado. Token, cartão (A3) e certificado em nuvem não funcionam, porque exigem programa instalado ou servidor da certificadora
 - Abre fotos **HEIC** do iPhone em qualquer navegador (decodificador embutido, carregado só quando precisa)
+- Em português e em inglês: o idioma fica no endereço (`/` e `/en/`), e o app não guarda nada no aparelho para lembrar
 - Funciona offline depois do primeiro acesso
 
 ## Privacidade (o ponto principal)
@@ -58,7 +61,7 @@ Veja [CONTRIBUTING.md](CONTRIBUTING.md). Regra de ouro: **nada de requisições 
 
 ## Licença
 
-[MIT](LICENSE). As quatro bibliotecas em `web/vendor/` são distribuídas sem alterações e têm licença própria: o decodificador de HEIC [libheif-js](https://github.com/catdad-experiments/libheif-js) (LGPL-3.0), o renderizador de PDF [PDF.js](https://github.com/mozilla/pdf.js) (Apache-2.0), o OCR [Tesseract.js](https://github.com/naptha/tesseract.js) (Apache-2.0, com o modelo de português do Tesseract) e o gerador de QR Code [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT). As fontes do PDF/A, as [Liberation](https://github.com/liberationfonts/liberation-fonts), estão sob a SIL Open Font License 1.1.
+[MIT](LICENSE). As quatro bibliotecas em `web/vendor/` são distribuídas sem alterações e têm licença própria: o decodificador de HEIC [libheif-js](https://github.com/catdad-experiments/libheif-js) (LGPL-3.0), o renderizador de PDF [PDF.js](https://github.com/mozilla/pdf.js) (Apache-2.0), o OCR [Tesseract.js](https://github.com/naptha/tesseract.js) (Apache-2.0, com os modelos de português e de inglês do Tesseract) e o gerador de QR Code [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT). As fontes do PDF/A, as [Liberation](https://github.com/liberationfonts/liberation-fonts), estão sob a SIL Open Font License 1.1.
 
 ---
 

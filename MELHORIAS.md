@@ -1252,4 +1252,4 @@ Ficou assim (2026-10-30):
 
 ### Perguntas em aberto
 
-- (Respondida em 2026-10-30: README e SECURITY.md também vão para o inglês.)
+- (Respondida em 2026-10-30: README e SECURITY.md também vão para o inglês.) Feito: `README.en.md` à parte, com link de idioma no topo dos dois; o SECURITY.md fica num arquivo só, com a parte em inglês embaixo, porque é ele que o GitHub mostra na aba de segurança. O CONTRIBUTING.md continua em português.

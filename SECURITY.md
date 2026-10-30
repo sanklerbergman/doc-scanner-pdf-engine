@@ -1,5 +1,7 @@
 # Segurança
 
+**Português** · [English](#english)
+
 ## Como avisar de uma falha
 
 Mande um e-mail para **sbtecnologia0@gmail.com** com o assunto "Segurança - Scanner Doc", descrevendo o problema e como reproduzir. Por favor, não abra uma issue pública para falhas que possam expor documentos ou dados de quem usa o app.
@@ -22,7 +24,40 @@ Este é um projeto de comunidade, mantido no tempo livre: não há recompensa em
 
 ## Regras para quem contribui
 
-- Não afrouxe a Content-Security-Policy do `web/index.html` nem os cabeçalhos de `web/_headers`, e não adicione requisições de rede. A CSP da página aparece nos dois arquivos e tem que ser a mesma (o teste `test/headers.test.js` confere).
+- Não afrouxe a Content-Security-Policy do `web/index.html` nem os cabeçalhos de `web/_headers`, e não adicione requisições de rede. A CSP da página aparece nos dois arquivos (e no `web/en/index.html`, gerado a partir do `index.html`) e tem que ser a mesma (o teste `test/headers.test.js` confere).
 - Bibliotecas de terceiros só entram copiadas em `web/vendor/`, com versão, origem e SHA-256 anotados.
 - As ações do GitHub Actions ficam fixadas pelo hash do commit, não pela tag.
 - A publicação no Cloudflare usa o wrangler fixado em `deploy/package-lock.json`, instalado sem scripts. O token fica no ambiente `producao` do GitHub, que só o libera para a branch `main`.
+
+---
+
+## English
+
+### How to report a flaw
+
+Send an email to **sbtecnologia0@gmail.com** with the subject "Security - Scanner Doc", describing the problem and how to reproduce it. Please don't open a public issue for flaws that could expose documents or data of people using the app.
+
+This is a community project, maintained in spare time: there is no cash reward, but every confirmed flaw is fixed with priority and, if you want, credited.
+
+### What counts as a flaw
+
+- Any path by which an image, a PDF or data of someone using the app leaves the device.
+- Third-party code running on the page (XSS), or a loosening of the Content-Security-Policy or the other security headers.
+- Photo metadata (GPS, device model, date) ending up in the PDF.
+- The digital certificate file (.pfx), the key or the password leaving the device, being kept or showing up in the console. (The public certificate goes into the signed PDF on purpose: it's how the recipient checks who signed.)
+- A PDF delivered as "signed" without the signature checking out.
+- A signature appended to an existing PDF that changes the original or makes an earlier signature stop being valid.
+- Text or image that was under a redaction reaching the generated PDF (selectable, hidden or recoverable in any way) or the text copied from the page.
+- Text recognized by OCR or copied from a page going to the console, being kept or leaving the device, or going to the clipboard without the person tapping "Copy text".
+- Data found by the find-data-to-redact search going to the console, being kept or leaving the device.
+- A PDF password (the one typed to open it or the one chosen to protect it) leaving the device, being kept or showing up in the console, or a "password-protected" PDF that opens without it.
+- Problems in the release workflow that allow unreviewed code to be published.
+
+The same applies to the English page (`/en/`), which has the same security policy as the Portuguese one.
+
+### Rules for contributors
+
+- Don't loosen the Content-Security-Policy in `web/index.html` or the headers in `web/_headers`, and don't add network requests. The page's CSP appears in both files (and in the generated `web/en/index.html`) and must be the same (the `test/headers.test.js` test checks it).
+- Third-party libraries only come in copied to `web/vendor/`, with version, source and SHA-256 recorded.
+- GitHub Actions are pinned by commit hash, not by tag.
+- Publishing to Cloudflare uses the wrangler pinned in `deploy/package-lock.json`, installed without scripts. The token lives in the GitHub `producao` environment, which only releases it to the `main` branch.
