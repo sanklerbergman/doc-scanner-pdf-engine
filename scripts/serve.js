@@ -16,7 +16,8 @@ const types = {
 
 createServer(async (req, res) => {
   const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^([/\\])+/, '');
-  const file = join(root, path.endsWith('/') || path === '' ? join(path, 'index.html') : path);
+  // Pasta (/ ou /en/): o index.html dela. No Windows, o normalize troca a barra por "\".
+  const file = join(root, /[/\\]$/.test(path) || path === '' ? join(path, 'index.html') : path);
   if (!file.startsWith(root)) return res.writeHead(403).end();
   try {
     const body = await readFile(file);

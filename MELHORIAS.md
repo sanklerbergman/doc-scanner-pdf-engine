@@ -1154,3 +1154,87 @@ Nenhum deles tinha pente, lista suspensa, XFA, senha ou assinatura: esses casos 
 
 - Carimbo da assinatura no lugar do campo de assinatura vazio do formulário, se houver pedido.
 - Preencher mantendo a assinatura de outra pessoa (`DocMDP` 2, atualização incremental), junto com o formulário que continua editável.
+
+## Versão em inglês (v4.2.0)
+
+Pedido do dono em 2026-10-30: o site também em inglês (#22). Decidido com ele no mesmo dia: endereço próprio (`/en/`), a interface inteira e o OCR lendo inglês, na v4.2.0 (funcionalidade nova compatível, sobe o minor).
+
+### Abordagem
+
+#### Onde fica o idioma
+
+- `/` continua em português e `/en/` fica em inglês. O idioma está no endereço porque o app não guarda nada (sem `localStorage`): o link compartilhado já abre no idioma certo, e o Google indexa as duas páginas (`<link rel="alternate" hreflang>` nas duas).
+- Sem redirecionamento automático. No `/`, quando o navegador não está em português, o link "English" do topo fica em destaque; no `/en/`, o link "Português" fica sempre lá.
+- O `<base>` não serve (a CSP tem `base-uri 'none'`): a página em inglês aponta para `../css/`, `../js/` e o resto com caminho relativo.
+
+#### Textos
+
+- Os textos do JS passam por `t('Texto em português')`, de um módulo novo (`web/js/i18n.js`). A chave é o próprio texto em português: o código continua legível, e no `/` a função devolve o texto como está. O dicionário em inglês (`web/js/i18n-en.js`) só carrega no `/en/`.
+- Texto com valor no meio usa marcador: `t('{n} páginas', { n })`. Plural com as duas formas no dicionário.
+- O `web/en/index.html` é gerado por um script (`scripts/gerar-en.mjs`) a partir do `web/index.html` e do mesmo dicionário, como o `gerar-fontes-pdfa.mjs`: não há build no deploy, o arquivo gerado vai para o repositório, e um teste confere que ele está em dia.
+
+#### O que vai para o PDF
+
+- O texto que o app escreve no PDF segue o idioma da página: carimbo da assinatura ("Digitally signed by"), marca d'água sugerida ("COPY"), numeração ("Page 1 of 3") e o nome do arquivo baixado.
+- Os formatos de formulário (datas, números do Acrobat) seguem o próprio PDF, nos dois idiomas, como hoje.
+
+#### O que é do Brasil
+
+- A assinatura continua sendo com certificado ICP-Brasil (A1), com a explicação em inglês ("Brazilian ICP-Brasil digital certificate").
+- A busca de dados para tarjar continua procurando CPF, CNPJ, RG, CEP etc., e no inglês ganha e-mail e telefone em formato internacional, que já são genéricos.
+
+#### OCR
+
+- No `/en/`, o OCR usa o modelo do Tesseract em inglês (`eng`), do mesmo tipo do `por` que já está em `web/vendor/tesseract/` (com versão, origem e SHA-256). Ele só baixa quando a pessoa liga o OCR no inglês, e no português nada muda.
+- O aviso de confiança baixa precisa ser calibrado de novo para o modelo em inglês.
+
+### Fases
+
+#### Fase 1: base
+
+- [x] `i18n.js` com `t()`, marcadores e plural; `lang` da página decide o dicionário
+- [x] `scripts/gerar-en.mjs` e o `web/en/index.html` gerado, com `lang="en"`, caminhos `../` e `hreflang`
+- [x] Link de troca de idioma no topo, nas duas páginas (no celular, marca e idioma na primeira linha e o selo "Nada sai do seu aparelho" na segunda)
+- [x] CSP: regras `/en/` e `/en/index.html` no `_headers`, iguais às do `/`, e o `<meta>` igual no `en/index.html`; `test/headers.test.js` e `deploy/conferir.mjs` conferindo as duas
+- [x] `sw.js`: `./en/` no `APP_FILES` (o escopo `./` já cobre) e `CACHE` novo
+- [x] `manifest.webmanifest` em inglês para o `/en/`
+
+Ficou assim (2026-10-30):
+
+- Qualquer mudança no `web/index.html`, inclusive a versão do rodapé, pede `node scripts/gerar-en.mjs` no mesmo commit; o `test/i18n.test.js` acusa a página em inglês desatualizada.
+- O service worker é registrado pelo endereço do `app.js` (`../sw.js`): é um só para as duas páginas.
+- Os avisos dos documentos do Word (`document.js`) já passam por `t()` e `plural()`, como exemplo para a fase 2.
+- O `scripts/serve.js` serve o `index.html` de pastas (`/en/`) também no Windows.
+
+#### Fase 2: textos
+
+- [ ] Todo texto visível do JS (mensagens, avisos, erros, rótulos dos painéis, leitores de tela) passando por `t()`
+- [ ] Teste: toda chamada `t('...')` do código tem tradução no dicionário, e o dicionário não tem chave sobrando
+- [ ] Teste: o `en/index.html` não tem texto em português (letras acentuadas fora do link "Português")
+- [ ] Texto que vai para o PDF no idioma da página
+
+#### Fase 3: OCR em inglês
+
+- [ ] `eng.traineddata.js` em `web/vendor/tesseract/`, gerado pelo `scripts/gerar-modelo-ocr.mjs`
+- [ ] Modelo escolhido pelo idioma da página; calibragem do aviso de confiança baixa
+
+#### Fase 4: conferência
+
+- [ ] Playwright no Chromium e no WebKit, no tamanho do iPhone 16e, com o `wrangler dev`: as duas páginas inteiras, sem texto cortado (o inglês costuma ser mais curto, mas há botões estreitos)
+- [ ] Revisão do inglês pelo dono antes de publicar
+
+### Segurança e privacidade
+
+- Nada muda na CSP além das duas regras novas, iguais às do `/`. A página em inglês não carrega nada de fora.
+- A escolha do idioma não fica guardada: está só no endereço.
+
+### Testes
+
+- `i18n.js`: marcadores, plural, texto sem tradução (no inglês, cai no português e o teste do dicionário acusa).
+- `gerar-en.mjs`: o arquivo do repositório é igual ao gerado.
+- `headers.test.js`: regras do `/en/`.
+- OCR: uma imagem com texto em inglês reconhecida no modelo `eng`.
+
+### Perguntas em aberto
+
+- (Respondida em 2026-10-30: README e SECURITY.md também vão para o inglês.)

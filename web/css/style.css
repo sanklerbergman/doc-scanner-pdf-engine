@@ -59,12 +59,16 @@ h2 { font-size: 1.25rem; }
 /* Cabeçalho */
 .site-header { border-bottom: 1px solid var(--border); background: var(--surface); }
 .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; flex-wrap: wrap; }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--text); text-decoration: none; }
+.brand { display: flex; align-items: center; gap: 8px; margin-right: auto; font-weight: 700; color: var(--text); text-decoration: none; }
 .badge {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 0.85rem; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--text);
 }
 .badge .icon { width: 1.05em; height: 1.05em; color: var(--accent); }
+/* Troca de idioma (#22): o endereço decide (/ e /en/). No português, fica em destaque quando o navegador está em
+   outra língua (app.js põe .lang-suggested). */
+.lang-switch { font-size: 0.85rem; color: var(--text); padding: 4px 6px; border-radius: 6px; }
+.lang-switch.lang-suggested { font-weight: 700; color: var(--accent); outline: 2px solid var(--accent); }
 
 /* Ícones SVG (sprite no index.html): mesmo traço em todo o app, cor herdada do texto. */
 .icon {

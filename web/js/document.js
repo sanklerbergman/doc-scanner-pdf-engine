@@ -4,6 +4,7 @@ import { readDocx, DocxError } from './docx.js';
 import { layoutDocument } from './layout.js';
 import { textWidth } from './fonts.js';
 import { readJpegInfo } from './pdf.js';
+import { t, plural } from './i18n.js';
 
 // Erros com mensagem pronta para mostrar (arquivo antigo, corrompido, com senha, grande demais).
 export { DocxError };
@@ -75,29 +76,27 @@ async function prepareImages(images) {
   return out;
 }
 
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-
 function list(items) {
-  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}`;
+  return items.length < 2 ? items.join('') : t('{a} e {b}', { a: items.slice(0, -1).join(', '), b: items[items.length - 1] });
 }
 
 // Frases curtas sobre o que não aparece igual no PDF.
 export function describeNotes(notes, missing = []) {
   const out = [];
   const left = [];
-  if (notes.images) left.push(plural(notes.images, 'imagem', 'imagens'));
-  if (notes.charts) left.push(plural(notes.charts, 'gráfico', 'gráficos'));
-  if (notes.shapes) left.push(plural(notes.shapes, 'forma ou caixa de texto', 'formas ou caixas de texto'));
-  if (notes.equations) left.push(plural(notes.equations, 'equação', 'equações'));
-  if (notes.footnotes) left.push(plural(notes.footnotes, 'nota de rodapé', 'notas de rodapé'));
-  if (notes.embedded) left.push(plural(notes.embedded, 'conteúdo embutido', 'conteúdos embutidos'));
-  if (left.length) out.push(`Ficou de fora do PDF: ${list(left)}.`);
-  if (notes.columns) out.push('O texto em colunas aparece numa coluna só.');
+  if (notes.images) left.push(plural(notes.images, '{n} imagem', '{n} imagens'));
+  if (notes.charts) left.push(plural(notes.charts, '{n} gráfico', '{n} gráficos'));
+  if (notes.shapes) left.push(plural(notes.shapes, '{n} forma ou caixa de texto', '{n} formas ou caixas de texto'));
+  if (notes.equations) left.push(plural(notes.equations, '{n} equação', '{n} equações'));
+  if (notes.footnotes) left.push(plural(notes.footnotes, '{n} nota de rodapé', '{n} notas de rodapé'));
+  if (notes.embedded) left.push(plural(notes.embedded, '{n} conteúdo embutido', '{n} conteúdos embutidos'));
+  if (left.length) out.push(t('Ficou de fora do PDF: {list}.', { list: list(left) }));
+  if (notes.columns) out.push(t('O texto em colunas aparece numa coluna só.'));
   if (missing.length) {
     const shown = missing.filter((char) => !/\p{Co}/u.test(char)).slice(0, 5);
     out.push(shown.length
-      ? `Alguns caracteres (${shown.join(' ')}) não existem nas fontes do PDF e viraram "?".`
-      : 'Alguns símbolos não existem nas fontes do PDF e viraram "?".');
+      ? t('Alguns caracteres ({chars}) não existem nas fontes do PDF e viraram "?".', { chars: shown.join(' ') })
+      : t('Alguns símbolos não existem nas fontes do PDF e viraram "?".'));
   }
   return out;
 }

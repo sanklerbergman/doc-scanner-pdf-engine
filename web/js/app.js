@@ -5,6 +5,7 @@ import { quadSize, unskewRect } from './geometry.js';
 import { setupCamera } from './camera.js';
 import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
+import { LANG } from './i18n.js';
 import { parseRanges } from './ranges.js';
 import { paintRedactions, rotateRedactions, toUnrotated, toRotatedRects, redactLayout, filterWords, textUnderRedactions } from './redact.js';
 import { findInPieces, padRect, TYPE_LABELS } from './find-data.js';
@@ -2559,9 +2560,17 @@ function drawQr(canvas, qr) {
 for (const link of document.querySelectorAll('[data-repo-link]')) link.href = CONFIG.repoUrl;
 for (const link of document.querySelectorAll('[data-release-link]')) link.href = `${CONFIG.repoUrl}/releases/tag/v${link.textContent}`;
 
+// ---------- Idioma ----------
+// O idioma vem do endereço (/ e /en/), sem redirecionar. Na página em português, o link "English" fica em destaque
+// quando a primeira língua do navegador não é o português (#22).
+if (LANG === 'pt' && !/^pt\b/i.test(navigator.languages?.[0] ?? navigator.language ?? 'pt')) {
+  document.querySelector('.lang-switch')?.classList.add('lang-suggested');
+}
+
 // ---------- Offline ----------
 // O service worker só guarda os arquivos do próprio app (HTML/CSS/JS) para funcionar sem internet.
 // Ele nunca vê suas imagens: elas não passam pela rede.
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // Pelo endereço do app.js: a página em inglês fica em /en/, e o service worker é um só, na raiz (#22).
+  navigator.serviceWorker.register(new URL('../sw.js', import.meta.url)).catch(() => {});
 }

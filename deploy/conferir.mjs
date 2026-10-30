@@ -14,16 +14,18 @@ const files = (await readdir(WEB, { recursive: true, withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name !== '_headers')
   .map((entry) => relative(WEB, `${entry.parentPath}/${entry.name}`).replaceAll('\\', '/'));
 
-// A página (o /index.html redireciona para /) recebe a CSP do <meta> mais frame-ancestors; o service worker, a dele.
+// As páginas (o /index.html redireciona para /, e o /en/index.html para /en/) recebem a CSP do <meta> mais
+// frame-ancestors; o service worker, a dele.
 // Cada política que chegar tem que ser exatamente a esperada: se o Cloudflare juntar outra, a conferência falha.
 const metaCsp = (await readFile(WEB + 'index.html', 'utf8')).match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1];
 const expectedCsp = {
   '': `${metaCsp}; frame-ancestors 'none'`,
+  'en/': `${metaCsp}; frame-ancestors 'none'`,
   'sw.js': "default-src 'none'; connect-src 'self'",
 };
 
 async function check(file) {
-  const path = file === 'index.html' ? '' : file;
+  const path = file.endsWith('index.html') ? file.slice(0, -'index.html'.length) : file;
   // Pede como um navegador: o Cloudflare só injeta script (ex.: Web Analytics) quando a requisição aceita HTML.
   const response = await fetch(new URL(path, BASE), {
     cache: 'no-store',

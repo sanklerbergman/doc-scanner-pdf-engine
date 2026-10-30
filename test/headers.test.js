@@ -39,12 +39,16 @@ test('todo arquivo sai com os cabeçalhos de segurança', () => {
 });
 
 test('a página recebe a mesma CSP do <meta>, mais frame-ancestors', () => {
-  for (const path of ['/', '/index.html']) {
+  for (const path of ['/', '/index.html', '/en/', '/en/index.html']) {
     const rule = rules.get(path);
     assert.ok(rule, `falta a regra ${path}`);
     assert.equal(rule.headers.get('content-security-policy'), `${metaCsp}; frame-ancestors 'none'`);
   }
   assert.match(metaCsp, /connect-src 'none'/);
+  // A página em inglês (#22) tem o mesmo <meta>.
+  const enCsp = readFileSync(new URL('../web/en/index.html', import.meta.url), 'utf8')
+    .match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1];
+  assert.equal(enCsp, metaCsp);
 });
 
 test('o service worker só consegue buscar arquivos do próprio site', () => {
