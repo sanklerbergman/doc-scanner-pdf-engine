@@ -1235,8 +1235,8 @@ Ficou assim (2026-10-30):
 
 #### Fase 4: conferência
 
-- [ ] Playwright no Chromium e no WebKit, no tamanho do iPhone 16e, com o `wrangler dev`: as duas páginas inteiras, sem texto cortado (o inglês costuma ser mais curto, mas há botões estreitos)
-- [ ] Revisão do inglês pelo dono antes de publicar
+- [x] Playwright no Chromium e no WebKit, no tamanho do iPhone 16e: as duas páginas, com foto, PDF, tela cheia, geração e OCR, sem texto em português no `/en/`. Foi com o `scripts/serve.js`, não com o `wrangler dev`; os cabeçalhos foram conferidos no ar depois do deploy (uma CSP só no `/` e no `/en/`)
+- [x] Revisão do inglês pelo dono (feita no site publicado, 2026-10-30: "tudo certo com o site em inglês")
 
 ### Segurança e privacidade
 
