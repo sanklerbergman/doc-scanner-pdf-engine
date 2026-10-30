@@ -207,6 +207,10 @@ export function qpdfCheck(bytes, qpdf) {
 // ele): aí, dado de stream ou conteúdo de página com defeito também conta como herdado.
 const CONTENT = /error decoding stream data|input stream is complete|\(content, offset|content stream/;
 
+// Com o OCR ou a edição, o conteúdo da página vira uma lista (o original entre os streams novos), e o qpdf cita a
+// lista toda: "stream 4 0, stream 6 0, stream 5 0" é o mesmo defeito do "stream 4 0" da entrada (#18).
+const STREAMS = /stream \d+ \d+(?:, stream \d+ \d+)+/g;
+
 // O PDF com a assinatura acrescentada guarda o original byte a byte, com os defeitos dele: o qpdf os descreve de
 // outro jeito (e passa a conferir o formulário, que antes nem existia). Nele só conta erro (status 2) que a entrada
 // não tinha; a estrutura do trecho acrescentado é conferida à parte (append).
@@ -215,7 +219,7 @@ export function newQpdfProblems(result) {
   const appended = result.appended ?? -1;
   const kinds = (check) => new Set(check.text
     .filter((line) => !/^qpdf: |re-processed without filtering/.test(line))
-    .map((line) => line.replace(/^(WARNING|ERROR): arquivo\.pdf[^:]*:\s*/, '$1: ').replace(/decode: .*$/, 'decode').replace(/\d+/g, 'N').trim()));
+    .map((line) => line.replace(/^(WARNING|ERROR): arquivo\.pdf[^:]*:\s*/, '$1: ').replace(/decode: .*$/, 'decode').replace(STREAMS, 'stream N N').replace(/\d+/g, 'N').trim()));
   const input = kinds(result.qpdf.input);
   const damaged = result.qpdf.input.status !== 0;
   return result.qpdf.outputs.flatMap((out, i) => {
