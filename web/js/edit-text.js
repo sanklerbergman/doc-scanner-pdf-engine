@@ -10,9 +10,10 @@
 // travada); só quebra linha onde a pessoa quebrou.
 import { registerEditType, editFrame, boxAround, pdfNumber } from './edits.js';
 import { textWidth, winAnsiCode } from './fonts.js';
+import { t } from './i18n.js';
 
 /** As três famílias, com o nome que aparece na tela. */
-export const TEXT_FAMILIES = { sans: 'Sem serifa', serif: 'Com serifa', mono: 'De máquina' };
+export const TEXT_FAMILIES = { sans: t('Sem serifa'), serif: t('Com serifa'), mono: t('De máquina') };
 const FONTS = { sans: 'Helvetica', serif: 'Times-Roman', mono: 'Courier' };
 // Fontes do aparelho mais parecidas com as do PDF. A prévia usa as larguras do PDF (maxWidth): a diferença entre elas
 // aparece só no desenho das letras, nunca no lugar delas.
@@ -59,9 +60,9 @@ export function winAnsiText(text) {
 /** O aviso das letras que ficaram de fora (winAnsiText), ou vazio. */
 export function droppedMessage(dropped) {
   if (!dropped.length) return '';
-  if (dropped.length === 1) return `A letra ${dropped[0]} não existe nas fontes do PDF e ficou de fora.`;
-  const list = `${dropped.slice(0, -1).join(' ')} e ${dropped.at(-1)}`;
-  return `As letras ${list} não existem nas fontes do PDF e ficaram de fora.`;
+  if (dropped.length === 1) return t('A letra {char} não existe nas fontes do PDF e ficou de fora.', { char: dropped[0] });
+  const list = t('{a} e {b}', { a: dropped.slice(0, -1).join(' '), b: dropped.at(-1) });
+  return t('As letras {list} não existem nas fontes do PDF e ficaram de fora.', { list });
 }
 
 // Linhas e largura da mais comprida, com a letra de tamanho 1.
@@ -109,10 +110,10 @@ function runs(line, index, hidden) {
 }
 
 registerEditType('text', {
-  label: 'Texto', gender: 'm', keepRatio: true,
+  label: t('Texto'), gender: 'm', keepRatio: true,
   describe(edit) {
     const first = String(edit.text ?? '').split('\n')[0];
-    return `Texto "${first.length > 40 ? `${first.slice(0, 39)}…` : first}"`;
+    return t('Texto "{text}"', { text: first.length > 40 ? `${first.slice(0, 39)}…` : first });
   },
   // Na tela, como no PDF: sem as letras que a tarja tira (hidden), e o resto da linha no mesmo lugar.
   paint(ctx, edit, frame) {
@@ -213,12 +214,14 @@ export function retext(edit, { text, family = 'sans', size, color = '#000000' },
 // ---------- Em todas as páginas ----------
 
 /** Formatos da numeração, com o exemplo que aparece na tela. */
-export const NUMBER_FORMATS = { n: '1', 'n-of': '1 de 7', 'page-n-of': 'Página 1 de 7' };
+export const NUMBER_FORMATS = {
+  n: '1', 'n-of': t('{n} de {total}', { n: 1, total: 7 }), 'page-n-of': t('Página {n} de {total}', { n: 1, total: 7 }),
+};
 
 /** O número da página no formato escolhido. position e total contam dentro do arquivo. */
 export function pageNumber(format, position, total) {
-  if (format === 'n-of') return `${position} de ${total}`;
-  if (format === 'page-n-of') return `Página ${position} de ${total}`;
+  if (format === 'n-of') return t('{n} de {total}', { n: position, total });
+  if (format === 'page-n-of') return t('Página {n} de {total}', { n: position, total });
   return String(position);
 }
 

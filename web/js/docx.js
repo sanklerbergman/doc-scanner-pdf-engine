@@ -10,6 +10,7 @@
 // metadados (docProps: autor, empresa, datas) nem são lidos.
 import { openZip, ZipError } from './zip.js';
 import { parseXml, elements, element, XmlError } from './xml.js';
+import { t } from './i18n.js';
 
 export class DocxError extends Error {}
 
@@ -478,13 +479,13 @@ const SPECIAL_FIELDS = /^\s*(PAGE|NUMPAGES|SECTIONPAGES)\b/i;
 export async function readDocx(bytes, limits) {
   // .doc (Word 97-2003) e .docx com senha são arquivos OLE, não ZIP.
   if (bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) {
-    throw new DocxError('É um documento do Word antigo (.doc) ou protegido por senha. Abra no Word e salve como .docx, sem senha.');
+    throw new DocxError(t('É um documento do Word antigo (.doc) ou protegido por senha. Abra no Word e salve como .docx, sem senha.'));
   }
   try {
     return await read(bytes, limits);
   } catch (err) {
     if (err instanceof ZipError) throw new DocxError(err.message);
-    if (err instanceof XmlError) throw new DocxError('O documento está corrompido.');
+    if (err instanceof XmlError) throw new DocxError(t('O documento está corrompido.'));
     throw err;
   }
 }
@@ -492,7 +493,7 @@ export async function readDocx(bytes, limits) {
 async function read(bytes, limits) {
   const zip = openZip(bytes, limits);
   const main = byType(await readRelations(zip, ''), 'officeDocument');
-  if (!main || !zip.has(main)) throw new DocxError('Não parece um documento do Word (.docx).');
+  if (!main || !zip.has(main)) throw new DocxError(t('Não parece um documento do Word (.docx).'));
 
   const relations = await readRelations(zip, main);
   const relsOf = (list) => new Map(list.map((rel) => [rel.id, rel.target]));
@@ -505,7 +506,7 @@ async function read(bytes, limits) {
 
   const root = parseXml(await zip.readText(main), NAMESPACES);
   const body = element(root, 'w:body');
-  if (!body) throw new DocxError('Não parece um documento do Word (.docx).');
+  if (!body) throw new DocxError(t('Não parece um documento do Word (.docx).'));
 
   // Cabeçalhos e rodapés: as partes são lidas antes (é assíncrono), cada uma com as relações dela (imagens).
   const parts = new Map();

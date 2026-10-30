@@ -15,6 +15,7 @@ import { counterText, inputHints, formatTyped, requiredEmpty, optionLabels } fro
 import { toRotatedRects } from './redact.js';
 import { winAnsiText, droppedMessage } from './edit-text.js';
 import { followKeyboard } from './keyboard-panel.js';
+import { t } from './i18n.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -30,15 +31,15 @@ function el(tag, props = {}, children = []) {
 
 // Por que o campo não pode ser preenchido (field.reason, em pdf-form.js).
 const REASONS = {
-  signature: 'Campo de assinatura: para assinar, use "Assinar com certificado digital" depois de preencher.',
-  password: 'Campo de senha: o app não preenche.',
-  file: 'Campo para anexar um arquivo: o app não preenche.',
-  readOnly: 'Somente leitura: o formulário não deixa mudar este campo.',
-  locked: 'Travado pela assinatura que o PDF já tem.',
-  xfa: 'Formulário XFA: só o Adobe Reader preenche.',
+  signature: t('Campo de assinatura: para assinar, use "Assinar com certificado digital" depois de preencher.'),
+  password: t('Campo de senha: o app não preenche.'),
+  file: t('Campo para anexar um arquivo: o app não preenche.'),
+  readOnly: t('Somente leitura: o formulário não deixa mudar este campo.'),
+  locked: t('Travado pela assinatura que o PDF já tem.'),
+  xfa: t('Formulário XFA: só o Adobe Reader preenche.'),
 };
-const CALCULATED = 'O formulário fazia esta conta sozinho, mas aqui ela não é feita: confira o valor.';
-const CLIPPED = 'O texto não cabe no campo: a letra diminui até 6 pt e o fim sai cortado.';
+const CALCULATED = t('O formulário fazia esta conta sozinho, mas aqui ela não é feita: confira o valor.');
+const CLIPPED = t('O texto não cabe no campo: a letra diminui até 6 pt e o fim sai cortado.');
 const MAX_ZOOM = 4;
 
 /**
@@ -112,7 +113,7 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
     stage.classList.add('filling');
     stop = followKeyboard(panel);
     drawBoxes();
-    say('Toque num campo da página ou use Anterior e Próximo. Os valores ficam fixos no PDF.');
+    say(t('Toque num campo da página ou use Anterior e Próximo. Os valores ficam fixos no PDF.'));
     select(0);
     // Rótulos pelo texto em volta do campo (PDF.js): chegam depois; até lá (ou sem eles), o /TU ou o nome do campo.
     textItems(target).then((list) => {
@@ -205,7 +206,7 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
     const field = fields[current];
     if (!field) return;
     const label = labels.get(field.id) || field.label;
-    const required = field.required && field.editable ? el('span', { className: 'fill-required', textContent: 'obrigatório' }) : null;
+    const required = field.required && field.editable ? el('span', { className: 'fill-required', textContent: t('obrigatório') }) : null;
     const value = valueOf(field);
     const disabled = !field.editable;
     const common = (node) => {
@@ -228,7 +229,7 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
     } else if (field.kind === 'radio' || field.kind === 'checkbox') {
       // Rádio (ou caixas que se excluem): um grupo, com a legenda, e "Nenhuma" para desmarcar.
       const names = optionLabels(field, index, items);
-      const choices = [...field.options.map((o) => [o.value, names.get(o.value) ?? o.label]), [null, 'Nenhuma']];
+      const choices = [...field.options.map((o) => [o.value, names.get(o.value) ?? o.label]), [null, t('Nenhuma')]];
       const inputs = choices.map(([state, text]) => {
         const input = el('input', { type: 'radio', name: 'fill-choice', checked: (value ?? null) === state, disabled });
         input.dataset.state = state ?? '';
@@ -241,7 +242,7 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
     } else if (field.kind === 'list' || (field.kind === 'combo' && !field.custom)) {
       target = common(el('select', { className: 'fill-input', multiple: field.multiSelect }));
       const chosen = new Set(Array.isArray(value) ? value : [value]);
-      if (!field.multiSelect) target.append(el('option', { value: '', textContent: 'Nenhuma' }));
+      if (!field.multiSelect) target.append(el('option', { value: '', textContent: t('Nenhuma') }));
       target.append(...field.options.map((o) => el('option', { value: o.value, textContent: o.label, selected: chosen.has(o.value) })));
       if (field.multiSelect) target.size = Math.min(6, Math.max(2, field.options.length));
       parts = [el('label', { className: 'fill-label', htmlFor: 'fill-input' }, [label, required]), target];
@@ -304,7 +305,7 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
       if (result.text !== typed) control.value = result.text;
       draft.set(field.id, result.text);
       if (result.ok) warnings.delete(field.id);
-      else warnings.set(field.id, `${result.message ?? 'O valor não serve para o formato do formulário.'} Ele sai como foi digitado.`);
+      else warnings.set(field.id, t('{problem} Ele sai como foi digitado.', { problem: result.message ?? t('O valor não serve para o formato do formulário.') }));
     }
   }
 
@@ -413,7 +414,7 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
     const empty = named(requiredEmpty(fields, valueOf));
     const invalid = named(fields.filter((field) => warnings.has(field.id) && changes.has(field.id)));
     applyButton.disabled = true;
-    say('Aplicando os valores…');
+    say(t('Aplicando os valores…'));
     let result = '';
     try {
       result = await save(page, changes, { empty, invalid });
@@ -423,7 +424,7 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
     leave(result);
   });
   $('#fill-cancel').addEventListener('click', async () => {
-    if (dirty() && !(await confirm('Os valores desta página ainda não foram aplicados. Se sair agora, eles se perdem.'))) return;
+    if (dirty() && !(await confirm(t('Os valores desta página ainda não foram aplicados. Se sair agora, eles se perdem.')))) return;
     leave();
   });
 

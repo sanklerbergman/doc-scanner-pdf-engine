@@ -5,7 +5,7 @@ import { quadSize, unskewRect } from './geometry.js';
 import { setupCamera } from './camera.js';
 import { pixPayload } from './pix.js';
 import { CONFIG } from './config.js';
-import { LANG } from './i18n.js';
+import { LANG, LOCALE, t, plural } from './i18n.js';
 import { parseRanges } from './ranges.js';
 import { paintRedactions, rotateRedactions, toUnrotated, toRotatedRects, redactLayout, filterWords, textUnderRedactions } from './redact.js';
 import { findInPieces, padRect, TYPE_LABELS } from './find-data.js';
@@ -30,7 +30,7 @@ if (window.top !== window.self) {
   link.href = location.href;
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
-  link.textContent = 'Abrir o Scanner Doc em uma aba própria';
+  link.textContent = t('Abrir o Scanner Doc em uma aba própria');
   document.body.replaceChildren(link);
   throw new Error('O Scanner Doc não funciona embutido em outro site.');
 }
@@ -225,7 +225,7 @@ function icon(name) {
 
 function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
+  return `${(bytes / 1024 / 1024).toLocaleString(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })} MB`;
 }
 
 // ---------- Adicionar imagens e documentos ----------
@@ -234,7 +234,7 @@ async function addFiles(fileList) {
   if (state.busy) return; // arrastar ou colar durante a geração: ignora (os botões já estão travados)
   const files = [...fileList].filter((f) => isImage(f) || isDocx(f) || isOldWord(f) || isPdf(f));
   if (!files.length) {
-    announce('Por aqui só entram imagens (JPG, PNG, WebP…), PDFs e documentos do Word (.docx).', 'error');
+    announce(t('Por aqui só entram imagens (JPG, PNG, WebP…), PDFs e documentos do Word (.docx).'), 'error');
     return;
   }
   discardPdf();
@@ -244,7 +244,7 @@ async function addFiles(fileList) {
   let images = 0;
   let cropped = 0;
   for (const file of files) {
-    announce(`Lendo ${file.name}…`);
+    announce(t('Lendo {name}…', { name: file.name }));
     if (!isImage(file)) {
       const result = isPdf(file) ? await addPdfFile(file) : await addDocument(file);
       if (result.error) documentErrors.push(result.error);
@@ -268,25 +268,26 @@ async function addFiles(fileList) {
   }
 
   const messages = [];
-  if (failed.length) messages.push(`Não consegui abrir: ${failed.join(', ')}. Tente exportar como JPG ou PNG.`);
+  if (failed.length) messages.push(t('Não consegui abrir: {names}. Tente exportar como JPG ou PNG.', { names: failed.join(', ') }));
   else if (images) messages.push(imagesMessage(images, cropped));
   messages.push(...documentErrors, ...documentMessages);
   announce(messages.join(' '), failed.length || documentErrors.length ? 'error' : 'info');
 }
 
 function imagesMessage(count, cropped) {
-  const added = count === 1 ? '1 imagem adicionada' : `${count} imagens adicionadas`;
+  const added = plural(count, '{n} imagem adicionada', '{n} imagens adicionadas');
   const missed = count - cropped;
-  if (!missed) return `${added}, com o papel recortado automaticamente. Se os cantos não ficaram certos, use "Ajustar recorte".`;
-  if (!cropped) return `${added}. Não achei as bordas do papel: use "Recortar" para marcar os cantos.`;
-  return `${added}. Em ${missed === 1 ? 'uma delas' : `${missed} delas`} não achei as bordas do papel: use "Recortar" para marcar os cantos.`;
+  if (!missed) return t('{added}, com o papel recortado automaticamente. Se os cantos não ficaram certos, use "Ajustar recorte".', { added });
+  if (!cropped) return t('{added}. Não achei as bordas do papel: use "Recortar" para marcar os cantos.', { added });
+  return plural(missed, '{added}. Em uma delas não achei as bordas do papel: use "Recortar" para marcar os cantos.',
+    '{added}. Em {n} delas não achei as bordas do papel: use "Recortar" para marcar os cantos.', { added });
 }
 
 // Um .docx vira várias páginas na lista, que dá para reordenar e misturar com fotos.
 // O texto já sai distribuído nas páginas, com o tamanho e as margens do próprio documento.
 async function addDocument(file) {
   if (isOldWord(file) && !isDocx(file)) {
-    return { error: `${file.name} é do Word antigo (.doc): abra no Word, use "Salvar como" e escolha .docx.` };
+    return { error: t('{name} é do Word antigo (.doc): abra no Word, use "Salvar como" e escolha .docx.', { name: file.name }) };
   }
   let module;
   try {
@@ -298,12 +299,12 @@ async function addDocument(file) {
       state.pages.push(page);
     }
     renderPages();
-    const count = pages.length === 1 ? '1 página adicionada' : `${pages.length} páginas adicionadas`;
+    const count = plural(pages.length, '{n} página adicionada', '{n} páginas adicionadas');
     return { message: [`${file.name}: ${count}.`, ...notes].join(' ') };
   } catch (err) {
     console.error(err);
-    const reason = module && err instanceof module.DocxError ? err.message : 'Não deu para ler o documento.';
-    return { error: `Não consegui abrir ${file.name}. ${reason}` };
+    const reason = module && err instanceof module.DocxError ? err.message : t('Não deu para ler o documento.');
+    return { error: t('Não consegui abrir {name}. {reason}', { name: file.name, reason }) };
   }
 }
 
@@ -331,9 +332,9 @@ async function addPdfFile(file) {
         opened = await module.openPdfFile(file, password);
       } catch (err) {
         if (err?.name !== 'PdfPasswordError') throw err;
-        announce(`${file.name} está protegido por senha.`);
+        announce(t('{name} está protegido por senha.', { name: file.name }));
         password = await askPdfPassword(file.name, err.wrong);
-        if (password === null) return { error: `${file.name} ficou de fora: ele precisa de senha para abrir.` };
+        if (password === null) return { error: t('{name} ficou de fora: ele precisa de senha para abrir.', { name: file.name }) };
       }
     }
     password = null;
@@ -351,21 +352,21 @@ async function addPdfFile(file) {
       state.pages.push(page);
     }
     renderPages();
-    const count = pages.length === 1 ? '1 página adicionada' : `${pages.length} páginas adicionadas`;
+    const count = plural(pages.length, '{n} página adicionada', '{n} páginas adicionadas');
     // PDF pesado por causa de imagens: já liga a compressão, a não ser que a pessoa tenha escolhido antes. PDF
     // assinado fica como está: comprimir faria a assinatura dele deixar de valer (ela só se mantém se o PDF for
     // assinado sem mudar nada).
     let compress = '';
     if (heavy && !state.compressChosen && !doc.isSigned()) {
       els.pdfCompress.value = 'light';
-      compress = `É um PDF pesado (${formatBytes(file.size)}): deixei a compressão das imagens ligada, para o arquivo ficar bem menor.`;
+      compress = t('É um PDF pesado ({size}): deixei a compressão das imagens ligada, para o arquivo ficar bem menor.', { size: formatBytes(file.size) });
       updateCompressTip();
     }
     return { message: [`${file.name}: ${count}.`, compress, ...notes].filter(Boolean).join(' ') };
   } catch (err) {
     console.error(err);
-    const reason = module && err instanceof module.PdfError ? err.message : 'Não deu para ler o PDF.';
-    return { error: `Não consegui abrir ${file.name}. ${reason}` };
+    const reason = module && err instanceof module.PdfError ? err.message : t('Não deu para ler o PDF.');
+    return { error: t('Não consegui abrir {name}. {reason}', { name: file.name, reason }) };
   }
 }
 
@@ -477,7 +478,7 @@ function askPdfPassword(name, wrong) {
     const submit = () => {
       const value = els.pdfPasswordInput.value;
       if (!value) {
-        status('Digite a senha do PDF.', 'error');
+        status(t('Digite a senha do PDF.'), 'error');
         els.pdfPasswordInput.focus();
         return;
       }
@@ -495,7 +496,7 @@ function askPdfPassword(name, wrong) {
     };
     els.pdfPasswordName.textContent = name;
     els.pdfPasswordInput.value = '';
-    status(wrong ? 'A senha não confere. Confira maiúsculas e minúsculas e tente de novo.' : '', wrong ? 'error' : 'info');
+    status(wrong ? t('A senha não confere. Confira maiúsculas e minúsculas e tente de novo.') : '', wrong ? 'error' : 'info');
     els.pdfPasswordOpen.addEventListener('click', submit);
     els.pdfPasswordSkip.addEventListener('click', skip);
     els.pdfPasswordInput.addEventListener('keydown', onKey);
@@ -526,14 +527,15 @@ async function saveFormValues(page, changes, { empty = [], invalid = [] } = {}) 
   const index = state.pages.indexOf(page) + 1;
   const names = (list) => {
     const shown = list.slice(0, 3);
-    return list.length > 3 ? `${shown.join(', ')} e mais ${list.length - 3}` : shown.length > 1 ? `${shown.slice(0, -1).join(', ')} e ${shown.at(-1)}` : shown[0];
+    return list.length > 3 ? t('{list} e mais {n}', { list: shown.join(', '), n: list.length - 3 })
+      : shown.length > 1 ? t('{a} e {b}', { a: shown.slice(0, -1).join(', '), b: shown.at(-1) }) : shown[0];
   };
   const parts = [changes.size
-    ? `Página ${index}: ${changes.size === 1 ? '1 campo preenchido, fixo' : `${changes.size} campos preenchidos, fixos`} na página do PDF.`
-    : `Página ${index}: nenhum valor mudou.`];
-  if (clipped) parts.push(clipped === 1 ? 'Um valor não coube no campo e sai cortado.' : `${clipped} valores não couberam no campo e saem cortados.`);
-  if (invalid.length) parts.push(`Fora do formato do formulário, como digitado: ${names(invalid)}.`);
-  if (empty.length) parts.push(`${empty.length === 1 ? 'Ficou vazio o campo obrigatório' : 'Ficaram vazios os campos obrigatórios'} ${names(empty)}.`);
+    ? plural(changes.size, 'Página {page}: {n} campo preenchido, fixo na página do PDF.', 'Página {page}: {n} campos preenchidos, fixos na página do PDF.', { page: index })
+    : t('Página {page}: nenhum valor mudou.', { page: index })];
+  if (clipped) parts.push(plural(clipped, 'Um valor não coube no campo e sai cortado.', '{n} valores não couberam no campo e saem cortados.'));
+  if (invalid.length) parts.push(t('Fora do formato do formulário, como digitado: {names}.', { names: names(invalid) }));
+  if (empty.length) parts.push(plural(empty.length, 'Ficou vazio o campo obrigatório {names}.', 'Ficaram vazios os campos obrigatórios {names}.', { names: names(empty) }));
   const message = parts.join(' ');
   announce(message, empty.length || invalid.length || clipped ? 'error' : 'info');
   return message;
@@ -599,7 +601,7 @@ els.qualityTipApply.addEventListener('click', () => {
   els.quality.value = 'high';
   discardPdf();
   updateQualityTip();
-  announce('Qualidade Alta selecionada.');
+  announce(t('Qualidade Alta selecionada.'));
   els.quality.focus();
 });
 
@@ -627,37 +629,37 @@ function renderPages() {
   els.pages.replaceChildren(...state.pages.map((page, i) => {
     const button = (action, label, disabled = false) => el('button', {
       type: 'button', className: `icon-btn icon-btn-${action}`, title: label, disabled: disabled || state.busy,
-      'aria-label': `${label} (página ${i + 1})`, 'data-action': action,
+      'aria-label': t('{label} (página {n})', { label, n: i + 1 }), 'data-action': action,
     }, [icon(action)]);
     const doc = !isPhoto(page);
 
     return el('li', { className: 'page-card', 'data-id': page.id }, [
       el('button', {
         type: 'button', className: 'thumb', 'data-action': 'view', disabled: state.busy,
-        'aria-label': doc ? `Ver a página ${i + 1} em tela cheia` : `Ver a página ${i + 1} em tela cheia e ajustar o recorte`,
+        'aria-label': doc ? t('Ver a página {n} em tela cheia', { n: i + 1 }) : t('Ver a página {n} em tela cheia e ajustar o recorte', { n: i + 1 }),
       }, [el('img', { src: page.thumbUrl, alt: '' }), el('span', { className: 'thumb-zoom' }, [icon('expand')])]),
       doc
         ? el('p', { className: 'page-source', title: page.name }, [
           icon('file'), el('span', { className: 'page-source-name', textContent: page.name }),
-          el('span', { textContent: ` · ${page.number}/${page.total}`, 'aria-label': `, página ${page.number} de ${page.total}` }),
+          el('span', { textContent: ` · ${page.number}/${page.total}`, 'aria-label': t(', página {n} de {total}', { n: page.number, total: page.total }) }),
         ])
         // Botão com texto: o recorte é o ajuste que mais muda o resultado e não pode ficar escondido atrás da miniatura.
         : el('button', {
           type: 'button', className: 'btn btn-crop', 'data-action': 'crop', disabled: state.busy,
-          'aria-label': `Ajustar o recorte da página ${i + 1}`,
-        }, [icon('crop'), ` ${page.quad ? 'Ajustar recorte' : 'Recortar'}`]),
+          'aria-label': t('Ajustar o recorte da página {n}', { n: i + 1 }),
+        }, [icon('crop'), ` ${page.quad ? t('Ajustar recorte') : t('Recortar')}`]),
       el('div', { className: 'page-tools' }, [
         el('span', { className: 'page-label' }, [
-          el('span', { className: 'drag-handle', title: 'Arraste para mudar a página de lugar', 'aria-hidden': 'true' }, [icon('grip')]),
+          el('span', { className: 'drag-handle', title: t('Arraste para mudar a página de lugar'), 'aria-hidden': 'true' }, [icon('grip')]),
           el('span', { className: 'page-num', textContent: i + 1 }),
         ]),
-        button('remove', 'Remover'),
-        button('left', 'Mover para antes', i === 0),
-        button('right', 'Mover para depois', i === total - 1),
-        button('rotate', 'Girar'),
+        button('remove', t('Remover')),
+        button('left', t('Mover para antes'), i === 0),
+        button('right', t('Mover para depois'), i === total - 1),
+        button('rotate', t('Girar')),
       ]),
       ...(doc ? [] : [el('select', {
-        className: 'page-filter', 'aria-label': `Filtro da página ${i + 1}`, disabled: state.busy,
+        className: 'page-filter', 'aria-label': t('Filtro da página {n}', { n: i + 1 }), disabled: state.busy,
       }, filterOptions(page.filter))]),
     ]);
   }));
@@ -687,7 +689,7 @@ els.pages.addEventListener('click', async (event) => {
   const index = findPage(button);
   const page = state.pages[index];
   if (button.dataset.action === 'view' || button.dataset.action === 'crop') {
-    viewer.open(page, `Página ${index + 1} de ${state.pages.length}`, button.dataset.action === 'crop');
+    viewer.open(page, t('Página {n} de {total}', { n: index + 1, total: state.pages.length }), button.dataset.action === 'crop');
     return;
   }
   discardPdf();
@@ -736,7 +738,7 @@ setupReorder(els.pages, {
     state.pages = moveItem(state.pages, from, to);
     discardPdf();
     renderPages();
-    announce(`Página ${from + 1} movida para a posição ${to + 1}.`);
+    announce(t('Página {from} movida para a posição {to}.', { from: from + 1, to: to + 1 }));
   },
 });
 
@@ -808,7 +810,7 @@ const viewer = setupViewer({
   step(page, delta) {
     const index = state.pages.indexOf(page) + delta;
     const next = state.pages[index];
-    return next ? { page: next, label: `Página ${index + 1} de ${state.pages.length}` } : null;
+    return next ? { page: next, label: t('Página {n} de {total}', { n: index + 1, total: state.pages.length }) } : null;
   },
   canCrop: isPhoto,
   // "Formulário" sem campos (muitos dos públicos): a dica da tela cheia aponta para o Texto da v4.0.0. Só na página de
@@ -817,12 +819,12 @@ const viewer = setupViewer({
     if (page.kind !== 'pdf' || page.doc.form?.fields.length) return Promise.resolve(null);
     page.formHint ??= loadPdfTools()
       .then((tools) => tools.pdfPageTextItems(page.doc, page.index))
-      .then(({ items }) => (looksLikeForm(items) ? 'Este PDF não tem campos para preencher: para escrever nos espaços, use "Editar" e depois "Texto".' : null))
+      .then(({ items }) => (looksLikeForm(items) ? t('Este PDF não tem campos para preencher: para escrever nos espaços, use "Editar" e depois "Texto".') : null))
       .catch(() => null);
     return page.formHint;
   },
   viewHint: (page) => (page.kind === 'pdf' && !page.drawn
-    ? 'Não deu para desenhar esta página aqui, mas no PDF novo ela sai igualzinha ao original.'
+    ? t('Não deu para desenhar esta página aqui, mas no PDF novo ela sai igualzinha ao original.')
     : null),
   renderOriginal: (page) => canvasToBlob(
     renderPage(page.preview, page.preview.width, page.preview.height, { rotation: page.rotation }), 'image/jpeg', 0.9),
@@ -832,12 +834,15 @@ const viewer = setupViewer({
     page.quad = quad;
     page.ocr = null;
     // As tarjas e as edições ficam sobre a foto já recortada: com outro recorte, cobririam outro lugar. Saem, com aviso.
-    const lost = changed ? [page.redactions?.length && 'As tarjas', page.edits?.length && 'As edições'].filter(Boolean) : [];
-    if (lost.length) {
+    const redactions = changed && !!page.redactions?.length;
+    const edits = changed && !!page.edits?.length;
+    if (redactions || edits) {
       page.redactions = [];
       page.edits = [];
-      const what = lost.length === 2 ? 'As tarjas e as edições' : lost[0];
-      announce(`${what} da página ${state.pages.indexOf(page) + 1} foram apagadas porque o recorte mudou: marque de novo.`, 'error');
+      const n = state.pages.indexOf(page) + 1;
+      announce(redactions && edits ? t('As tarjas e as edições da página {n} foram apagadas porque o recorte mudou: marque de novo.', { n })
+        : redactions ? t('As tarjas da página {n} foram apagadas porque o recorte mudou: marque de novo.', { n })
+        : t('As edições da página {n} foram apagadas porque o recorte mudou: marque de novo.', { n }), 'error');
     }
     discardPdf();
     await refreshThumb(page);
@@ -845,8 +850,8 @@ const viewer = setupViewer({
   },
   renderPlain: (page) => (isPhoto(page) ? photoForRedaction(page) : renderProcessed(page, { redact: false })),
   redactHint: (page) => (page.kind === 'pdf'
-    ? 'Arraste sobre o que esconder. O que fica sob a tarja é apagado, não só coberto. Esta página é de um PDF: com tarja, ela sai como imagem, e o texto dela deixa de ser selecionável.'
-    : 'Arraste sobre o que esconder. O que fica sob a tarja é apagado do PDF, não só coberto.'),
+    ? t('Arraste sobre o que esconder. O que fica sob a tarja é apagado, não só coberto. Esta página é de um PDF: com tarja, ela sai como imagem, e o texto dela deixa de ser selecionável.')
+    : t('Arraste sobre o que esconder. O que fica sob a tarja é apagado do PDF, não só coberto.')),
   async saveRedactions(page, list) {
     page.redactions = list;
     page.ocr = null;
@@ -855,8 +860,8 @@ const viewer = setupViewer({
     renderPages();
     const index = state.pages.indexOf(page) + 1;
     announce(list.length
-      ? `Página ${index}: ${list.length === 1 ? '1 tarja' : `${list.length} tarjas`}. O que está embaixo vai ser apagado do PDF.`
-      : `Página ${index}: sem tarjas.`);
+      ? plural(list.length, 'Página {page}: {n} tarja. O que está embaixo vai ser apagado do PDF.', 'Página {page}: {n} tarjas. O que está embaixo vai ser apagado do PDF.', { page: index })
+      : t('Página {page}: sem tarjas.', { page: index }));
   },
   copyText: pageText,
   canCopy: () => !state.busy, // gerando o PDF ou procurando dados, o OCR e as páginas estão em uso
@@ -870,8 +875,8 @@ const viewer = setupViewer({
     renderPages();
     const index = state.pages.indexOf(page) + 1;
     announce(list.length
-      ? `Página ${index}: ${list.length === 1 ? '1 edição' : `${list.length} edições`}, fixas na página do PDF.`
-      : `Página ${index}: sem edições.`);
+      ? plural(list.length, 'Página {page}: {n} edição, fixa na página do PDF.', 'Página {page}: {n} edições, fixas na página do PDF.', { page: index })
+      : t('Página {page}: sem edições.', { page: index }));
   },
   // Preencher (form-panel.js): página de PDF com campos que dá para preencher (o XFA puro não dá).
   canFill: (page) => page.kind === 'pdf' && !!page.doc.form?.fillable && page.doc.form.pageFields(page.index).length > 0,
@@ -911,9 +916,9 @@ function removePage(index) {
   if (state.pages.length) focusCard(index, '[data-action="remove"]');
   else focusAddButton();
 
-  removed = { page, index, timer: 0, message: `Página ${index + 1} removida. Dá para desfazer por alguns segundos.` };
+  removed = { page, index, timer: 0, message: t('Página {n} removida. Dá para desfazer por alguns segundos.', { n: index + 1 }) };
   announce(removed.message);
-  els.undo.setAttribute('aria-label', `Desfazer: trazer de volta a página ${index + 1}`);
+  els.undo.setAttribute('aria-label', t('Desfazer: trazer de volta a página {n}', { n: index + 1 }));
   els.undo.hidden = false;
   scheduleUndoExpiry();
 }
@@ -932,7 +937,7 @@ function finishUndo() {
   clearTimeout(removed.timer);
   URL.revokeObjectURL(removed.page.thumbUrl);
   // O aviso não promete mais o que já não dá para fazer.
-  if (els.status.textContent === removed.message) announce(`Página ${removed.index + 1} removida.`);
+  if (els.status.textContent === removed.message) announce(t('Página {n} removida.', { n: removed.index + 1 }));
   removed = null;
   els.undo.hidden = true;
 }
@@ -948,7 +953,7 @@ els.undo.addEventListener('click', () => {
   discardPdf();
   renderPages();
   focusCard(at, '[data-action="remove"]');
-  announce(`Página ${at + 1} de volta.`);
+  announce(t('Página {n} de volta.', { n: at + 1 }));
 });
 
 els.filterAll.append(...filterOptions('document'));
@@ -983,8 +988,8 @@ els.ocr.addEventListener('change', () => {
 // fontes e cores que o app não converte) e sem senha (o PDF/A não permite criptografia). O motivo de estar
 // indisponível aparece logo abaixo da opção.
 function pdfaUnavailable() {
-  if (state.pages.some((page) => page.kind === 'pdf')) return 'O PDF/A não vale para páginas de outro PDF: com elas na lista, a opção fica indisponível.';
-  if (els.protect.checked) return 'O PDF/A não permite senha: desligue "Proteger o PDF com senha" para usar.';
+  if (state.pages.some((page) => page.kind === 'pdf')) return t('O PDF/A não vale para páginas de outro PDF: com elas na lista, a opção fica indisponível.');
+  if (els.protect.checked) return t('O PDF/A não permite senha: desligue "Proteger o PDF com senha" para usar.');
   return '';
 }
 
@@ -1018,12 +1023,12 @@ function protectionPassword() {
   if (!els.protect.checked) return null;
   const password = els.protectPassword.value;
   if (!password) {
-    announce('Digite a senha para proteger o PDF.', 'error');
+    announce(t('Digite a senha para proteger o PDF.'), 'error');
     els.protectPassword.focus();
     return undefined;
   }
   if (password !== els.protectConfirm.value) {
-    announce('As duas senhas não são iguais. Digite de novo.', 'error');
+    announce(t('As duas senhas não são iguais. Digite de novo.'), 'error');
     els.protectConfirm.value = '';
     els.protectConfirm.focus();
     return undefined;
@@ -1038,7 +1043,7 @@ let clearTimer;
 els.clear.addEventListener('click', () => {
   if (!els.clear.dataset.armed) {
     els.clear.dataset.armed = '1';
-    els.clear.textContent = 'Toque de novo para confirmar';
+    els.clear.textContent = t('Toque de novo para confirmar');
     clearTimer = setTimeout(disarmClear, 3000);
     return;
   }
@@ -1052,19 +1057,19 @@ els.clear.addEventListener('click', () => {
   els.pdfCompress.value = 'none';
   discardPdf();
   renderPages();
-  announce('Tudo limpo. Nada ficou guardado.');
+  announce(t('Tudo limpo. Nada ficou guardado.'));
 });
 
 function disarmClear() {
   clearTimeout(clearTimer);
   delete els.clear.dataset.armed;
-  els.clear.textContent = 'Limpar tudo';
+  els.clear.textContent = t('Limpar tudo');
 }
 
 // ---------- Gerar PDF ----------
 
 function baseFileName() {
-  return els.fileName.value.trim().replace(/\.pdf$/i, '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-') || 'documento';
+  return els.fileName.value.trim().replace(/\.pdf$/i, '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-') || t('documento');
 }
 
 // Um PDF com tudo, um por página ou um por intervalo: posições da lista em cada arquivo.
@@ -1083,11 +1088,11 @@ function groupFileName(base, group, total) {
 }
 
 // label: o que aparece no botão de gerar enquanto o app trabalha.
-function setBusy(busy, label = 'Gerando…') {
+function setBusy(busy, label = t('Gerando…')) {
   state.busy = busy;
   if (busy) disarmClear();
   els.generate.disabled = busy;
-  els.generate.textContent = busy ? label : 'Gerar PDF';
+  els.generate.textContent = busy ? label : t('Gerar PDF');
   if (busy) els.workspace.setAttribute('aria-busy', 'true');
   else els.workspace.removeAttribute('aria-busy');
   for (const control of lockedWhileBusy) control.disabled = busy;
@@ -1177,7 +1182,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     if (!starting) {
       starting = (async () => {
         const { startOcr } = await loadOcr().catch(() => {
-          throw ocrError('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.');
+          throw ocrError(t('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.'));
         });
         stopIfCancelled();
         const reader = await startOcr({ workers });
@@ -1204,12 +1209,12 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     while (reading.size >= (ocr?.workers ?? workers)) await Promise.race(reading);
   };
   const turn = async (page) => {
-    if (!ocr) announce('Preparando o reconhecimento de texto (na primeira vez, o app baixa uns 5 MB)…');
+    if (!ocr) announce(t('Preparando o reconhecimento de texto (na primeira vez, o app baixa uns 5 MB)…'));
     const reader = await engine();
     await free();
     stopIfCancelled();
     begin ||= performance.now();
-    announce(`Reconhecendo o texto: página ${toRead.indexOf(page) + 1} de ${toRead.length}…${progressNote(performance.now() - begin, done, toRead.length)}`);
+    announce(t('Reconhecendo o texto: página {n} de {total}…{note}', { n: toRead.indexOf(page) + 1, total: toRead.length, note: progressNote(performance.now() - begin, done, toRead.length) }));
     return reader;
   };
   // Guarda a leitura em andamento. A falha fica no Set e aparece na próxima espera pela vez ou no fim.
@@ -1227,14 +1232,15 @@ async function generate({ signer, stamp = null, append = null } = {}) {
   try {
     // PDF assinado sem reescrever: o original vai inteiro, e a assinatura entra no fim (pdf-append.js).
     if (signer && append) {
-      announce('Assinando o PDF…');
+      announce(t('Assinando o PDF…'));
       await nextFrame();
       const bytes = await signer.signExisting(append, new Date(), { stamp });
       const file = new File([bytes], `${baseFileName()}.pdf`, { type: 'application/pdf' });
       state.output = [{ file, before: null, url: URL.createObjectURL(file) }];
       showResult(groups, signer, false, false);
-      const kept = append.isSigned() ? ' As assinaturas que ele já tinha continuam valendo.' : '';
-      announce(`PDF assinado. Ele só existe aqui no seu aparelho até você baixar.${kept}`, 'success');
+      announce(append.isSigned()
+        ? t('PDF assinado. Ele só existe aqui no seu aparelho até você baixar. As assinaturas que ele já tinha continuam valendo.')
+        : t('PDF assinado. Ele só existe aqui no seu aparelho até você baixar.'), 'success');
       ok = true;
       return;
     }
@@ -1244,7 +1250,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     if (toRead.some(isPhoto)) engine();
     for (const [i, page] of list.entries()) {
       // Com uma leitura em andamento, a mensagem continua sendo a dela.
-      if (!reading.size) announce(`Processando página ${i + 1} de ${list.length}…`);
+      if (!reading.size) announce(t('Processando página {n} de {total}…', { n: i + 1, total: list.length }));
       await nextFrame();
       stopIfCancelled();
       if (page.kind === 'pdf') {
@@ -1339,7 +1345,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     }
     // As letras das edições contam como vão para o arquivo, sem as tiradas pelas tarjas (redactedEdits, em pdf.js).
     if (pdfa && (list.some(isDocument) || (signer && stamp) || fontPages.some((page) => editCharacters(redactedEdits(page)).size))) {
-      announce('Preparando as fontes do PDF/A…');
+      announce(t('Preparando as fontes do PDF/A…'));
       const { embedFonts } = await loadPdfaFonts().catch(() => {
         throw fontError();
       });
@@ -1380,7 +1386,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       }
       for (const [doc, indices] of used) {
         replacements.set(doc, await tools.compressPdf(doc, [...indices], QUALITY[level], (done, total) => {
-          announce(`Comprimindo as imagens do PDF (${done} de ${total})…`);
+          announce(t('Comprimindo as imagens do PDF ({done} de {total})…', { done, total }));
         }));
       }
     }
@@ -1389,7 +1395,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     const files = [];
     let notSmaller = 0;
     for (const [g, group] of groups.entries()) {
-      announce(groups.length === 1 ? 'Montando o PDF…' : `Montando o PDF ${g + 1} de ${groups.length}…`);
+      announce(groups.length === 1 ? t('Montando o PDF…') : t('Montando o PDF {n} de {total}…', { n: g + 1, total: groups.length }));
       await nextFrame();
       // Páginas de PDF: cada PDF de origem é copiado uma vez por arquivo, só com as páginas que entram nele.
       const wanted = new Map();
@@ -1442,10 +1448,10 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       // Assinar é sempre o último passo: qualquer mudança depois invalidaria a assinatura. Com senha, o PDF é
       // cifrado antes de ser assinado (a assinatura cobre o arquivo cifrado).
       if (signer) {
-        announce(groups.length === 1 ? 'Assinando o PDF…' : `Assinando o PDF ${g + 1} de ${groups.length}…`);
+        announce(groups.length === 1 ? t('Assinando o PDF…') : t('Assinando o PDF {n} de {total}…', { n: g + 1, total: groups.length }));
         bytes = await signer.sign(chosen, new Date(), { password, pdfa, stamp, fonts });
       } else if (password) {
-        announce(groups.length === 1 ? 'Protegendo o PDF com a senha…' : `Protegendo o PDF ${g + 1} de ${groups.length} com a senha…`);
+        announce(groups.length === 1 ? t('Protegendo o PDF com a senha…') : t('Protegendo o PDF {n} de {total} com a senha…', { n: g + 1, total: groups.length }));
         bytes = (await crypt.protectPdf(bytes, password)).bytes;
       }
       const name = groups.length === 1 ? `${base}.pdf` : groupFileName(base, group, list.length);
@@ -1454,14 +1460,15 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     state.output = files.map(({ file, before }) => ({ file, before, url: URL.createObjectURL(file) }));
     showResult(groups, signer, !!password, pdfa);
     if (password) els.protectPassword.value = els.protectConfirm.value = ''; // a senha não fica nos campos
-    const what = signer ? (files.length === 1 ? 'PDF assinado.' : `${files.length} PDFs assinados.`) : (files.length === 1 ? 'PDF pronto.' : `${files.length} PDFs prontos.`);
-    const ready = `${what} ${files.length === 1 ? 'Ele só existe' : 'Eles só existem'} aqui no seu aparelho até você baixar.`;
+    const ready = signer
+      ? plural(files.length, 'PDF assinado. Ele só existe aqui no seu aparelho até você baixar.', '{n} PDFs assinados. Eles só existem aqui no seu aparelho até você baixar.')
+      : plural(files.length, 'PDF pronto. Ele só existe aqui no seu aparelho até você baixar.', '{n} PDFs prontos. Eles só existem aqui no seu aparelho até você baixar.');
     const kept = !notSmaller ? '' : notSmaller === files.length && files.length === 1
-      ? ' Comprimir não diminuiu este PDF (o tamanho está no texto e nas fontes, ou as imagens já eram leves): ficou sem recomprimir.'
-      : ` ${notSmaller === 1 ? 'Um arquivo não diminuiu' : `${notSmaller} arquivos não diminuíram`} com a compressão e ${notSmaller === 1 ? 'ficou' : 'ficaram'} sem recomprimir.`;
+      ? t('Comprimir não diminuiu este PDF (o tamanho está no texto e nas fontes, ou as imagens já eram leves): ficou sem recomprimir.')
+      : plural(notSmaller, 'Um arquivo não diminuiu com a compressão e ficou sem recomprimir.', '{n} arquivos não diminuíram com a compressão e ficaram sem recomprimir.');
     // Páginas lidas pelo OCR: as fotos e as de PDF que não tinham texto (as escaneadas).
     const scanned = list.filter((page) => isPhoto(page) || (page.kind === 'pdf' && !page.ocr?.hasText));
-    const readKind = scanned.every(isPhoto) ? 'fotos' : 'páginas';
+    const photos = scanned.every(isPhoto);
     const blank = useOcr ? scanned.filter((page) => !page.ocr?.words.length).length : 0;
     const withText = useOcr ? list.filter((page) => page.kind === 'pdf' && page.ocr?.hasText).length : 0;
     // Confiança baixa (ocr.js): o Tesseract deu nota baixa a boa parte do texto da página. Numeradas como na lista.
@@ -1470,34 +1477,37 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     const doubtful = !lowConfidence ? [] : list
       .map((page, i) => (scanned.includes(page) && page.ocr?.words.length && lowConfidence(page.ocr.words) ? i + 1 : 0))
       .filter(Boolean);
-    const where = doubtful.length === 1 ? `Na página ${doubtful[0]}` : `Nas páginas ${doubtful.slice(0, -1).join(', ')} e ${doubtful.at(-1)}`;
-    const cause = doubtful.every((n) => isPhoto(list[n - 1])) ? 'foto tremida, escura, deitada ou com letra pequena' : 'imagem borrada, apagada, deitada ou com letra pequena';
-    const unsure = !doubtful.length ? '' : ` ${where}, parte do texto pode ter saído errada (${cause}): confira antes de confiar na busca.`;
-    const read = (!useOcr || !scanned.length ? '' : blank === 0
-      ? ` O texto ${readKind === 'fotos' ? 'das fotos' : 'das páginas escaneadas'} foi reconhecido: dá para buscar e copiar no PDF.`
-      : ` Não achei texto impresso em ${blank === 1 ? `uma das ${readKind}` : `${blank} das ${readKind}`}.`)
-      + unsure
-      + (!withText ? '' : withText === 1 ? ' Uma página de PDF já tinha texto e ficou como estava.' : ` ${withText} páginas de PDF já tinham texto e ficaram como estavam.`);
-    const locked = !password ? '' : files.length === 1
-      ? ' Ele só abre com a senha que você escolheu.'
-      : ' Eles só abrem com a senha que você escolheu.';
+    const doubtfulPages = doubtful.length > 1 ? t('{a} e {b}', { a: doubtful.slice(0, -1).join(', '), b: doubtful.at(-1) }) : doubtful[0];
+    const cause = doubtful.every((n) => isPhoto(list[n - 1])) ? t('foto tremida, escura, deitada ou com letra pequena') : t('imagem borrada, apagada, deitada ou com letra pequena');
+    const unsure = !doubtful.length ? '' : plural(doubtful.length,
+      'Na página {pages}, parte do texto pode ter saído errada ({cause}): confira antes de confiar na busca.',
+      'Nas páginas {pages}, parte do texto pode ter saído errada ({cause}): confira antes de confiar na busca.', { pages: doubtfulPages, cause });
+    const read = !useOcr || !scanned.length ? '' : blank === 0
+      ? (photos ? t('O texto das fotos foi reconhecido: dá para buscar e copiar no PDF.') : t('O texto das páginas escaneadas foi reconhecido: dá para buscar e copiar no PDF.'))
+      : photos ? plural(blank, 'Não achei texto impresso em uma das fotos.', 'Não achei texto impresso em {n} das fotos.')
+      : plural(blank, 'Não achei texto impresso em uma das páginas.', 'Não achei texto impresso em {n} das páginas.');
+    const hadText = !withText ? '' : plural(withText, 'Uma página de PDF já tinha texto e ficou como estava.', '{n} páginas de PDF já tinham texto e ficaram como estavam.');
+    const locked = !password ? '' : plural(files.length, 'Ele só abre com a senha que você escolheu.', 'Eles só abrem com a senha que você escolheu.');
     const redacted = list.filter((page) => page.redactions?.length);
     const rasterized = list.map((page, i) => (page.kind === 'pdf' && page.redactions?.length ? i + 1 : 0)).filter(Boolean);
     // Com o OCR, a página tarjada que virou imagem ganha o texto reconhecido (sem o que estava sob as tarjas).
-    const asImage = useOcr ? 'o texto vem do OCR, sem o que estava sob as tarjas' : null;
-    const covered = !redacted.length ? '' : ` Tarjas conferidas: não sobrou texto embaixo delas.${!rasterized.length ? '' : rasterized.length === 1
-      ? ` A página ${rasterized[0]}, de PDF, saiu como imagem: ${asImage ?? 'o texto dela não fica selecionável'}.`
-      : ` As páginas ${rasterized.join(', ')}, de PDF, saíram como imagem: ${asImage ?? 'o texto delas não fica selecionável'}.`}`;
-    announce(ready + locked + covered + kept + read, 'success');
+    const pagesText = rasterized.join(', ');
+    const asImage = !rasterized.length ? '' : rasterized.length === 1
+      ? (useOcr ? t('A página {pages}, de PDF, saiu como imagem: o texto vem do OCR, sem o que estava sob as tarjas.', { pages: pagesText })
+        : t('A página {pages}, de PDF, saiu como imagem: o texto dela não fica selecionável.', { pages: pagesText }))
+      : (useOcr ? t('As páginas {pages}, de PDF, saíram como imagem: o texto vem do OCR, sem o que estava sob as tarjas.', { pages: pagesText })
+        : t('As páginas {pages}, de PDF, saíram como imagem: o texto delas não fica selecionável.', { pages: pagesText }));
+    const covered = !redacted.length ? '' : t('Tarjas conferidas: não sobrou texto embaixo delas.');
+    announce([ready, locked, covered, asImage, kept, read, unsure, hadText].filter(Boolean).join(' '), 'success');
     ok = true;
   } catch (err) {
     if (cancelled || err instanceof Cancelled) {
-      announce('Cancelado. Nenhum PDF foi gerado.');
+      announce(t('Cancelado. Nenhum PDF foi gerado.'));
     } else {
       // Erros do OCR e da assinatura já vêm com a explicação; os outros, com a mensagem técnica.
       const known = ['SignError', 'OcrError', 'RedactionError', 'FontError'].includes(err?.name);
       if (!known) console.error(err);
-      announce(known ? err.message : `Algo deu errado ao gerar o PDF: ${err.message}`, 'error');
+      announce(known ? err.message : t('Algo deu errado ao gerar o PDF: {message}', { message: err.message }), 'error');
     }
   } finally {
     finished = true; // motor que ainda estiver ligando é encerrado assim que ligar
@@ -1537,7 +1547,9 @@ els.cancel.addEventListener('click', () => state.cancel?.());
 
 const redactionError = (message) => Object.assign(new Error(message), { name: 'RedactionError' });
 const ocrError = (message) => Object.assign(new Error(message), { name: 'OcrError' });
-const fontError = () => Object.assign(new Error('Não deu para carregar as fontes do PDF/A. Confira a conexão e tente de novo.'), { name: 'FontError' });
+// Página de PDF que o PDF.js não leu ou não desenhou para o OCR: a cópia do texto troca a mensagem por uma curta.
+const pdfPageError = (message) => Object.assign(ocrError(message), { pdfPage: true });
+const fontError = () => Object.assign(new Error(t('Não deu para carregar as fontes do PDF/A. Confira a conexão e tente de novo.')), { name: 'FontError' });
 
 // Página de PDF: a que já tem texto (o PDF.js acha texto nela) fica como está; a escaneada, só com imagem, é
 // desenhada pelo PDF.js na resolução do OCR e lida como aparece no app (com o /Rotate dela e o giro escolhido).
@@ -1557,7 +1569,7 @@ async function readPdfPage(engine, page) {
   const redacted = !!page.redactions?.length;
   if (!redacted) {
     const { items } = await tools.pdfPageTextItems(page.doc, page.index).catch(() => {
-      throw ocrError(`Não deu para ler a página ${number} (do PDF ${page.name}) para reconhecer o texto. Confira a conexão e tente de novo.`);
+      throw pdfPageError(t('Não deu para ler a página {n} (do PDF {name}) para reconhecer o texto. Confira a conexão e tente de novo.', { n: number, name: page.name }));
     });
     if (items.length) return { hasText: true };
   }
@@ -1565,7 +1577,7 @@ async function readPdfPage(engine, page) {
     maxSide: OCR_SIDE, rotation: page.rotation, number: page.number,
   });
   try {
-    if (!real) throw ocrError(`Não deu para desenhar a página ${number} (do PDF ${page.name}) para reconhecer o texto. Confira a conexão e tente de novo.`);
+    if (!real) throw pdfPageError(t('Não deu para desenhar a página {n} (do PDF {name}) para reconhecer o texto. Confira a conexão e tente de novo.', { n: number, name: page.name }));
     if (redacted) paintRedactions(canvas.getContext('2d'), page.redactions, canvas.width, canvas.height);
     // Resolução do desenho, em pontos por polegada: a largura da página como aparece, em pontos.
     const width = page.rotation % 180 !== 0 ? page.size.height : page.size.width;
@@ -1594,7 +1606,7 @@ async function rasterizePdfPage(page, quality) {
     maxSide: quality.maxSide, rotation: page.rotation, number: page.number,
   });
   try {
-    if (!real) throw redactionError(`Não deu para desenhar a página ${state.pages.indexOf(page) + 1} (do PDF ${page.name}) para tarjar: o PDF não foi gerado.`);
+    if (!real) throw redactionError(t('Não deu para desenhar a página {n} (do PDF {name}) para tarjar: o PDF não foi gerado.', { n: state.pages.indexOf(page) + 1, name: page.name }));
     paintRedactions(canvas.getContext('2d'), page.redactions, canvas.width, canvas.height);
     const jpeg = new Uint8Array(await (await canvasToBlob(canvas, 'image/jpeg', quality.jpeg)).arrayBuffer());
     const sideways = page.rotation % 180 !== 0;
@@ -1633,12 +1645,12 @@ async function redactDocumentPage(page) {
 async function checkRedactions(bytes, sources, built, file, files) {
   const checks = sources.map((page, n) => [n, page]).filter(([, page]) => page.redactions?.length);
   if (!checks.length) return;
-  announce(files === 1 ? 'Conferindo as tarjas…' : `Conferindo as tarjas do PDF ${file} de ${files}…`);
+  announce(files === 1 ? t('Conferindo as tarjas…') : t('Conferindo as tarjas do PDF {n} de {total}…', { n: file, total: files }));
   let texts;
   try {
     texts = await (await loadPdfTools()).pdfTextBoxes(bytes, checks.map(([n]) => n));
   } catch {
-    throw redactionError('Não deu para conferir as tarjas (o leitor de PDF não carregou). Confira a conexão e tente de novo: o PDF não foi gerado.');
+    throw redactionError(t('Não deu para conferir as tarjas (o leitor de PDF não carregou). Confira a conexão e tente de novo: o PDF não foi gerado.'));
   }
   for (const [n, page] of checks) {
     // Foto e página de PDF tarjada: as tarjas ficam na imagem, que fica dentro da página (com margem).
@@ -1648,7 +1660,7 @@ async function checkRedactions(bytes, sources, built, file, files) {
       y0: (height - box.y - box.h + rect.y0 * box.h) / height, y1: (height - box.y - box.h + rect.y1 * box.h) / height,
     }));
     if (textUnderRedactions(texts.get(n) ?? [], rects).length) {
-      throw redactionError(`A conferência achou texto sob uma tarja na página ${state.pages.indexOf(page) + 1}: o PDF não foi gerado. Avise a gente, por favor.`);
+      throw redactionError(t('A conferência achou texto sob uma tarja na página {n}: o PDF não foi gerado. Avise a gente, por favor.', { n: state.pages.indexOf(page) + 1 }));
     }
   }
 }
@@ -1656,24 +1668,24 @@ async function checkRedactions(bytes, sources, built, file, files) {
 // "1,2 MB" ou, quando comprimiu, "1,2 MB (antes 4,8 MB, −75%)".
 function sizeText(size, before) {
   if (!before) return formatBytes(size);
-  return `${formatBytes(size)} (antes ${formatBytes(before)}, −${Math.round((1 - size / before) * 100)}%)`;
+  return t('{size} (antes {before}, −{percent}%)', { size: formatBytes(size), before: formatBytes(before), percent: Math.round((1 - size / before) * 100) });
 }
 
 function showResult(groups, signer, locked, pdfa) {
   const files = state.output;
   const total = files.reduce((sum, { file }) => sum + file.size, 0);
   const totalBefore = files.some(({ before }) => before) ? files.reduce((sum, { file, before }) => sum + (before ?? file.size), 0) : null;
-  const pages = (n) => `${n} ${n === 1 ? 'página' : 'páginas'}`;
+  const pages = (n) => plural(n, '{n} página', '{n} páginas');
   const single = files.length === 1;
   els.resultTitle.textContent = signer
-    ? (single ? 'PDF assinado' : `${files.length} PDFs assinados`)
-    : (single ? 'PDF pronto' : `${files.length} PDFs prontos`);
-  const signed = signer ? ` · ${single ? 'assinado' : 'assinados'} por ${signer.name}` : '';
-  const withPassword = locked ? ' · com senha' : '';
+    ? plural(files.length, 'PDF assinado', '{n} PDFs assinados')
+    : plural(files.length, 'PDF pronto', '{n} PDFs prontos');
+  const signed = signer ? ` · ${plural(files.length, 'assinado por {name}', 'assinados por {name}', { name: signer.name })}` : '';
+  const withPassword = locked ? ` · ${t('com senha')}` : '';
   const archive = pdfa ? ' · PDF/A-2b' : '';
   els.resultInfo.textContent = single
     ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}${signed}${withPassword}${archive}`
-    : `${sizeText(total, totalBefore)} no total${signed}${withPassword}${archive}`;
+    : `${t('{size} no total', { size: sizeText(total, totalBefore) })}${signed}${withPassword}${archive}`;
   els.download.hidden = !single;
   els.download.href = files[0].url;
   els.download.download = files[0].file.name;
@@ -1685,7 +1697,7 @@ function showResult(groups, signer, locked, pdfa) {
   ]))));
   const all = files.map(({ file }) => file);
   els.share.hidden = !(navigator.canShare && navigator.canShare({ files: all }));
-  els.share.lastChild.textContent = single ? ' Compartilhar' : ' Compartilhar todos';
+  els.share.lastChild.textContent = ` ${single ? t('Compartilhar') : t('Compartilhar todos')}`;
   els.result.hidden = false;
 }
 
@@ -1704,7 +1716,7 @@ function renderOutputPreview() {
   try {
     groups = outputGroups(total);
   } catch (err) {
-    els.outputSummary.textContent = els.ranges.value.trim() ? err.message : 'Escreva os intervalos para ver os arquivos que vão sair.';
+    els.outputSummary.textContent = els.ranges.value.trim() ? err.message : t('Escreva os intervalos para ver os arquivos que vão sair.');
     els.outputSummary.classList.toggle('error', !!els.ranges.value.trim());
     els.outputFiles.replaceChildren();
     return;
@@ -1712,21 +1724,21 @@ function renderOutputPreview() {
   const base = baseFileName();
   const used = new Set(groups.flat());
   const left = state.pages.map((_, i) => i + 1).filter((n) => !used.has(n - 1));
-  const files = groups.length === 1 ? '1 arquivo' : `${groups.length} arquivos`;
+  const files = plural(groups.length, '{n} arquivo', '{n} arquivos');
   els.outputSummary.textContent = left.length
-    ? `Vão sair ${files}. ${left.length === 1 ? 'Fica de fora a página' : 'Ficam de fora as páginas'} ${left.join(', ')}.`
-    : `Vão sair ${files}.`;
+    ? plural(left.length, 'Vão sair {files}. Fica de fora a página {pages}.', 'Vão sair {files}. Ficam de fora as páginas {pages}.', { files, pages: left.join(', ') })
+    : t('Vão sair {files}.', { files });
 
   els.outputFiles.replaceChildren(...groups.map((group) => {
     const name = groups.length === 1 ? `${base}.pdf` : groupFileName(base, group, total);
     const thumbs = group.slice(0, PREVIEW_THUMBS).map((i) => el('button', {
       type: 'button', className: 'output-thumb', 'data-index': i, disabled: state.busy,
-      'aria-label': `Ver a página ${i + 1}`, title: `Página ${i + 1}`,
+      'aria-label': t('Ver a página {n}', { n: i + 1 }), title: t('Página {n}', { n: i + 1 }),
     }, [el('img', { src: state.pages[i].thumbUrl, alt: '' }), el('span', { textContent: i + 1 })]));
     if (group.length > PREVIEW_THUMBS) thumbs.push(el('span', { className: 'output-more', textContent: `+${group.length - PREVIEW_THUMBS}` }));
     return el('li', {}, [
       el('p', { className: 'output-name' }, [icon('file'), el('strong', { textContent: name }),
-        el('span', { className: 'muted', textContent: ` · ${group.length} ${group.length === 1 ? 'página' : 'páginas'}` })]),
+        el('span', { className: 'muted', textContent: ` · ${plural(group.length, '{n} página', '{n} páginas')}` })]),
       el('div', { className: 'output-thumbs' }, thumbs),
     ]);
   }));
@@ -1738,7 +1750,7 @@ els.outputFiles.addEventListener('click', (event) => {
   const thumb = event.target.closest('.output-thumb');
   if (!thumb || state.busy) return;
   const index = Number(thumb.dataset.index);
-  viewer.open(state.pages[index], `Página ${index + 1} de ${state.pages.length}`);
+  viewer.open(state.pages[index], t('Página {n} de {total}', { n: index + 1, total: state.pages.length }));
 });
 
 // Vários arquivos: um download de cada vez (o navegador pode pedir permissão para baixar vários).
@@ -1772,11 +1784,11 @@ function updateCompressTip() {
   if (!heavy.length) return;
   const size = formatBytes(heavy.reduce((sum, doc) => sum + doc.size, 0));
   const on = els.pdfCompress.value !== 'none';
-  const what = heavy.length === 1 ? `Este PDF é pesado (${size})` : `Estes PDFs são pesados (${size} ao todo)`;
-  els.compressTipText.replaceChildren(el('strong', { textContent: `${what}.` }), on
-    ? ' As imagens vão ser comprimidas: o arquivo novo fica bem menor, bom para WhatsApp e e-mail.'
-    : ' Comprimir as imagens deixa o arquivo bem menor, bom para WhatsApp e e-mail.');
-  els.compressTipToggle.textContent = on ? 'Manter o original' : 'Comprimir';
+  const what = heavy.length === 1 ? t('Este PDF é pesado ({size})', { size }) : t('Estes PDFs são pesados ({size} ao todo)', { size });
+  els.compressTipText.replaceChildren(el('strong', { textContent: `${what}.` }), ` ${on
+    ? t('As imagens vão ser comprimidas: o arquivo novo fica bem menor, bom para WhatsApp e e-mail.')
+    : t('Comprimir as imagens deixa o arquivo bem menor, bom para WhatsApp e e-mail.')}`);
+  els.compressTipToggle.textContent = on ? t('Manter o original') : t('Comprimir');
   els.compressTip.classList.toggle('tip-on', on);
 }
 
@@ -1785,7 +1797,7 @@ els.compressTipToggle.addEventListener('click', () => {
   state.compressChosen = true;
   discardPdf();
   updateCompressTip();
-  announce(els.pdfCompress.value === 'none' ? 'Compressão desligada: as imagens vão como estão.' : 'Compressão ligada.');
+  announce(els.pdfCompress.value === 'none' ? t('Compressão desligada: as imagens vão como estão.') : t('Compressão ligada.'));
   els.compressTipToggle.focus();
 });
 els.ranges.addEventListener('input', () => {
@@ -1802,7 +1814,7 @@ els.share.addEventListener('click', async () => {
     const files = state.output.map(({ file }) => file);
     await navigator.share({ files, title: files.length === 1 ? files[0].name : 'PDFs' });
   } catch (err) {
-    if (err.name !== 'AbortError') announce('Não deu para compartilhar. Use o botão Baixar.', 'error');
+    if (err.name !== 'AbortError') announce(t('Não deu para compartilhar. Use o botão Baixar.'), 'error');
   }
 });
 
@@ -1925,7 +1937,7 @@ const inside = (outer, inner) => inner.x0 >= outer.x0 && inner.y0 >= outer.y0 &&
 
 async function findData() {
   if (!state.pages.length || state.busy) return;
-  setBusy(true, 'Procurando…');
+  setBusy(true, t('Procurando…'));
   const list = [...state.pages];
   const toRead = list.filter((page) => isPhoto(page) && page.ocr?.key !== ocrKey(page));
   let ocr = null;
@@ -1941,9 +1953,9 @@ async function findData() {
   }
   const startEngine = async () => {
     if (ocr) return ocr;
-    announce('Preparando o reconhecimento de texto (na primeira vez, o app baixa uns 5 MB)…');
+    announce(t('Preparando o reconhecimento de texto (na primeira vez, o app baixa uns 5 MB)…'));
     const { startOcr } = await loadOcr().catch(() => {
-      throw Object.assign(new Error('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.'), { name: 'OcrError' });
+      throw Object.assign(new Error(t('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.')), { name: 'OcrError' });
     });
     if (cancelled) throw new Cancelled();
     ocr = await startOcr();
@@ -1959,8 +1971,8 @@ async function findData() {
       if (cancelled) throw new Cancelled();
       const reading = toRead.includes(page);
       announce(reading
-        ? `Reconhecendo o texto da foto ${toRead.indexOf(page) + 1} de ${toRead.length} para procurar dados…${progressNote(spent, done, toRead.length)}`
-        : `Procurando dados na página ${i + 1} de ${list.length}…`);
+        ? t('Reconhecendo o texto da foto {n} de {total} para procurar dados…{note}', { n: toRead.indexOf(page) + 1, total: toRead.length, note: progressNote(spent, done, toRead.length) })
+        : t('Procurando dados na página {n} de {total}…', { n: i + 1, total: list.length }));
       await nextFrame();
       const start = performance.now();
       let found;
@@ -1984,8 +1996,8 @@ async function findData() {
     }
     ok = true;
   } catch (err) {
-    if (cancelled || err instanceof Cancelled || err?.name === 'OcrCancelled') announce('Busca cancelada.');
-    else announce(err?.name === 'OcrError' ? err.message : 'Não deu para procurar os dados. Tente de novo.', 'error');
+    if (cancelled || err instanceof Cancelled || err?.name === 'OcrCancelled') announce(t('Busca cancelada.'));
+    else announce(err?.name === 'OcrError' ? err.message : t('Não deu para procurar os dados. Tente de novo.'), 'error');
   } finally {
     ocr?.terminate();
     state.cancel = null;
@@ -1997,9 +2009,9 @@ async function findData() {
     els.findData.focus();
     return;
   }
-  const missed = !unreadable.length ? '' : ` Não deu para ler o texto ${unreadable.length === 1 ? `da página ${unreadable[0]}` : `das páginas ${unreadable.join(', ')}`}.`;
+  const missed = !unreadable.length ? '' : ` ${plural(unreadable.length, 'Não deu para ler o texto da página {pages}.', 'Não deu para ler o texto das páginas {pages}.', { pages: unreadable.join(', ') })}`;
   if (!groups.size) {
-    announce(`Não achei CPF, CNPJ, e-mail, telefone, CEP nem cartão no texto das páginas.${missed}`);
+    announce(`${t('Não achei CPF, CNPJ, e-mail, telefone, CEP nem cartão no texto das páginas.')}${missed}`);
     els.findData.focus();
     return;
   }
@@ -2009,20 +2021,20 @@ async function findData() {
 function showFindings(list, missed) {
   findings = list;
   const pages = new Set(list.map(({ index }) => index)).size;
-  els.findSummary.textContent = `${list.length === 1 ? '1 dado' : `${list.length} dados`} em ${pages === 1 ? '1 página' : `${pages} páginas`}. Desmarque o que não precisa ser tarjado.${missed}`;
+  els.findSummary.textContent = `${t('{data} em {pages}. Desmarque o que não precisa ser tarjado.', { data: plural(list.length, '{n} dado', '{n} dados'), pages: plural(pages, '{n} página', '{n} páginas') })}${missed}`;
   const byPage = new Map();
   list.forEach((found, i) => {
     if (!byPage.has(found.index)) byPage.set(found.index, []);
     byPage.get(found.index).push(el('label', { className: 'check' }, [
       el('input', { type: 'checkbox', checked: true, 'data-key': i }),
-      el('span', { textContent: `${TYPE_LABELS[found.type]}: ${found.value}${found.rects.length > 1 ? ` (${found.rects.length} vezes)` : ''}` }),
+      el('span', { textContent: `${TYPE_LABELS[found.type]}: ${found.value}${found.rects.length > 1 ? ` ${t('({n} vezes)', { n: found.rects.length })}` : ''}` }),
     ]));
   });
   els.findList.replaceChildren(...[...byPage].map(([index, rows]) => el('fieldset', { className: 'find-page' }, [
-    el('legend', { textContent: `Página ${index + 1}` }), ...rows,
+    el('legend', { textContent: t('Página {n}', { n: index + 1 }) }), ...rows,
   ])));
   updateFindApply();
-  announce(`${list.length === 1 ? '1 dado encontrado' : `${list.length} dados encontrados`}: confira na janela o que vai ser tarjado.`);
+  announce(plural(list.length, '{n} dado encontrado: confira na janela o que vai ser tarjado.', '{n} dados encontrados: confira na janela o que vai ser tarjado.'));
   els.findDialog.showModal();
   els.findApply.focus();
 }
@@ -2030,14 +2042,14 @@ function showFindings(list, missed) {
 function updateFindApply() {
   const count = els.findList.querySelectorAll('input:checked').length;
   els.findApply.disabled = !count;
-  els.findApply.textContent = count === 0 ? 'Tarjar os marcados' : count === 1 ? 'Tarjar 1 dado' : `Tarjar ${count} dados`;
+  els.findApply.textContent = count === 0 ? t('Tarjar os marcados') : plural(count, 'Tarjar {n} dado', 'Tarjar {n} dados');
 }
 
 els.findData.addEventListener('click', findData);
 els.findList.addEventListener('change', updateFindApply);
 els.findCancel.addEventListener('click', () => {
   els.findDialog.close();
-  announce('Nenhuma tarja adicionada.');
+  announce(t('Nenhuma tarja adicionada.'));
 });
 // A lista (com os dados) sai da página ao fechar a janela.
 els.findDialog.addEventListener('close', () => {
@@ -2062,7 +2074,7 @@ els.findApply.addEventListener('click', async () => {
   for (const page of touched) await refreshThumb(page);
   renderPages();
   const total = chosen.reduce((sum, { rects }) => sum + rects.length, 0);
-  announce(`${total === 1 ? '1 tarja adicionada' : `${total} tarjas adicionadas`} em ${touched.size === 1 ? '1 página' : `${touched.size} páginas`}. Confira em tela cheia: dá para ajustar ou remover cada uma.`);
+  announce(t('{redactions} em {pages}. Confira em tela cheia: dá para ajustar ou remover cada uma.', { redactions: plural(total, '{n} tarja adicionada', '{n} tarjas adicionadas'), pages: plural(touched.size, '{n} página', '{n} páginas') }));
   els.findData.focus();
 });
 
@@ -2085,7 +2097,7 @@ const COPY_WAIT_MS = 20000; // quanto, no máximo, uma cópia espera o motor da 
 async function pageText(page, { signal, progress }) {
   if (isDocument(page)) {
     const text = documentText(page.layout, page.redactions?.length ? toUnrotated(page.redactions, page.rotation) : []);
-    if (!text) throw copyError('Esta página não tem texto.');
+    if (!text) throw copyError(t('Esta página não tem texto.'));
     return text;
   }
   const previous = copyDone;
@@ -2097,12 +2109,12 @@ async function pageText(page, { signal, progress }) {
   const aborted = new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
   const startEngine = async () => {
     if (ocr) return ocr;
-    progress('Reconhecendo o texto desta página (na primeira vez, o app baixa uns 5 MB). Fechar a tela cancela.');
+    progress(t('Reconhecendo o texto desta página (na primeira vez, o app baixa uns 5 MB). Fechar a tela cancela.'));
     // Um motor por vez na memória: espera o da cópia anterior (cancelada) desligar, mas não para sempre.
     await Promise.race([previous, aborted, new Promise((resolve) => setTimeout(resolve, COPY_WAIT_MS))]);
     if (signal.aborted) throw new Cancelled();
     const { startOcr } = await loadOcr().catch(() => {
-      throw ocrError('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.');
+      throw ocrError(t('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.'));
     });
     if (signal.aborted) throw new Cancelled();
     ocr = await startOcr();
@@ -2112,8 +2124,8 @@ async function pageText(page, { signal, progress }) {
   try {
     const { words, hasText } = await ensureOcr(page, startEngine).catch((err) => {
       // PDF que o PDF.js não leu: o título da tela cheia já diz qual é a página, e o aviso curto cabe na dica.
-      if (err?.name === 'OcrError' && /\(do PDF /.test(err.message)) {
-        throw copyError('Não deu para ler esta página para reconhecer o texto. Confira a conexão e tente de novo.');
+      if (err?.pdfPage) {
+        throw copyError(t('Não deu para ler esta página para reconhecer o texto. Confira a conexão e tente de novo.'));
       }
       throw err;
     });
@@ -2121,14 +2133,14 @@ async function pageText(page, { signal, progress }) {
     if (hasText && !page.redactions?.length) {
       const tools = await loadPdfTools();
       const { items, width, height } = await tools.pdfPageTextItems(page.doc, page.index).catch(() => {
-        throw copyError('Não deu para ler o texto desta página. Confira a conexão e tente de novo.');
+        throw copyError(t('Não deu para ler o texto desta página. Confira a conexão e tente de novo.'));
       });
       const text = linesText(items, { width, height });
-      if (!text) throw copyError('Esta página não tem texto.');
+      if (!text) throw copyError(t('Esta página não tem texto.'));
       return text;
     }
     const text = plainText(words);
-    if (!text) throw copyError('Não achei texto impresso nesta página.');
+    if (!text) throw copyError(t('Não achei texto impresso nesta página.'));
     return text;
   } finally {
     signal.removeEventListener('abort', cancel);
@@ -2159,10 +2171,10 @@ function resetSigning() {
   signing.locked = '';
   els.signFile.value = '';
   els.signPassword.value = '';
-  els.signFileName.textContent = 'Nenhum arquivo escolhido';
+  els.signFileName.textContent = t('Nenhum arquivo escolhido');
   els.signStepOpen.hidden = false;
   els.signStepConfirm.hidden = true;
-  els.signNext.textContent = 'Abrir o certificado';
+  els.signNext.textContent = t('Abrir o certificado');
   els.signNext.disabled = false;
   els.signNext.hidden = false;
   els.stamp.checked = false;
@@ -2208,27 +2220,30 @@ async function prepareSignOptions() {
   else if (blocker) mode = blocker.message;
   else if (signing.append) {
     mode = doc.isSigned()
-      ? 'Este PDF já tem assinatura. A sua entra no fim do arquivo, e as que ele tem continuam valendo. O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos).'
-      : 'O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos): a sua assinatura entra no fim do arquivo, sem mudar nada nele.';
+      ? t('Este PDF já tem assinatura. A sua entra no fim do arquivo, e as que ele tem continuam valendo. O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos).')
+      : t('O PDF segue exatamente como veio, com o que ele tiver dentro (metadados, links, campos): a sua assinatura entra no fim do arquivo, sem mudar nada nele.');
   } else if (signedSources.size) {
     // Edição ou valor do formulário fixo na página (ou em todas as páginas) muda o conteúdo: o aviso diz isso primeiro.
     // Certificado pelo autor: a certificação também deixa de valer.
     const { changePermission } = await loadAppend();
     const what = [...signedSources].some((source) => changePermission(source) !== null)
-      ? 'a certificação e as assinaturas que ele já tinha deixam'
-      : 'as assinaturas que ele já tinha deixam';
+      ? t('a certificação e as assinaturas que ele já tinha')
+      : t('as assinaturas que ele já tinha');
     const edited = state.pages.some((page) => page.edits?.length) || allPages.active();
     const filled = [...signedSources].some((source) => source.form?.hasValues());
+    const fixed = edited && filled ? t('As edições e os valores do formulário ficam fixos nas páginas')
+      : edited ? t('As edições ficam fixas nas páginas') : t('Os valores do formulário ficam fixos nas páginas');
+    const without = edited && filled ? t('editar, preencher') : edited ? t('editar') : t('preencher');
     mode = edited || filled
-      ? `${edited && filled ? 'As edições e os valores do formulário ficam fixos' : edited ? 'As edições ficam fixas' : 'Os valores do formulário ficam fixos'} nas páginas: o PDF vai ser montado de novo, e ${what} de valer. Para manter, assine o PDF sozinho, sem ${edited && filled ? 'editar, preencher' : edited ? 'editar' : 'preencher'} nem mudar nada nele.`
-      : `O PDF vai ser montado de novo, e ${what} de valer. Para manter, assine o PDF sozinho, sem mudar nada nele (sem juntar, girar, tarjar, editar, preencher, comprimir nem ligar o OCR).`;
+      ? t('{fixed}: o PDF vai ser montado de novo, e {what} deixam de valer. Para manter, assine o PDF sozinho, sem {without} nem mudar nada nele.', { fixed, what, without })
+      : t('O PDF vai ser montado de novo, e {what} deixam de valer. Para manter, assine o PDF sozinho, sem mudar nada nele (sem juntar, girar, tarjar, editar, preencher, comprimir nem ligar o OCR).', { what });
   }
   els.signMode.hidden = !mode;
   els.signMode.firstElementChild.textContent = mode;
 
   // Com o PDF/A, o carimbo vai com as fontes embutidas (pdfa-fonts.js), como as páginas de Word.
   const reason = signing.locked ? ''
-    : certified ? 'Indisponível neste PDF: ele foi certificado pelo autor, e um carimbo novo pode invalidar a certificação em alguns validadores. A assinatura entra sem carimbo.'
+    : certified ? t('Indisponível neste PDF: ele foi certificado pelo autor, e um carimbo novo pode invalidar a certificação em alguns validadores. A assinatura entra sem carimbo.')
     : '';
   els.stamp.checked = false;
   els.stamp.disabled = !!signing.locked || !!reason;
@@ -2249,9 +2264,9 @@ function fillStampPages() {
   const { pages, many } = stampTarget();
   const count = pages.length;
   const options = count === 1
-    ? [['last', 'Página 1']]
-    : [['last', many ? 'Última página de cada arquivo' : 'Última página'], ['first', many ? 'Primeira página de cada arquivo' : 'Primeira página']];
-  if (!many) for (let n = 2; n < count && n <= 500; n++) options.push([String(n), `Página ${n}`]);
+    ? [['last', t('Página {n}', { n: 1 })]]
+    : [['last', many ? t('Última página de cada arquivo') : t('Última página')], ['first', many ? t('Primeira página de cada arquivo') : t('Primeira página')]];
+  if (!many) for (let n = 2; n < count && n <= 500; n++) options.push([String(n), t('Página {n}', { n })]);
   els.stampPage.replaceChildren(...options.map(([value, text]) => el('option', { value, textContent: text })));
 }
 
@@ -2328,7 +2343,7 @@ async function drawAllPagesPreview() {
   const size = { width: source.geometry.width, height: source.geometry.height };
   const extras = allPages.produce({ position: 1, total: groups[0].length, file: 1, files: groups.length, index, page, size });
   paintEdits(ctx, extras, size);
-  els.allPagesPreview.setAttribute('aria-label', `Prévia da página ${index + 1}${extras.length ? ', com o que entra em todas as páginas' : ''}`);
+  els.allPagesPreview.setAttribute('aria-label', extras.length ? t('Prévia da página {n}, com o que entra em todas as páginas', { n: index + 1 }) : t('Prévia da página {n}', { n: index + 1 }));
 }
 
 // Prévia: a página escolhida com o carimbo no lugar e no tamanho em que ele vai sair (stamp.js).
@@ -2357,7 +2372,7 @@ async function drawStampPreview() {
     ctx.fillText(line.text, visible.x + 6, top + line.size * 0.95);
     top += line.size * 1.25;
   }
-  canvas.setAttribute('aria-label', `Prévia: carimbo ${STAMP_POSITIONS[choice.position].toLowerCase()}, na ${els.stampPage.selectedOptions[0]?.textContent.toLowerCase() ?? 'página'}`);
+  canvas.setAttribute('aria-label', t('Prévia: carimbo {position}, na {page}', { position: STAMP_POSITIONS[choice.position].toLowerCase(), page: els.stampPage.selectedOptions[0]?.textContent.toLowerCase() ?? t('página') }));
 }
 
 els.stamp.addEventListener('change', () => {
@@ -2385,7 +2400,7 @@ els.sign.addEventListener('click', () => {
 els.signPick.addEventListener('click', () => els.signFile.click());
 els.signFile.addEventListener('change', () => {
   signing.file = els.signFile.files[0] ?? null;
-  els.signFileName.textContent = signing.file ? signing.file.name : 'Nenhum arquivo escolhido';
+  els.signFileName.textContent = signing.file ? signing.file.name : t('Nenhum arquivo escolhido');
   signStatus('');
   if (signing.file) els.signPassword.focus();
 });
@@ -2413,19 +2428,19 @@ els.signNext.addEventListener('click', async () => {
     return;
   }
   if (!signing.file) {
-    signStatus('Escolha o arquivo do certificado (.pfx ou .p12).', 'error');
+    signStatus(t('Escolha o arquivo do certificado (.pfx ou .p12).'), 'error');
     els.signPick.focus();
     return;
   }
   const password = els.signPassword.value;
   els.signPassword.value = ''; // a senha não fica no campo depois de usada
   els.signNext.disabled = true;
-  signStatus('Abrindo o certificado…');
+  signStatus(t('Abrindo o certificado…'));
   let module;
   let bytes;
   try {
     module = await loadSigning();
-    if (signing.file.size > 1024 * 1024) throw new module.SignError('Este arquivo é grande demais para ser um certificado A1.');
+    if (signing.file.size > 1024 * 1024) throw new module.SignError(t('Este arquivo é grande demais para ser um certificado A1.'));
     bytes = new Uint8Array(await signing.file.arrayBuffer());
     const signer = await module.openCertificate(bytes, password);
     if (!els.signDialog.open) {
@@ -2435,18 +2450,18 @@ els.signNext.addEventListener('click', async () => {
     signing.signer = signer;
     els.signHolder.textContent = signer.name;
     els.signIssuer.textContent = signer.issuer;
-    els.signValid.textContent = signer.notAfter.toLocaleDateString('pt-BR');
+    els.signValid.textContent = signer.notAfter.toLocaleDateString(LOCALE);
     els.signChain.hidden = signer.chainComplete;
     await prepareSignOptions();
     els.signStepOpen.hidden = true;
     els.signStepConfirm.hidden = false;
     const many = outputGroups(state.pages.length).length > 1;
-    els.signNext.textContent = signing.append ? 'Assinar o PDF' : many ? 'Assinar e gerar os PDFs' : 'Assinar e gerar o PDF';
+    els.signNext.textContent = signing.append ? t('Assinar o PDF') : many ? t('Assinar e gerar os PDFs') : t('Assinar e gerar o PDF');
     signStatus(signing.locked, signing.locked ? 'error' : 'info');
     (signing.locked ? els.signCancel : els.signNext).focus();
   } catch (err) {
     // Sem console: a mensagem não leva nada do certificado, e o erro técnico também não precisa ir para lá.
-    signStatus(module && err instanceof module.SignError ? err.message : 'Não deu para abrir o certificado.', 'error');
+    signStatus(module && err instanceof module.SignError ? err.message : t('Não deu para abrir o certificado.'), 'error');
     els.signPassword.focus();
   } finally {
     bytes?.fill(0);
@@ -2520,8 +2535,8 @@ async function setupPix() {
   copy.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(code);
-      copy.textContent = 'Código copiado! ✓';
-      setTimeout(() => { copy.textContent = 'Copiar código Pix'; }, 3000);
+      copy.textContent = t('Código copiado! ✓');
+      setTimeout(() => { copy.textContent = t('Copiar código Pix'); }, 3000);
     } catch {
       copy.replaceWith(el('code', { className: 'pix-code', textContent: code }));
     }

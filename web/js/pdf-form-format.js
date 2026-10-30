@@ -3,6 +3,8 @@
 // regular, e o app formata o valor por conta própria. Falha fechada: argumento estranho, função própria do formulário
 // (o validarCNPJ() da Receita) ou mais de uma chamada dão null, e o valor sai como digitado. Código puro, sem DOM.
 
+import { t } from './i18n.js';
+
 /**
  * O formato de um campo, como readFieldFormat devolve.
  * - number: decimals (casas decimais); separator (estilo do Acrobat: 0 = 1,234.56, 1 = 1234.56, 2 = 1.234,56,
@@ -235,7 +237,7 @@ function printAmount({ whole, fraction }, decimals, separator) {
 
 function formatNumber(spec, text) {
   const amount = readAmount(text, spec.separator, [spec.currency.trim(), 'R$']);
-  if (!amount) return fail(text, 'Não é um número.');
+  if (!amount) return fail(text, t('Não é um número.'));
   const body = printAmount(amount, spec.decimals, spec.separator);
   const negative = amount.negative && /[1-9]/.test(body); // -0,001 com duas casas é zero, sem sinal
   let out = spec.prepend ? spec.currency + body : body + spec.currency;
@@ -248,7 +250,7 @@ function formatNumber(spec, text) {
 // aqui só o texto vai para a página, e quem digita 15 quer ver 15%.
 function formatPercent(spec, text) {
   const amount = readAmount(text, spec.separator, ['%']);
-  if (!amount) return fail(text, 'Não é um número.');
+  if (!amount) return fail(text, t('Não é um número.'));
   const body = printAmount(amount, spec.decimals, spec.separator);
   const signed = amount.negative && /[1-9]/.test(body) ? `-${body}` : body;
   return { ok: true, text: spec.prepend ? `%${signed}` : `${signed}%` };
@@ -417,9 +419,9 @@ const PRINT = {
 
 const printDate = (parts, values) => parts.map((part) => part.text ?? PRINT[part.token](values)).join('');
 
-// Dica em português: aaaa para o ano, hh:mm para a hora. Com letra literal no formato ("14h30"), as letras da dica se
+// Dica no idioma da tela: aaaa para o ano (yyyy no inglês), hh:mm para a hora. Com letra literal no formato ("14h30"), as letras da dica se
 // confundiriam com ela ("hhhmm"): aí a dica é um exemplo.
-const DATE_HINT = { yy: 'aa', yyyy: 'aaaa', H: 'h', HH: 'hh', M: 'm', MM: 'mm', t: 'a/p', tt: 'am/pm' };
+const DATE_HINT = { yy: t('aa'), yyyy: t('aaaa'), H: 'h', HH: 'hh', M: 'm', MM: 'mm', t: 'a/p', tt: 'am/pm' };
 const SAMPLE = { year: 2024, month: 12, day: 31, hour: 23, minute: 59, second: 59 };
 const dateHint = (parts) => (parts.some((part) => part.text && /\p{L}/u.test(part.text))
   ? printDate(parts, SAMPLE)
@@ -436,7 +438,7 @@ function formatDate(spec, text) {
     if (read.values) return { ok: true, text: printDate(output, read.values) };
     if (!error || error === 'format') error = read.error;
   }
-  const message = error === 'date' ? 'Esta data não existe.' : error === 'time' ? 'Esta hora não existe.' : `Use o formato ${dateHint(input)}.`;
+  const message = error === 'date' ? t('Esta data não existe.') : error === 'time' ? t('Esta hora não existe.') : t('Use o formato {format}.', { format: dateHint(input) });
   return fail(text, message);
 }
 
@@ -473,7 +475,7 @@ function fillMask(mask, text) {
 
 function formatMask(mask, text) {
   const out = fillMask(mask, text);
-  return out === null ? fail(text, `Use o formato ${maskHint(mask)}.`) : { ok: true, text: out };
+  return out === null ? fail(text, t('Use o formato {format}.', { format: maskHint(mask) })) : { ok: true, text: out };
 }
 
 const specialMask = (style, text) => {

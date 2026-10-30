@@ -1208,10 +1208,19 @@ Ficou assim (2026-10-30):
 
 #### Fase 2: textos
 
-- [ ] Todo texto visível do JS (mensagens, avisos, erros, rótulos dos painéis, leitores de tela) passando por `t()`
-- [ ] Teste: toda chamada `t('...')` do código tem tradução no dicionário, e o dicionário não tem chave sobrando
-- [ ] Teste: o `en/index.html` não tem texto em português (letras acentuadas fora do link "Português")
-- [ ] Texto que vai para o PDF no idioma da página
+- [x] Todo texto visível do JS (mensagens, avisos, erros, rótulos dos painéis, leitores de tela) passando por `t()`
+- [x] Teste: toda chamada `t('...')` do código tem tradução no dicionário, e o dicionário não tem chave sobrando
+- [x] Teste: o `en/index.html` não tem texto em português (letras acentuadas fora do link "Português")
+- [x] Texto que vai para o PDF no idioma da página
+
+Ficou assim (2026-10-30):
+
+- Cerca de 580 textos no dicionário. As frases que eram montadas por pedaços viraram frases inteiras com marcadores, para o inglês poder mudar a ordem (o resumo da prévia, os achados da busca, "{label} criada/criado" no editor).
+- Texto que vai no PDF: numeração ("1 of 3", "Page 1 of 3"), marcas d'água prontas ("COPY", "CONFIDENTIAL"), carimbo ("Digitally signed by", "on 2026-10-30 at 14:05") e o nome do arquivo ("document.pdf"). As letras do PDF/A saem do texto traduzido.
+- Datas e tamanhos de arquivo no formato do idioma (`LOCALE` do `i18n.js`).
+- Intervalos aceitam "1 to 3" além de "1 a 3".
+- Ficaram em português de propósito: os erros internos que só aparecem como detalhe técnico depois de "Algo deu errado", e o texto do próprio documento (maiúsculas do Word).
+- Testes novos: marcadores iguais na chave e na tradução, e `t()`/`plural()` só com texto literal.
 
 #### Fase 3: OCR em inglês
 

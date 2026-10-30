@@ -9,6 +9,7 @@
 //   letras que ela pega (redact): a conferência das tarjas lê o texto do PDF montado, e a marca d'água é texto.
 import { registerEditType, tracePath, pathOps, pdfNumber, cutRedact, cutPath } from './edits.js';
 import { textWidth, winAnsiCode } from './fonts.js';
+import { t } from './i18n.js';
 
 const COLOR = /^#[0-9a-f]{6}$/i;
 const rgb = (hex) => [1, 3, 5].map((i) => pdfNumber(parseInt(hex.slice(i, i + 2), 16) / 255, 3)).join(' ');
@@ -17,14 +18,14 @@ const round4 = (v) => Math.round(v * 1e4) / 1e4;
 // ---------- Marca-texto ----------
 
 export const MARK_ALPHA = 0.55; // sobre o branco, a cor fica clara como a da caneta; sobre o preto, continua preto
-export const MARK_TINTS = [['#ffcc00', 'Amarelo'], ['#33cc66', 'Verde'], ['#ff3399', 'Rosa'], ['#3399ff', 'Azul']];
+export const MARK_TINTS = [['#ffcc00', t('Amarelo')], ['#33cc66', t('Verde')], ['#ff3399', t('Rosa')], ['#3399ff', t('Azul')]];
 export const DEFAULT_TINT = MARK_TINTS[0][0];
 const tintOf = (edit) => (COLOR.test(edit.tint ?? '') ? edit.tint : DEFAULT_TINT);
 
 // Pegos em parte por uma tarja, marca-texto, sublinhado e riscado são cortados nela (cutRedact e cutPath, em
 // edits.js): nada deles fica no arquivo sob a tarja.
 registerEditType('highlight', {
-  label: 'Marca-texto', gender: 'm', size: [160, 16], redact: cutRedact,
+  label: t('Marca-texto'), gender: 'm', size: [160, 16], redact: cutRedact,
   create: (box, props) => ({ ...box, ...props }),
   paint(ctx, edit, { w, h }) {
     ctx.globalAlpha = MARK_ALPHA;
@@ -68,8 +69,8 @@ function lineType(label) {
   };
 }
 
-registerEditType('underline', lineType('Sublinhado'));
-registerEditType('strike', lineType('Riscado'));
+registerEditType('underline', lineType(t('Sublinhado')));
+registerEditType('strike', lineType(t('Riscado')));
 
 /**
  * Sublinhado ou riscado arrastado de a até b (de 0 a 1 na página como aparece). Perto da horizontal (até 4°), a linha
@@ -185,7 +186,7 @@ function touches(quad, [x0, y0, x1, y1]) {
 }
 
 registerEditType('watermark', {
-  label: "Marca d'água", gender: 'f',
+  label: t('Marca d\'água'), gender: 'f',
   // Só as letras que ficam: as tiradas pelas tarjas (hide) não entram nem no subconjunto da fonte embutida do PDF/A.
   characters: (edit) => new Map([[WATERMARK_FONT, [...watermarkText(edit.text)].filter((_, i) => !edit.hide?.includes(i)).join('')]]),
   paint(ctx, edit, { w, h }) {

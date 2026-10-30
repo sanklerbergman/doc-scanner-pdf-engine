@@ -6,11 +6,12 @@
 import { addAllPagesOption, spotGrid } from './all-pages.js';
 import { prepareStroke, paintEdits, boxAround, editType } from './edits.js';
 import { rubricFromStrokes, rubricEdit, onForget, RUBRIC_SIZES } from './edit-media.js';
+import { t } from './i18n.js';
 
 // Espessura do traço: proporcional à largura do quadro (uns 3 pixels no celular), para a mesma rubrica sair com a mesma
 // espessura no PDF, feita no celular ou no computador (no tamanho médio, perto de 1 ponto).
 const pen = (width) => Math.max(2, width * 0.009);
-const COLORS = [['#1d4ed8', 'Azul'], ['#000000', 'Preto']];
+const COLORS = [['#1d4ed8', t('Azul')], ['#000000', t('Preto')]];
 
 let rubric = null; // a rubrica em uso (Rubric, em edit-media.js)
 let nextId = 1;
@@ -41,10 +42,10 @@ function sized(canvas, width, height) {
 let pad = null; // {dialog, open()}, criado na primeira vez
 
 function createPad() {
-  const canvas = el('canvas', { className: 'rubric-pad', role: 'img', 'aria-label': 'Quadro para desenhar a rubrica' });
+  const canvas = el('canvas', { className: 'rubric-pad', role: 'img', 'aria-label': t('Quadro para desenhar a rubrica') });
   const status = el('p', { className: 'sheet-status', role: 'status', 'aria-live': 'polite' });
   const colors = el('fieldset', { className: 'edit-prop edit-prop-swatch rubric-colors' }, [
-    el('legend', { textContent: 'Cor' }),
+    el('legend', { textContent: t('Cor') }),
     ...COLORS.map(([value, name], i) => {
       const sample = el('span', { className: 'edit-sample', 'aria-hidden': 'true' });
       sample.style.background = value;
@@ -54,12 +55,12 @@ function createPad() {
       ]);
     }),
   ]);
-  const clear = el('button', { type: 'button', className: 'btn', textContent: 'Limpar' });
-  const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancelar' });
-  const use = el('button', { type: 'button', className: 'btn btn-primary', textContent: 'Usar esta rubrica' });
+  const clear = el('button', { type: 'button', className: 'btn', textContent: t('Limpar') });
+  const cancel = el('button', { type: 'button', className: 'btn', textContent: t('Cancelar') });
+  const use = el('button', { type: 'button', className: 'btn btn-primary', textContent: t('Usar esta rubrica') });
   const dialog = el('dialog', { className: 'sheet rubric-dialog', 'aria-labelledby': 'rubric-title', 'aria-describedby': 'rubric-text' }, [
-    el('h2', { id: 'rubric-title', textContent: 'Desenhe a rubrica' }),
-    el('p', { id: 'rubric-text', textContent: 'Com o dedo, a caneta ou o mouse, dentro do quadro. Ela vai igual em todas as páginas e fica só na memória desta aba.' }),
+    el('h2', { id: 'rubric-title', textContent: t('Desenhe a rubrica') }),
+    el('p', { id: 'rubric-text', textContent: t('Com o dedo, a caneta ou o mouse, dentro do quadro. Ela vai igual em todas as páginas e fica só na memória desta aba.') }),
     canvas, colors, status,
     el('div', { className: 'sheet-actions' }, [clear, cancel, use]),
   ]);
@@ -149,13 +150,13 @@ function createPad() {
   clear.addEventListener('click', () => {
     strokes = [];
     redraw();
-    status.textContent = 'Quadro limpo.';
+    status.textContent = t('Quadro limpo.');
   });
   cancel.addEventListener('click', () => dialog.close());
   use.addEventListener('click', () => {
     if (!strokes.length) {
       status.dataset.kind = 'error';
-      status.textContent = 'Desenhe a rubrica no quadro antes de usar.';
+      status.textContent = t('Desenhe a rubrica no quadro antes de usar.');
       return;
     }
     rubric = rubricFromStrokes(strokes, { color: color(), width: pen(size.width) }, size, nextId++);
@@ -198,10 +199,10 @@ addAllPagesOption({
     const check = el('input', { type: 'checkbox', id: 'rubric-on', 'aria-describedby': 'rubric-note' });
     const note = el('p', {
       id: 'rubric-note', className: 'field-note',
-      textContent: 'Desenhada uma vez e repetida em toda página, no lugar escolhido, sem cobrir a numeração, o cabeçalho e o rodapé. Fica só na memória desta aba: some ao limpar a lista ou fechar.',
+      textContent: t('Desenhada uma vez e repetida em toda página, no lugar escolhido, sem cobrir a numeração, o cabeçalho e o rodapé. Fica só na memória desta aba: some ao limpar a lista ou fechar.'),
     });
-    const sample = el('canvas', { className: 'rubric-sample', role: 'img', 'aria-label': 'Sua rubrica' });
-    const draw = el('button', { type: 'button', className: 'btn', textContent: 'Desenhar de novo' });
+    const sample = el('canvas', { className: 'rubric-sample', role: 'img', 'aria-label': t('Sua rubrica') });
+    const draw = el('button', { type: 'button', className: 'btn', textContent: t('Desenhar de novo') });
     const grid = el('div', { className: 'stamp-grid' });
     spotGrid(grid, 'rubric-position');
     const select = el('select', { id: 'rubric-size' }, Object.entries(RUBRIC_SIZES).map(([value, { label }]) => (
@@ -209,11 +210,11 @@ addAllPagesOption({
     const options = el('div', { className: 'rubric-options', hidden: true }, [
       el('div', { className: 'rubric-drawn' }, [sample, draw]),
       el('div', { className: 'rubric-place' }, [
-        el('fieldset', { className: 'stamp-positions' }, [el('legend', { textContent: 'Lugar na página' }), grid]),
-        el('label', { className: 'field' }, [el('span', { textContent: 'Tamanho (o lado maior)' }), select]),
+        el('fieldset', { className: 'stamp-positions' }, [el('legend', { textContent: t('Lugar na página') }), grid]),
+        el('label', { className: 'field' }, [el('span', { textContent: t('Tamanho (o lado maior)') }), select]),
       ]),
     ]);
-    container.append(el('label', { className: 'check' }, [check, ' Rubrica em todas as páginas']), note, options);
+    container.append(el('label', { className: 'check' }, [check, ` ${t('Rubrica em todas as páginas')}`]), note, options);
     controls = { check, grid, select };
 
     // A rubrica no quadrinho de amostra, inteira e centrada.

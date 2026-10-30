@@ -19,6 +19,7 @@ import {
 } from './edits.js';
 import { arrowFromLine, inkFromStrokes, inkStrokes, DEFAULT_COLOR, DEFAULT_WIDTH } from './edit-shapes.js';
 import './edit-types.js';
+import { t, plural } from './i18n.js';
 
 /**
  * @typedef {object} Tool
@@ -79,38 +80,38 @@ export function registerProperty(id, property) {
 export const propertyOf = (id) => PROPERTIES.get(id);
 
 registerProperty('color', {
-  label: 'Cor', look: 'swatch', value: DEFAULT_COLOR,
-  options: [['#1d4ed8', 'Azul'], ['#000000', 'Preto'], ['#dc2626', 'Vermelho'], ['#15803d', 'Verde']],
+  label: t('Cor'), look: 'swatch', value: DEFAULT_COLOR,
+  options: [['#1d4ed8', t('Azul')], ['#000000', t('Preto')], ['#dc2626', t('Vermelho')], ['#15803d', t('Verde')]],
 });
 registerProperty('width', {
-  label: 'Espessura', look: 'line', value: DEFAULT_WIDTH,
-  options: [[1, 'Fina'], [2, 'Média'], [4, 'Grossa']],
+  label: t('Espessura'), look: 'line', value: DEFAULT_WIDTH,
+  options: [[1, t('Fina')], [2, t('Média')], [4, t('Grossa')]],
 });
 
 const SHAPE = ['color', 'width'];
 registerTool({
-  id: 'select', label: 'Selecionar', icon: 'select', pointer: 'select',
-  hint: 'Toque numa edição para selecionar. Arraste para mover; as alças dos cantos mudam o tamanho.',
+  id: 'select', label: t('Selecionar'), icon: 'select', pointer: 'select',
+  hint: t('Toque numa edição para selecionar. Arraste para mover; as alças dos cantos mudam o tamanho.'),
 });
 registerTool({
-  id: 'ink', label: 'Desenho', title: 'Desenho à mão', icon: 'draw', type: 'ink', pointer: 'stroke', props: SHAPE,
-  hint: 'Desenhe com o dedo, a caneta ou o mouse. Traços perto um do outro viram um desenho só.',
+  id: 'ink', label: t('Desenho'), title: t('Desenho à mão'), icon: 'draw', type: 'ink', pointer: 'stroke', props: SHAPE,
+  hint: t('Desenhe com o dedo, a caneta ou o mouse. Traços perto um do outro viram um desenho só.'),
 });
 registerTool({
-  id: 'rect', label: 'Retângulo', icon: 'rect', type: 'rect', pointer: 'box', keyboard: true, props: SHAPE,
-  hint: 'Arraste sobre a página para desenhar o retângulo. Pelo teclado, use "Novo".',
+  id: 'rect', label: t('Retângulo'), icon: 'rect', type: 'rect', pointer: 'box', keyboard: true, props: SHAPE,
+  hint: t('Arraste sobre a página para desenhar o retângulo. Pelo teclado, use "Novo".'),
 });
 registerTool({
-  id: 'arrow', label: 'Seta', icon: 'arrow', type: 'arrow', pointer: 'line', keyboard: true, props: SHAPE,
-  hint: 'Arraste de onde a seta sai até onde ela aponta. Pelo teclado, use "Novo".',
+  id: 'arrow', label: t('Seta'), icon: 'arrow', type: 'arrow', pointer: 'line', keyboard: true, props: SHAPE,
+  hint: t('Arraste de onde a seta sai até onde ela aponta. Pelo teclado, use "Novo".'),
 });
 registerTool({
-  id: 'check', label: 'Certo', title: 'Marca de certo (✓)', icon: 'check-mark', type: 'check', pointer: 'mark', keyboard: true, props: SHAPE,
-  hint: 'Toque onde vai o ✓, ou arraste para escolher o tamanho. Pelo teclado, use "Novo".',
+  id: 'check', label: t('Certo'), title: t('Marca de certo (✓)'), icon: 'check-mark', type: 'check', pointer: 'mark', keyboard: true, props: SHAPE,
+  hint: t('Toque onde vai o ✓, ou arraste para escolher o tamanho. Pelo teclado, use "Novo".'),
 });
 registerTool({
-  id: 'cross', label: 'Xis', title: 'Marca de xis (✗)', icon: 'remove', type: 'cross', pointer: 'mark', keyboard: true, props: SHAPE,
-  hint: 'Toque onde vai o ✗, ou arraste para escolher o tamanho. Pelo teclado, use "Novo".',
+  id: 'cross', label: t('Xis'), title: t('Marca de xis (✗)'), icon: 'remove', type: 'cross', pointer: 'mark', keyboard: true, props: SHAPE,
+  hint: t('Toque onde vai o ✗, ou arraste para escolher o tamanho. Pelo teclado, use "Novo".'),
 });
 
 const $ = (selector) => document.querySelector(selector);
@@ -144,7 +145,15 @@ function icon(name) {
   return svg;
 }
 
-const done = (type, word) => `${type.label} ${word}${type.gender === 'f' ? 'a' : 'o'}`; // "Seta criada"
+// "Seta criada", "Retângulo criado": o particípio concorda com o gênero do tipo (edits.js).
+function done(type, action) {
+  const { label } = type;
+  const f = type.gender === 'f';
+  if (action === 'created') return f ? t('{label} criada', { label }) : t('{label} criado', { label });
+  if (action === 'removed') return f ? t('{label} removida', { label }) : t('{label} removido', { label });
+  if (action === 'duplicated') return f ? t('{label} duplicada', { label }) : t('{label} duplicado', { label });
+  return f ? t('{label} movida', { label }) : t('{label} movido', { label });
+}
 
 /**
  * @param {object} deps
@@ -195,8 +204,8 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
   }, [icon(item.icon), el('span', { textContent: item.label })]));
   const swatch = el('span', { className: 'edit-tool-swatch' });
   const propsButton = el('button', {
-    type: 'button', className: 'edit-tool', title: 'Cor e espessura', 'aria-expanded': 'false', 'aria-controls': 'edit-props',
-  }, [swatch, el('span', { textContent: 'Cor' })]);
+    type: 'button', className: 'edit-tool', title: t('Cor e espessura'), 'aria-expanded': 'false', 'aria-controls': 'edit-props',
+  }, [swatch, el('span', { textContent: t('Cor') })]);
   toolbar.replaceChildren(...toolButtons, propsButton);
 
   // Um grupo de opções (rádios) por propriedade; só aparecem as que valem para a ferramenta ou a edição selecionada.
@@ -264,7 +273,8 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     // Outra ferramenta de criar: a seleção (alças e barra) sai da frente da página.
     if (tool.pointer !== 'select') selected = -1;
     addButton.disabled = !tool.keyboard;
-    addButton.setAttribute('aria-label', tool.keyboard && tool.type ? `Novo: ${editType(tool.type).label.toLowerCase()} no meio da página` : 'Novo');
+    addButton.setAttribute('aria-label', tool.keyboard && tool.type
+      ? t('Novo: {label} no meio da página', { label: editType(tool.type).label.toLowerCase() }) : t('Novo'));
     render();
     if (announce) say(tool.hint);
   }
@@ -308,8 +318,8 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     fit();
     chooseTool(tool, { announce: false }); // a ferramenta da página anterior continua (marcar ✓ em várias páginas)
     say(items.length
-      ? 'Toque numa edição para selecionar, ou escolha uma ferramenta. O que você acrescenta fica fixo no PDF.'
-      : 'Escolha uma ferramenta e desenhe na página. O que você acrescenta fica fixo no PDF.');
+      ? t('Toque numa edição para selecionar, ou escolha uma ferramenta. O que você acrescenta fica fixo no PDF.')
+      : t('Escolha uma ferramenta e desenhe na página. O que você acrescenta fica fixo no PDF.'));
     toolButtons.find((button) => button.dataset.tool === tool.id)?.focus();
   }
 
@@ -379,7 +389,8 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
       const type = typeOf(item);
       const box = el('div', {
         className: `edit-box${i === selected ? ' selected' : ''}`, tabIndex: 0, role: 'group', 'data-index': i,
-        'aria-label': `${type.describe?.(item) ?? type.label} (edição ${i + 1} de ${items.length}): as setas movem, Shift e setas mudam o tamanho, Delete remove`,
+        'aria-label': t('{label} (edição {n} de {total}): as setas movem, Shift e setas mudam o tamanho, Delete remove',
+          { label: type.describe?.(item) ?? type.label, n: i + 1, total: items.length }),
       });
       place(box, item);
       if (i === selected) box.append(...handles(item));
@@ -402,9 +413,9 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     }));
   }
 
-  const bar = el('div', { className: 'edit-bar', role: 'group', 'aria-label': 'Edição selecionada' }, [
-    el('button', { type: 'button', className: 'btn', 'data-act': 'remove' }, [icon('remove'), ' Remover']),
-    el('button', { type: 'button', className: 'btn', 'data-act': 'duplicate' }, [icon('copy'), ' Duplicar']),
+  const bar = el('div', { className: 'edit-bar', role: 'group', 'aria-label': t('Edição selecionada') }, [
+    el('button', { type: 'button', className: 'btn', 'data-act': 'remove' }, [icon('remove'), ` ${t('Remover')}`]),
+    el('button', { type: 'button', className: 'btn', 'data-act': 'duplicate' }, [icon('copy'), ` ${t('Duplicar')}`]),
   ]);
 
   // A barra fica acima da edição; sem espaço, embaixo; sem espaço também, dentro dela, no alto. Sempre na página.
@@ -442,7 +453,9 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     items.push(item);
     selected = tool.pointer === 'stroke' ? -1 : items.length - 1;
     render(selected >= 0 ? selected : -1);
-    say(message ?? `${done(typeOf(item), 'criad')}. ${items.length === 1 ? 'Toque em "Aplicar" quando terminar.' : `Ficam ${items.length} edições.`}`);
+    say(message ?? (items.length === 1
+      ? t('{done}. Toque em "Aplicar" quando terminar.', { done: done(typeOf(item), 'created') })
+      : t('{done}. Ficam {n} edições.', { done: done(typeOf(item), 'created'), n: items.length })));
     return items.length - 1;
   }
 
@@ -459,7 +472,9 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     selected = -1;
     render(Math.min(index, items.length - 1));
     if (!items.length) addButton.disabled ? toolButtons[0].focus() : addButton.focus();
-    say(`${done(type, 'removid')}. ${items.length ? `Ficam ${items.length === 1 ? '1 edição' : `${items.length} edições`}.` : 'Nenhuma edição nesta página.'}`);
+    const gone = done(type, 'removed');
+    say(items.length ? plural(items.length, '{done}. Fica {n} edição.', '{done}. Ficam {n} edições.', { done: gone })
+      : t('{done}. Nenhuma edição nesta página.', { done: gone }));
   }
 
   function duplicate(index) {
@@ -467,19 +482,19 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     items.push(duplicateEdit(items[index]));
     selected = items.length - 1;
     render(selected);
-    say(`${done(typeOf(items[selected]), 'duplicad')}: a cópia fica um pouco abaixo e à direita.`);
+    say(t('{done}: a cópia fica um pouco abaixo e à direita.', { done: done(typeOf(items[selected]), 'duplicated') }));
   }
 
   function undo() {
     if (!history.length) {
-      say('Nada para desfazer.');
+      say(t('Nada para desfazer.'));
       return;
     }
     items = history.pop();
     selected = -1;
     lastInk = null;
     render();
-    say(items.length ? 'Desfeito.' : 'Desfeito. Nenhuma edição nesta página.');
+    say(items.length ? t('Desfeito.') : t('Desfeito. Nenhuma edição nesta página.'));
   }
 
   // Interface para as ferramentas das próximas fases (pointer, keyboard e open).
@@ -513,17 +528,17 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     const type = editType(tool.type);
     const box = boxAround(0.5, 0.5, type.size ?? [72, 72], size);
     add({ type: tool.type, ...type.create(box, propsFor(tool)) },
-      `${done(type, 'criad')} no meio da página: as setas movem, Shift e setas mudam o tamanho, Delete remove.`);
+      t('{done} no meio da página: as setas movem, Shift e setas mudam o tamanho, Delete remove.', { done: done(type, 'created') }));
   });
   undoButton.addEventListener('click', undo);
   $('#edit-cancel').addEventListener('click', async () => {
-    if (dirty() && !(await confirm('As edições desta página ainda não foram aplicadas. Se sair agora, elas se perdem.'))) return;
+    if (dirty() && !(await confirm(t('As edições desta página ainda não foram aplicadas. Se sair agora, elas se perdem.')))) return;
     leave();
   });
   applyButton.addEventListener('click', async () => {
     if (!page) return;
     applyButton.disabled = true;
-    say('Aplicando as edições…');
+    say(t('Aplicando as edições…'));
     try {
       await save(page, cloneEdits(items));
     } finally {
@@ -668,14 +683,16 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
       else {
         paint();
         const type = editType(tool.type);
-        say(tool.pointer === 'line' ? 'Arraste para desenhar a seta: de onde ela sai até onde aponta.'
-          : `Arraste sobre a página para desenhar ${type.gender === 'f' ? 'a' : 'o'} ${type.label.toLowerCase()}.`);
+        const label = type.label.toLowerCase();
+        say(tool.pointer === 'line' ? t('Arraste para desenhar a seta: de onde ela sai até onde aponta.')
+          : type.gender === 'f' ? t('Arraste sobre a página para desenhar a {label}.', { label })
+          : t('Arraste sobre a página para desenhar o {label}.', { label }));
       }
     } else if (finished.kind === 'custom') {
       finished.handler.up?.(point, event);
     } else if (finished.moved) {
       const type = typeOf(items[selected]);
-      say(finished.kind === 'move' ? `${done(type, 'movid')}.` : `${type.label}: tamanho mudado.`);
+      say(finished.kind === 'move' ? `${done(type, 'moved')}.` : t('{label}: tamanho mudado.', { label: type.label }));
       render();
     } else if (finished.kind === 'move' && finished.again) {
       // Tocar de novo na edição selecionada faz o mesmo que Enter: a ferramenta dela reabre o painel (o do texto).
@@ -746,11 +763,11 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
       remember();
       items[index] = lastInk = inkFromStrokes([...inkStrokes(lastInk), stroke], props, size);
       render();
-      say('Traço acrescentado ao desenho.');
+      say(t('Traço acrescentado ao desenho.'));
       return;
     }
     lastInk = inkFromStrokes([stroke], props, size);
-    add(lastInk, 'Desenho criado. Os próximos traços perto dele entram no mesmo desenho. Toque em "Aplicar" quando terminar.');
+    add(lastInk, t('Desenho criado. Os próximos traços perto dele entram no mesmo desenho. Toque em "Aplicar" quando terminar.'));
   }
 
   // O traço passa perto (INK_JOIN pontos) da caixa do desenho?

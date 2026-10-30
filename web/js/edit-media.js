@@ -10,6 +10,7 @@
 import { registerEditType, editType, pdfNumber, spotBox, cutRedact } from './edits.js';
 import { inkFromStrokes } from './edit-shapes.js';
 import { inflate } from './inflate.js';
+import { t } from './i18n.js';
 
 const encoder = new TextEncoder();
 
@@ -276,7 +277,7 @@ function imageResource(id, res) {
 // {type: 'image', x0, y0, x1, y1, turn?, image}: image é a chave da imagem na memória (storeImage). A imagem ocupa a
 // caixa inteira; a proporção fica travada ao mudar o tamanho.
 registerEditType('image', {
-  label: 'Imagem', gender: 'f', keepRatio: true,
+  label: t('Imagem'), gender: 'f', keepRatio: true,
   paint(ctx, edit, { w, h }) {
     const picture = IMAGES.get(edit.image)?.picture;
     if (picture) {
@@ -318,9 +319,9 @@ registerEditType('image', {
 
 /** Tamanhos da rubrica: o lado maior, em pontos (1 cm = 72 / 2,54 pontos). */
 export const RUBRIC_SIZES = {
-  small: { label: 'Pequena (2 cm)', side: (2 * 72) / 2.54 },
-  medium: { label: 'Média (3 cm)', side: (3 * 72) / 2.54 },
-  large: { label: 'Grande (4,5 cm)', side: (4.5 * 72) / 2.54 },
+  small: { label: t('Pequena (2 cm)'), side: (2 * 72) / 2.54 },
+  medium: { label: t('Média (3 cm)'), side: (3 * 72) / 2.54 },
+  large: { label: t('Grande (4,5 cm)'), side: (4.5 * 72) / 2.54 },
 };
 
 /**
@@ -378,7 +379,7 @@ const inkOf = (rubric) => ({ type: 'ink', strokes: rubric.strokes, color: rubric
 // página em que uma tarja pega a rubrica em parte (cutRedact), ela vai num Form XObject só dessa página, com os traços
 // cortados na tarja: o desenho que as outras páginas usam não leva nada para baixo dela.
 registerEditType('rubric', {
-  label: 'Rubrica', gender: 'f', keepRatio: true, redact: cutRedact,
+  label: t('Rubrica'), gender: 'f', keepRatio: true, redact: cutRedact,
   paint(ctx, edit, { w, h }) {
     const { rubric } = edit;
     ctx.scale(w / rubric.w, h / rubric.h);

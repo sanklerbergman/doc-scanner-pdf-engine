@@ -10,6 +10,7 @@ import { storeImage, imageRecord, flateImage, hasTransparency, imageCuts, cutKey
 import { decodeFile, canvasToBlob } from './imaging.js';
 import { pageCovers, readJpegInfo } from './pdf.js';
 import { md5 } from './md5.js';
+import { t } from './i18n.js';
 
 // Lado maior da imagem no PDF. Numa A4 inteira, 2000 pixels dão uns 240 por polegada (nítido na impressão); numa
 // imagem do tamanho de meia página, mais de 300. No iPhone, o canvas de 2000 × 2000 ocupa 16 MB, e o pico ao preparar
@@ -19,7 +20,7 @@ const PREVIEW_SIDE = 1200; // prévia guardada na memória (miniaturas e tela ch
 const MAX_PIXELS = 50e6; // arquivo maior que isso nem é aberto: só decodificar ocuparia 200 MB
 const MAX_BYTES = 50 * 1024 * 1024;
 const JPEG_QUALITY = 0.92; // texto e traço de logotipo sem borrão visível
-const TAP_MOVE = 'Toque sem arrastar: onde o dedo encostar, a imagem entra.';
+const TAP_MOVE = t('Toque sem arrastar: onde o dedo encostar, a imagem entra.');
 
 class ImageError extends Error {}
 
@@ -44,7 +45,7 @@ async function readHeader(file) {
   return null;
 }
 
-const tooBig = () => new ImageError('A imagem é grande demais para abrir aqui (mais de 50 megapixels ou 50 MB). Reduza e tente de novo.');
+const tooBig = () => new ImageError(t('A imagem é grande demais para abrir aqui (mais de 50 megapixels ou 50 MB). Reduza e tente de novo.'));
 
 // Identificação pelo conteúdo já recodificado: a mesma imagem escolhida duas vezes é uma só na memória e no PDF.
 // Fora de HTTPS (sem crypto.subtle), o MD5 do próprio app serve: aqui ele só compara, não protege nada.
@@ -61,13 +62,13 @@ async function contentId(encoded) {
  */
 export async function prepareImage(file) {
   const header = await readHeader(file);
-  if (!header) throw new ImageError('Esse arquivo não é PNG nem JPEG. Escolha uma imagem PNG ou JPEG.');
+  if (!header) throw new ImageError(t('Esse arquivo não é PNG nem JPEG. Escolha uma imagem PNG ou JPEG.'));
   if (file.size > MAX_BYTES || header.width * header.height > MAX_PIXELS) throw tooBig();
   let image;
   try {
     image = await decodeFile(file);
   } catch {
-    throw new ImageError('Não deu para abrir essa imagem: o arquivo pode estar corrompido. Tente outra, em PNG ou JPEG.');
+    throw new ImageError(t('Não deu para abrir essa imagem: o arquivo pode estar corrompido. Tente outra, em PNG ou JPEG.'));
   }
   const canvas = document.createElement('canvas');
   let reduced = false;
@@ -185,17 +186,17 @@ function pick(api, point) {
     chooser.value = '';
     if (!file) return;
     const editing = () => !document.querySelector('#edit')?.hidden;
-    api.say('Preparando a imagem…');
+    api.say(t('Preparando a imagem…'));
     try {
       const image = await prepareImage(file);
       if (!editing()) return; // a pessoa saiu do modo Editar enquanto a imagem era preparada
       const box = boxAround(point[0], point[1], startSize(image, api.page), api.page);
-      const reduced = image.reduced ? ` Ela foi reduzida para ${MAX_SIDE} pixels no lado maior, o bastante para imprimir nítida.` : '';
-      api.add({ type: 'image', ...box, image: image.id },
-        `Imagem posta na página: arraste para mover; os cantos mudam o tamanho sem deformar.${reduced} Toque em "Aplicar" quando terminar.`);
+      api.add({ type: 'image', ...box, image: image.id }, image.reduced
+        ? t('Imagem posta na página: arraste para mover; os cantos mudam o tamanho sem deformar. Ela foi reduzida para {side} pixels no lado maior, o bastante para imprimir nítida. Toque em "Aplicar" quando terminar.', { side: MAX_SIDE })
+        : t('Imagem posta na página: arraste para mover; os cantos mudam o tamanho sem deformar. Toque em "Aplicar" quando terminar.'));
     } catch (err) {
       if (!(err instanceof ImageError)) console.error(err);
-      if (editing()) api.say(err instanceof ImageError ? err.message : 'Não deu para abrir essa imagem. Tente outra, em PNG ou JPEG.');
+      if (editing()) api.say(err instanceof ImageError ? err.message : t('Não deu para abrir essa imagem. Tente outra, em PNG ou JPEG.'));
     }
   };
   chooser.value = '';
@@ -203,9 +204,9 @@ function pick(api, point) {
 }
 
 registerTool({
-  id: 'image', label: 'Imagem', icon: 'image', type: 'image', after: 'ink', // depois do Desenho, como no plano
+  id: 'image', label: t('Imagem'), icon: 'image', type: 'image', after: 'ink', // depois do Desenho, como no plano
 
-  hint: 'Toque na página onde vai a imagem (PNG ou JPEG), ou use "Novo" para pô-la no meio. Os cantos mudam o tamanho sem deformar.',
+  hint: t('Toque na página onde vai a imagem (PNG ou JPEG), ou use "Novo" para pô-la no meio. Os cantos mudam o tamanho sem deformar.'),
   // Toque: numa edição, seleciona; fora, com algo selecionado, só tira a seleção; senão, escolhe a imagem. Arrastar
   // não faz nada (a imagem entra no tamanho dela, e depois os cantos mudam o tamanho).
   pointer(api, point, event) {

@@ -1,4 +1,5 @@
 // Plano do OCR: quantos motores ligar e quanto tempo falta. Funções puras, sem tela (test/ocr-plan.test.js).
+import { t } from './i18n.js';
 
 /**
  * Quantos motores do Tesseract ligar. Cada um é um Worker com a própria memória do WebAssembly (centenas de MB),
@@ -25,9 +26,9 @@ export function remainingTime(elapsed, done, total) {
 // Estimativa para a mensagem de andamento, arredondada ao minuto, sem prometer precisão. Vazia sem estimativa.
 export function remainingText(ms) {
   if (ms == null || !Number.isFinite(ms)) return '';
-  if (ms < 45000) return ' (falta menos de 1 minuto)';
+  if (ms < 45000) return t(' (falta menos de 1 minuto)');
   const minutes = Math.round(ms / 60000);
-  return minutes <= 1 ? ' (falta mais ou menos 1 minuto)' : ` (faltam uns ${minutes} minutos)`;
+  return minutes <= 1 ? t(' (falta mais ou menos 1 minuto)') : t(' (faltam uns {n} minutos)', { n: minutes });
 }
 
 // A partir de quantas páginas para ler o app avisa, logo no começo, que vai demorar. Medido no desktop: de 1 a 1,5 s
@@ -44,5 +45,5 @@ export const MANY_PAGES = 20;
 export function progressNote(elapsed, done, total) {
   const left = remainingText(remainingTime(elapsed, done, total));
   if (left || done > 0 || total < MANY_PAGES) return left;
-  return ` São ${total} páginas: pode levar alguns minutos.`;
+  return t(' São {n} páginas: pode levar alguns minutos.', { n: total });
 }

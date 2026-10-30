@@ -6,15 +6,16 @@
 // (displayName, em x509.js). O texto entra como string hexadecimal, então nenhum caractere do nome quebra o PDF.
 import { textWidth, winAnsiCode } from './fonts.js';
 import { visibleToPdf, uprightMatrix } from './geometry.js';
+import { LANG, t } from './i18n.js';
 
 // Os seis lugares, com o nome que aparece na tela (e para leitores de tela).
 export const STAMP_POSITIONS = {
-  'top-left': 'Em cima, à esquerda',
-  'top-center': 'Em cima, no centro',
-  'top-right': 'Em cima, à direita',
-  'bottom-left': 'Embaixo, à esquerda',
-  'bottom-center': 'Embaixo, no centro',
-  'bottom-right': 'Embaixo, à direita',
+  'top-left': t('Em cima, à esquerda'),
+  'top-center': t('Em cima, no centro'),
+  'top-right': t('Em cima, à direita'),
+  'bottom-left': t('Embaixo, à esquerda'),
+  'bottom-center': t('Embaixo, no centro'),
+  'bottom-right': t('Embaixo, à direita'),
 };
 
 const MARGIN = 24; // distância da borda da página, em pontos
@@ -23,7 +24,7 @@ const MIN_WIDTH = 150;
 const MAX_WIDTH = 260;
 const LINE = 1.25; // altura da linha, em relação ao tamanho da letra
 const BORDER = [0.16, 0.29, 0.55]; // azul-acinzentado, legível em cima de foto e de texto
-const INTRO = 'Assinado digitalmente por';
+const INTRO = t('Assinado digitalmente por');
 
 // Fontes do carimbo: as padrão do PDF, sem embutir. Com o PDF/A, vão as Liberation equivalentes, embutidas
 // (pdfa-fonts.js), que têm as mesmas larguras: o desenho do carimbo não muda.
@@ -55,12 +56,15 @@ function zone(date) {
  * @returns {{width: number, height: number, lines: Array<{text: string, font: string, size: number}>}}
  */
 export function stampLayout(name, time, pageWidth) {
-  const date = `${pad(time.getDate())}/${pad(time.getMonth() + 1)}/${time.getFullYear()}`;
+  const date = LANG === 'en'
+    ? `${time.getFullYear()}-${pad(time.getMonth() + 1)}-${pad(time.getDate())}`
+    : `${pad(time.getDate())}/${pad(time.getMonth() + 1)}/${time.getFullYear()}`;
   const hour = `${pad(time.getHours())}:${pad(time.getMinutes())}`;
   const lines = [
     { text: INTRO, font: 'Helvetica', size: 7 },
     { text: winAnsi(name.trim()) || '?', font: 'Helvetica-Bold', size: 9 },
-    { text: `em ${date} às ${hour} (${zone(time)})`, font: 'Helvetica', size: 7 },
+    // "em 30/10/2026 às 14:05 (UTC-3)"; no inglês, "on 2026-10-30 at 14:05 (UTC-3)".
+    { text: t('em {date} às {hour} ({zone})', { date, hour, zone: zone(time) }), font: 'Helvetica', size: 7 },
   ];
   const room = Math.max(40, pageWidth - MARGIN * 2);
   const natural = Math.max(...lines.map((line) => textWidth(line.text, line.font, line.size))) + PADDING * 2;
@@ -86,7 +90,7 @@ export function stampLayout(name, time, pageWidth) {
  */
 export function stampCharacters(name) {
   return new Map([
-    ['Helvetica', `${INTRO} em às (UTC+-:/) 0123456789…`],
+    ['Helvetica', `${INTRO} ${t('em {date} às {hour} ({zone})').replace(/\{\w+\}/g, '')} (UTC+-:/) 0123456789…`],
     ['Helvetica-Bold', `${winAnsi(name.trim())}?…`],
   ]);
 }

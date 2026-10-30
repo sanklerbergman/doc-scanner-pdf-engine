@@ -7,6 +7,7 @@
 import { PdfDict, PdfRef, PdfName, PdfString, PdfStream, Keyword, isName, formatName, formatNumber, formatString } from './pdf-reader.js';
 import { BYTE_RANGE_SPACE, finishSignature, pdfDate } from './pdf.js';
 import { buildStamp, stampPageIndex } from './stamp.js';
+import { t } from './i18n.js';
 
 const encoder = new TextEncoder();
 
@@ -98,13 +99,13 @@ function sound(doc) {
  */
 export function appendBlocker(doc) {
   if (doc.security) {
-    return { kind: 'rewrite', message: 'Este PDF tinha senha ou restrições: o app monta um PDF novo para assinar, e as assinaturas que ele já tinha deixam de valer.' };
+    return { kind: 'rewrite', message: t('Este PDF tinha senha ou restrições: o app monta um PDF novo para assinar, e as assinaturas que ele já tinha deixam de valer.') };
   }
   if (doc.repaired || typeof doc.startxref !== 'number' || !(doc.trailer.get('Root') instanceof PdfRef) || doc.pages.some((page) => !page.ref) || !sound(doc)) {
-    return { kind: 'rewrite', message: 'A estrutura deste PDF está danificada: o app monta um PDF novo para assinar, e as assinaturas que ele já tinha deixam de valer.' };
+    return { kind: 'rewrite', message: t('A estrutura deste PDF está danificada: o app monta um PDF novo para assinar, e as assinaturas que ele já tinha deixam de valer.') };
   }
   if (changePermission(doc) === 1) {
-    return { kind: 'locked', message: 'O autor certificou este PDF sem permitir nenhuma alteração. Uma assinatura nova faria a certificação deixar de valer, por isso o app não assina este arquivo.' };
+    return { kind: 'locked', message: t('O autor certificou este PDF sem permitir nenhuma alteração. Uma assinatura nova faria a certificação deixar de valer, por isso o app não assina este arquivo.') };
   }
   return null;
 }

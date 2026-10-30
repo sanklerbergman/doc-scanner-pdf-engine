@@ -3,14 +3,15 @@
 import { applyFilter } from './filters.js';
 import { detectDocument, quadSize, warpPixels } from './geometry.js';
 import { paintRedactions } from './redact.js';
+import { t } from './i18n.js';
 
 export { applyFilter };
 
 export const FILTERS = {
-  document: 'Documento',
-  enhance: 'Cor realçada',
-  bw: 'Preto e branco',
-  original: 'Original',
+  document: t('Documento'),
+  enhance: t('Cor realçada'),
+  bw: t('Preto e branco'),
+  original: t('Original'),
 };
 
 // Retorna algo desenhável num canvas. Respeita a orientação EXIF da foto.

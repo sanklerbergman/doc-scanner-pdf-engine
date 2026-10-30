@@ -11,6 +11,7 @@
 import { Parser, PdfDict, PdfStream, PdfString, PdfName, PdfRef, PdfError, Keyword, isName, formatNumber, formatName, formatString } from './pdf-reader.js';
 import { finishSignature, BYTE_RANGE_SPACE } from './pdf.js';
 import { md5 } from './md5.js';
+import { t } from './i18n.js';
 
 export { md5 };
 
@@ -21,7 +22,7 @@ const encoder = new TextEncoder();
 export class PdfPasswordError extends PdfError {
   name = 'PdfPasswordError';
   constructor(wrong) {
-    super(wrong ? 'A senha não confere.' : 'O PDF está protegido por senha.');
+    super(wrong ? t('A senha não confere.') : t('O PDF está protegido por senha.'));
     this.wrong = wrong;
   }
 }
@@ -161,11 +162,11 @@ export async function openSecurity(encrypt, id, password, resolve = (v) => v) {
   const get = (key) => resolve(encrypt.get(key));
   const filter = get('Filter');
   if (!isName(filter, 'Standard')) {
-    throw new PdfError('Este PDF foi protegido com certificado digital ou com um programa específico, e o app só abre PDF protegido por senha.');
+    throw new PdfError(t('Este PDF foi protegido com certificado digital ou com um programa específico, e o app só abre PDF protegido por senha.'));
   }
   const v = get('V') ?? 0;
   const r = get('R') ?? 0;
-  if (![1, 2, 4, 5].includes(v) || r < 2 || r > 6) throw new PdfError('Este PDF usa um tipo de proteção que o app não conhece.');
+  if (![1, 2, 4, 5].includes(v) || r < 2 || r > 6) throw new PdfError(t('Este PDF usa um tipo de proteção que o app não conhece.'));
   const p = get('P') ?? -1;
   const o = bytesOf(get('O'));
   const u = bytesOf(get('U'));

@@ -7,6 +7,7 @@
 import { registerTool, propertyOf } from './editor.js';
 import { winAnsiText, droppedMessage, textEdit, retext, editTextSize, TEXT_FAMILIES, TEXT_SIZES, TEXT_MAX } from './edit-text.js';
 import { followKeyboard } from './keyboard-panel.js';
+import { t } from './i18n.js';
 
 const state = { size: 14, family: 'sans', color: '#000000' }; // a última escolha, para o próximo texto
 let ui = null; // o painel, montado na primeira vez
@@ -35,7 +36,7 @@ function build() {
   const size = el('select', { id: 'text-size' }, TEXT_SIZES.map((value) => el('option', { value: String(value), textContent: `${value} pt` })));
   const family = el('select', { id: 'text-family' }, Object.entries(TEXT_FAMILIES).map(([value, name]) => el('option', { value, textContent: name })));
   const colors = el('fieldset', { className: 'edit-prop edit-prop-swatch' }, [
-    el('legend', { textContent: 'Cor' }),
+    el('legend', { textContent: t('Cor') }),
     ...propertyOf('color').options.map(([value, name]) => {
       const sample = el('span', { className: 'edit-sample', 'aria-hidden': 'true' });
       sample.style.background = value;
@@ -44,13 +45,13 @@ function build() {
       ]);
     }),
   ]);
-  const cancel = el('button', { type: 'button', className: 'btn', textContent: 'Cancelar' });
+  const cancel = el('button', { type: 'button', className: 'btn', textContent: t('Cancelar') });
   const put = el('button', { type: 'button', id: 'text-put', className: 'btn btn-primary' });
   const panel = el('section', { id: 'text-panel', className: 'text-panel', role: 'group', 'aria-labelledby': 'text-panel-title', hidden: true }, [
     title, area, warning,
     el('div', { className: 'text-options' }, [
-      el('label', { className: 'field' }, [el('span', { textContent: 'Tamanho' }), size]),
-      el('label', { className: 'field' }, [el('span', { textContent: 'Letra' }), family]),
+      el('label', { className: 'field' }, [el('span', { textContent: t('Tamanho') }), size]),
+      el('label', { className: 'field' }, [el('span', { textContent: t('Letra') }), family]),
       colors,
     ]),
     el('div', { className: 'sheet-actions' }, [cancel, put]),
@@ -106,8 +107,8 @@ function open(api, index = -1, at = null) {
   ui.family.value = item?.family ?? state.family;
   const color = item?.color ?? state.color;
   for (const input of ui.colors.querySelectorAll('input')) input.checked = input.value === color;
-  ui.title.textContent = item ? 'Mudar o texto' : 'Texto novo';
-  ui.put.textContent = item ? 'Trocar o texto' : 'Pôr na página';
+  ui.title.textContent = item ? t('Mudar o texto') : t('Texto novo');
+  ui.put.textContent = item ? t('Trocar o texto') : t('Pôr na página');
   ui.warning.textContent = '';
   if (!wasOpen) {
     before = document.activeElement;
@@ -115,7 +116,7 @@ function open(api, index = -1, at = null) {
     stop = followKeyboard(ui.panel);
   }
   ui.area.focus();
-  api.say(item ? 'Mude o texto e toque em "Trocar o texto".' : 'Escreva o texto e toque em "Pôr na página".');
+  api.say(item ? t('Mude o texto e toque em "Trocar o texto".') : t('Escreva o texto e toque em "Pôr na página".'));
 }
 
 function close(restore) {
@@ -132,7 +133,7 @@ function apply() {
   if (!target) return;
   const text = ui.area.value.replace(/^\n+/, '').replace(/\s+$/, '');
   if (!text.trim()) {
-    ui.warning.textContent = 'Escreva o texto antes.';
+    ui.warning.textContent = t('Escreva o texto antes.');
     ui.area.focus();
     return;
   }
@@ -146,14 +147,14 @@ function apply() {
   if (index >= 0) {
     api.replace(index, retext(api.items[index], content, api.page));
     api.select(index);
-    api.say('Texto trocado.');
+    api.say(t('Texto trocado.'));
   } else {
-    api.add(textEdit(content, at ?? [0.5, 0.5], api.page), 'Texto na página. Para mudar, toque nele de novo ou use Enter.');
+    api.add(textEdit(content, at ?? [0.5, 0.5], api.page), t('Texto na página. Para mudar, toque nele de novo ou use Enter.'));
   }
 }
 
 registerTool({
-  id: 'text', after: 'select', label: 'Texto', icon: 'text', type: 'text', props: [],
+  id: 'text', after: 'select', label: t('Texto'), icon: 'text', type: 'text', props: [],
   // Tocar na página abre o painel para um texto novo naquele ponto; tocar num texto abre o painel com ele.
   pointer(api, point, event) {
     const box = event.target.closest?.('.edit-box');
@@ -162,5 +163,5 @@ registerTool({
   },
   keyboard: (api) => open(api),
   open: (api, index) => open(api, index),
-  hint: 'Toque onde vai o texto, ou use "Novo" para pôr no meio da página.',
+  hint: t('Toque onde vai o texto, ou use "Novo" para pôr no meio da página.'),
 });

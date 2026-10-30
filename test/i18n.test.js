@@ -41,6 +41,19 @@ test('dicionário: todo texto do código tem tradução, e nenhuma tradução so
   assert.deepEqual(Object.keys(dictionary).filter((key) => !used.has(key) && !code.has(key)), [], 'traduções que ninguém usa');
 });
 
+test('dicionário: cada tradução tem os mesmos marcadores {nome} do texto em português', () => {
+  const marks = (text) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
+  assert.deepEqual(Object.entries(dictionary).filter(([key, value]) => marks(key) !== marks(value)).map(([key]) => key), []);
+});
+
+test('t() e plural() só com texto literal entre aspas simples (o teste do dicionário só acha esses)', () => {
+  const loose = [];
+  for (const file of readdirSync(new URL('js/', web)).filter((name) => name.endsWith('.js') && !name.startsWith('i18n'))) {
+    for (const match of read(`js/${file}`).matchAll(/\b(t\(\s*[^'\s)]|plural\([^,]+,\s*[^'\s])/g)) loose.push(`${file}: ${match[0]}`);
+  }
+  assert.deepEqual(loose, []);
+});
+
 test('t(): no Node o idioma é o português, com os marcadores trocados', () => {
   assert.equal(LANG, 'pt');
   assert.equal(t('Gerar PDF'), 'Gerar PDF');

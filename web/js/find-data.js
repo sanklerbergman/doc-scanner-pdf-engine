@@ -2,8 +2,9 @@
 // e-mail, telefone, CEP e número de cartão (com o dígito de Luhn). Os padrões são brasileiros.
 // Só sugere: a pessoa confirma cada dado antes de virar tarja (app.js). Os dados achados só existem na memória e
 // nunca vão para o console. Código puro, sem DOM.
+import { t } from './i18n.js';
 
-export const TYPE_LABELS = { cpf: 'CPF', cnpj: 'CNPJ', email: 'E-mail', telefone: 'Telefone', cep: 'CEP', cartao: 'Cartão' };
+export const TYPE_LABELS = { cpf: 'CPF', cnpj: 'CNPJ', email: t('E-mail'), telefone: t('Telefone'), cep: 'CEP', cartao: t('Cartão') };
 
 // Prioridade quando dois achados se sobrepõem: fica o de cima (um CPF não vira também "telefone").
 const PRIORITY = ['cpf', 'cnpj', 'cartao', 'email', 'cep', 'telefone'];

@@ -1,6 +1,7 @@
 // Descompactação com o DecompressionStream do próprio navegador, sem dependências.
 // Usada pelo leitor de ZIP (.docx) e pelo leitor de PDF. Para assim que a saída passa do limite:
 // um arquivo pequeno que descompacta para gigabytes ("bomba de compressão") não chega a encher a memória.
+import { t } from './i18n.js';
 
 export class InflateError extends Error {
   constructor(message, reason) {
@@ -18,7 +19,7 @@ export class InflateError extends Error {
  */
 export async function inflate(raw, format, limit, { lenient = false } = {}) {
   if (typeof DecompressionStream !== 'function') {
-    throw new InflateError('Este navegador não consegue abrir o arquivo. Atualize o navegador e tente de novo.', 'unsupported');
+    throw new InflateError(t('Este navegador não consegue abrir o arquivo. Atualize o navegador e tente de novo.'), 'unsupported');
   }
   const reader = new Blob([raw]).stream().pipeThrough(new DecompressionStream(format)).getReader();
   const chunks = [];
@@ -29,13 +30,13 @@ export async function inflate(raw, format, limit, { lenient = false } = {}) {
       result = await reader.read();
     } catch {
       if (lenient && length) break;
-      throw new InflateError('O arquivo está corrompido ou incompleto.', 'corrupted');
+      throw new InflateError(t('O arquivo está corrompido ou incompleto.'), 'corrupted');
     }
     if (result.done) break;
     length += result.value.length;
     if (length > limit) {
       reader.cancel().catch(() => {});
-      throw new InflateError('O arquivo é grande demais depois de descompactado.', 'too-big');
+      throw new InflateError(t('O arquivo é grande demais depois de descompactado.'), 'too-big');
     }
     chunks.push(result.value);
   }

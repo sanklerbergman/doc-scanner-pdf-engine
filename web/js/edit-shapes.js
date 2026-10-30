@@ -2,6 +2,7 @@
 // cor e a espessura da edição: no PDF não precisam de fonte nem de imagem (✓ e ✗ não existem na WinAnsi, e a
 // ZapfDingbats sem embutir reprovaria o PDF/A). Código puro, sem DOM.
 import { registerEditType, tracePath, pathOps, circlePath, strokePath, pdfNumber, cutRedact, cutPath } from './edits.js';
+import { t } from './i18n.js';
 
 const COLOR = /^#[0-9a-f]{6}$/i;
 export const DEFAULT_COLOR = '#1d4ed8'; // azul de caneta
@@ -42,7 +43,7 @@ const inset = (edit, { w, h }) => {
 };
 
 registerEditType('rect', stroked({
-  label: 'Retângulo', gender: 'm', size: [150, 80], cap: 0, join: 0,
+  label: t('Retângulo'), gender: 'm', size: [150, 80], cap: 0, join: 0,
   path(edit, box) {
     const at = inset(edit, box);
     return [['M', ...at(0, 0)], ['L', ...at(1, 0)], ['L', ...at(1, 1)], ['L', ...at(0, 1)], ['Z']];
@@ -50,7 +51,7 @@ registerEditType('rect', stroked({
 }));
 
 registerEditType('check', stroked({
-  label: 'Marca de certo', gender: 'f', size: [24, 24],
+  label: t('Marca de certo'), gender: 'f', size: [24, 24],
   path(edit, box) {
     const at = inset(edit, box);
     return [['M', ...at(0.08, 0.55)], ['L', ...at(0.38, 0.88)], ['L', ...at(0.94, 0.1)]];
@@ -58,7 +59,7 @@ registerEditType('check', stroked({
 }));
 
 registerEditType('cross', stroked({
-  label: 'Marca de xis', gender: 'f', size: [24, 24],
+  label: t('Marca de xis'), gender: 'f', size: [24, 24],
   path(edit, box) {
     const at = inset(edit, box);
     return [['M', ...at(0.1, 0.1)], ['L', ...at(0.9, 0.9)], ['M', ...at(0.9, 0.1)], ['L', ...at(0.1, 0.9)]];
@@ -89,7 +90,7 @@ export function arrowParts(edit, { w, h }) {
 }
 
 registerEditType('arrow', {
-  label: 'Seta', gender: 'f', size: [120, 60], redact: cutRedact,
+  label: t('Seta'), gender: 'f', size: [120, 60], redact: cutRedact,
   create: (box, props) => ({ ...box, ...props, from: [0.06, 0.88], to: [0.94, 0.12] }),
   paint(ctx, edit, box) {
     const parts = arrowParts(edit, box);
@@ -164,7 +165,7 @@ function inkPaths(edit, { w, h }) {
 }
 
 registerEditType('ink', {
-  label: 'Desenho', gender: 'm', keepRatio: true, redact: cutRedact,
+  label: t('Desenho'), gender: 'm', keepRatio: true, redact: cutRedact,
   paint(ctx, edit, box) {
     const { lines, dots } = inkPaths(edit, box);
     ctx.lineWidth = widthOf(edit);

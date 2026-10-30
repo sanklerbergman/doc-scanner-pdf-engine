@@ -2,13 +2,14 @@
 // dos trechos de texto do PDF (PDF.js) e do Word (layout.js). Código puro, sem DOM.
 import { textWidth } from './fonts.js';
 import { redactLayout, textUnderRedactions } from './redact.js';
+import { t } from './i18n.js';
 
 const SPACE_GAP = 0.15; // distância entre dois trechos, em relação à altura da linha, a partir da qual entra um espaço
 
 export class TextUnderRedaction extends Error {
   name = 'CopyError';
   constructor() {
-    super('Não deu para separar o texto das tarjas nesta página: nada foi copiado.');
+    super(t('Não deu para separar o texto das tarjas nesta página: nada foi copiado.'));
   }
 }
 

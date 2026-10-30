@@ -15,6 +15,7 @@ import { ocrLayer, OCR_FONT } from './ocr-layer.js';
 import { editsContent, resourceCollector, ObjectRef } from './edits.js';
 import { STANDARD_FONTS } from './pdf.js';
 import './edit-types.js';
+import { t } from './i18n.js';
 
 export class PdfError extends Error {}
 
@@ -121,10 +122,10 @@ export class Parser {
 
   // Lê um valor. Números inteiros seguidos de "gen R" viram referência.
   value(depth = 0) {
-    if (depth > 100) throw new PdfError('PDF aninhado demais.');
+    if (depth > 100) throw new PdfError(t('PDF aninhado demais.'));
     this.skip();
     const { bytes } = this;
-    if (this.pos >= bytes.length) throw new PdfError('Fim inesperado do arquivo.');
+    if (this.pos >= bytes.length) throw new PdfError(t('Fim inesperado do arquivo.'));
     const b = bytes[this.pos];
 
     if (b === 0x2f) { // /Nome
@@ -138,15 +139,15 @@ export class Parser {
       for (;;) {
         this.skip();
         if (bytes[this.pos] === 0x3e && bytes[this.pos + 1] === 0x3e) { this.pos += 2; return dict; }
-        if (this.pos >= bytes.length) throw new PdfError('Dicionário sem fim.');
+        if (this.pos >= bytes.length) throw new PdfError(t('Dicionário sem fim.'));
         const key = this.value(depth + 1);
-        if (!(key instanceof PdfName)) throw new PdfError('Chave de dicionário inválida.');
+        if (!(key instanceof PdfName)) throw new PdfError(t('Chave de dicionário inválida.'));
         dict.set(key.value, this.value(depth + 1));
       }
     }
     if (b === 0x3c) { // <hex>
       const end = bytes.indexOf(0x3e, this.pos);
-      if (end < 0) throw new PdfError('Texto hexadecimal sem fim.');
+      if (end < 0) throw new PdfError(t('Texto hexadecimal sem fim.'));
       const hex = latin1(bytes, this.pos + 1, end).replace(/[^0-9a-f]/gi, '');
       this.pos = end + 1;
       const out = new Uint8Array(Math.ceil(hex.length / 2));
@@ -160,7 +161,7 @@ export class Parser {
       for (;;) {
         this.skip();
         if (bytes[this.pos] === 0x5d) { this.pos++; return list; }
-        if (this.pos >= bytes.length) throw new PdfError('Lista sem fim.');
+        if (this.pos >= bytes.length) throw new PdfError(t('Lista sem fim.'));
         list.push(this.value(depth + 1));
       }
     }
@@ -215,7 +216,7 @@ export class Parser {
       else if (b === 0x29 && --depth === 0) return new PdfString(Uint8Array.from(out));
       out.push(b);
     }
-    throw new PdfError('Texto sem fim.');
+    throw new PdfError(t('Texto sem fim.'));
   }
 }
 
@@ -228,7 +229,7 @@ export function unpredict(data, params) {
   const colors = params.get('Colors') ?? 1;
   const bpc = params.get('BitsPerComponent') ?? 8;
   const columns = params.get('Columns') ?? 1;
-  if (![colors, bpc, columns].every((v) => Number.isInteger(v) && v > 0)) throw new PdfError('Preditor PNG inválido.');
+  if (![colors, bpc, columns].every((v) => Number.isInteger(v) && v > 0)) throw new PdfError(t('Preditor PNG inválido.'));
   const bpp = Math.max(1, Math.ceil((colors * bpc) / 8));
   const rowLength = Math.ceil((colors * bpc * columns) / 8);
   const rows = Math.floor(data.length / (rowLength + 1));
@@ -281,7 +282,7 @@ export async function openPdf(bytes, { password = null, ...limits } = {}) {
     await doc.load(password);
     await prepareLayers(doc);
   } catch (err) {
-    if (err instanceof InflateError) throw new PdfError(err.reason === 'too-big' ? err.message : 'O PDF está corrompido.');
+    if (err instanceof InflateError) throw new PdfError(err.reason === 'too-big' ? err.message : t('O PDF está corrompido.'));
     throw err;
   }
   return doc;
@@ -306,7 +307,7 @@ class PdfDocument {
   async load(password) {
     const { bytes } = this;
     const head = latin1(bytes, 0, Math.min(bytes.length, 1024));
-    if (!head.includes('%PDF-')) throw new PdfError('Não parece um arquivo PDF.');
+    if (!head.includes('%PDF-')) throw new PdfError(t('Não parece um arquivo PDF.'));
 
     // PDF com senha: os streams (inclusive os object streams) são cifrados. Primeiro a senha e a decifragem de
     // todos os objetos; só depois os object streams, que aí já descompactam.
@@ -333,9 +334,9 @@ class PdfDocument {
       }
     }
     this.crypt = null; // a chave não fica guardada: o que precisava ser decifrado já foi
-    if (!this.catalog()) throw new PdfError('O PDF está corrompido.');
+    if (!this.catalog()) throw new PdfError(t('O PDF está corrompido.'));
     this.pages = this.readPages();
-    if (!this.pages.length) throw new PdfError('O PDF não tem nenhuma página.');
+    if (!this.pages.length) throw new PdfError(t('O PDF não tem nenhuma página.'));
   }
 
   // Tabelas xref, da mais nova (startxref) para as mais antigas (/Prev). A mais nova vence.
@@ -442,7 +443,7 @@ class PdfDocument {
   }
 
   addEntry(num, entry) {
-    if (this.entries.size >= this.limits.maxObjects) throw new PdfError('O PDF tem objetos demais.');
+    if (this.entries.size >= this.limits.maxObjects) throw new PdfError(t('O PDF tem objetos demais.'));
     this.entries.set(num, entry);
   }
 
@@ -523,7 +524,7 @@ class PdfDocument {
       // /Length errado ou ausente: procura o "endstream".
       const text = latin1(bytes, pos, Math.min(bytes.length, pos + 256 * 1024 * 1024));
       const end = text.indexOf('endstream');
-      if (end < 0) throw new PdfError('Stream sem fim.');
+      if (end < 0) throw new PdfError(t('Stream sem fim.'));
       length = end;
       while (length > 0 && (bytes[pos + length - 1] === 10 || bytes[pos + length - 1] === 13)) length--;
     }
@@ -535,12 +536,12 @@ class PdfDocument {
     let filters = this.resolve(stream.dict.get('Filter'));
     let params = this.resolve(stream.dict.get('DecodeParms'));
     if (filters instanceof PdfName) { filters = [filters]; params = [params]; }
-    if (filters != null && !Array.isArray(filters)) throw new PdfError('Filtro inválido na estrutura do PDF.');
+    if (filters != null && !Array.isArray(filters)) throw new PdfError(t('Filtro inválido na estrutura do PDF.'));
     let data = stream.data;
     for (const [i, item] of (filters ?? []).entries()) {
       const filter = this.resolve(item);
       if (!isName(filter, 'FlateDecode')) {
-        throw new PdfError(`Filtro não suportado na estrutura do PDF: ${filter instanceof PdfName ? filter.value : 'inválido'}`);
+        throw new PdfError(t('Filtro não suportado na estrutura do PDF: {filter}', { filter: filter instanceof PdfName ? filter.value : t('inválido') }));
       }
       const limit = Math.min(this.limits.maxStreamSize, this.limits.maxTotalSize - this.decoded);
       data = await inflate(data, 'deflate', limit, { lenient: true });
@@ -587,7 +588,7 @@ class PdfDocument {
     if (!this.crypt) {
       const { openSecurity } = await import('./pdf-crypt.js');
       const encrypt = this.resolveRaw(this.trailer.get('Encrypt'));
-      if (!(encrypt instanceof PdfDict)) throw new SecurityError(new PdfError('O PDF está protegido por senha, mas a proteção está corrompida.'));
+      if (!(encrypt instanceof PdfDict)) throw new SecurityError(new PdfError(t('O PDF está protegido por senha, mas a proteção está corrompida.')));
       const ids = this.resolveRaw(this.trailer.get('ID'));
       const id = Array.isArray(ids) && ids[0] instanceof PdfString ? ids[0].bytes : new Uint8Array(0);
       try {
@@ -651,7 +652,7 @@ class PdfDocument {
     const seen = new Set();
     const walk = (ref, inherited, depth) => {
       if (depth > 64 || pages.length >= this.limits.maxPages) {
-        if (pages.length >= this.limits.maxPages) throw new PdfError(`O PDF passa de ${this.limits.maxPages} páginas.`);
+        if (pages.length >= this.limits.maxPages) throw new PdfError(t('O PDF passa de {n} páginas.', { n: this.limits.maxPages }));
         return;
       }
       if (ref instanceof PdfRef) {

@@ -3,6 +3,7 @@
 // A imagem da câmera só é desenhada num <canvas> local; nada é transmitido.
 
 import { detectQuad } from './imaging.js';
+import { t } from './i18n.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -45,7 +46,7 @@ export function setupCamera({ onPhoto, useNative }) {
     count.textContent = '';
     torch.hidden = true;
     shutter.disabled = true;
-    say('Abrindo a câmera…');
+    say(t('Abrindo a câmera…'));
     dialog.showModal();
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -54,18 +55,18 @@ export function setupCamera({ onPhoto, useNative }) {
       });
     } catch (err) {
       say(err.name === 'NotAllowedError'
-        ? 'A câmera está bloqueada para este site. Libere nas configurações do navegador ou use a câmera do sistema.'
-        : 'Não consegui abrir a câmera aqui. Use a câmera do sistema.');
+        ? t('A câmera está bloqueada para este site. Libere nas configurações do navegador ou use a câmera do sistema.')
+        : t('Não consegui abrir a câmera aqui. Use a câmera do sistema.'));
       return;
     }
     if (!dialog.open) return stop(); // fecharam enquanto a permissão era pedida
 
     [track] = stream.getVideoTracks();
-    track.addEventListener('ended', () => { if (dialog.open) say('A câmera foi interrompida. Feche e abra de novo.'); });
+    track.addEventListener('ended', () => { if (dialog.open) say(t('A câmera foi interrompida. Feche e abra de novo.')); });
     video.srcObject = stream;
     await video.play().catch(() => {});
     shutter.disabled = false;
-    say('A imagem da câmera fica só no seu aparelho.');
+    say(t('A imagem da câmera fica só no seu aparelho.'));
 
     // Nem todo aparelho/navegador deixa controlar a luz; o botão só aparece quando dá.
     if (track.getCapabilities?.().torch) {
@@ -95,7 +96,7 @@ export function setupCamera({ onPhoto, useNative }) {
     const found = misses < 3 && outlineShape.getAttribute('points');
     outline.toggleAttribute('hidden', !found); // <svg> não tem a propriedade .hidden dos elementos HTML
     chip.hidden = false;
-    chip.textContent = found ? 'Papel encontrado' : 'Procurando o papel…';
+    chip.textContent = found ? t('Papel encontrado') : t('Procurando o papel…');
     chip.classList.toggle('found', Boolean(found));
   }
 
@@ -117,8 +118,8 @@ export function setupCamera({ onPhoto, useNative }) {
     warning.hidden = !warn;
     torch.classList.toggle('attention', warn);
     warning.textContent = torch.hidden
-      ? 'Ambiente escuro: a foto pode sair borrada. Chegue perto de uma luz ou use a câmera do sistema com flash.'
-      : 'Ambiente escuro: a foto pode sair borrada. Toque em Luz.';
+      ? t('Ambiente escuro: a foto pode sair borrada. Chegue perto de uma luz ou use a câmera do sistema com flash.')
+      : t('Ambiente escuro: a foto pode sair borrada. Toque em Luz.');
   }
 
   function setTorchState(on) {
@@ -133,7 +134,7 @@ export function setupCamera({ onPhoto, useNative }) {
       checkLight();
     } catch {
       torch.hidden = true;
-      say('Este aparelho não deixou ligar a luz por aqui.');
+      say(t('Este aparelho não deixou ligar a luz por aqui.'));
     }
   }
 
@@ -144,10 +145,10 @@ export function setupCamera({ onPhoto, useNative }) {
     canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
     canvas.toBlob((blob) => {
-      if (!blob) return say('Não consegui capturar a foto. Tente de novo.');
+      if (!blob) return say(t('Não consegui capturar a foto. Tente de novo.'));
       photos++;
       count.textContent = `(${photos})`;
-      say(photos === 1 ? '1 foto tirada. Pode tirar a próxima página.' : `${photos} fotos tiradas.`);
+      say(photos === 1 ? t('1 foto tirada. Pode tirar a próxima página.') : t('{n} fotos tiradas.', { n: photos }));
       onPhoto(new File([blob], `foto-${photos}.jpg`, { type: 'image/jpeg' }));
     }, 'image/jpeg', 0.95);
 

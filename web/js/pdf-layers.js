@@ -8,10 +8,12 @@
 //
 // Importa do pdf-reader.js, que importa este arquivo de volta: os dois só se usam dentro das funções.
 import { Parser, Keyword, PdfDict, PdfName, PdfRef, PdfStream, PdfError, isName, formatNumber } from './pdf-reader.js';
+import { t } from './i18n.js';
 
 const MAX_DEPTH = 32;
 const MAX_STREAMS = 20000;
-const REFUSED = 'Este PDF tem camadas ocultas que o app não consegue separar com segurança';
+// Recusa com o motivo entre parênteses (já no idioma da tela).
+const refused = (reason) => new PdfError(t('Este PDF tem camadas ocultas que o app não consegue separar com segurança ({reason}).', { reason }));
 
 const encoder = new TextEncoder();
 const WHITESPACE = new Set([0, 9, 10, 12, 13, 32]);
@@ -62,7 +64,7 @@ function visibility(doc) {
   const intents = names(doc.resolve(config.get('Intent')), ['View']);
 
   function visible(oc, depth = 0) {
-    if (depth > MAX_DEPTH) throw new PdfError(`${REFUSED} (camadas aninhadas demais).`);
+    if (depth > MAX_DEPTH) throw refused(t('camadas aninhadas demais'));
     const dict = doc.resolve(oc);
     // Referência quebrada ou tipo desconhecido: os leitores mostram o conteúdo, e o app também.
     if (!(dict instanceof PdfDict)) return true;
@@ -86,12 +88,12 @@ function visibility(doc) {
     if (policy === 'AnyOn') return list.some(Boolean);
     if (policy === 'AnyOff') return list.some((on) => !on);
     if (policy === 'AllOff') return list.every((on) => !on);
-    throw new PdfError(`${REFUSED} (regra de camada desconhecida).`);
+    throw refused(t('regra de camada desconhecida'));
   }
 
   // Expressão de visibilidade (/VE): [/And ...], [/Or ...] ou [/Not x], com camadas ou outras expressões.
   function evaluate(expression, depth) {
-    if (depth > MAX_DEPTH) throw new PdfError(`${REFUSED} (camadas aninhadas demais).`);
+    if (depth > MAX_DEPTH) throw refused(t('camadas aninhadas demais'));
     const [operator, ...args] = expression;
     const value = (arg) => {
       const resolved = doc.resolve(arg);
@@ -100,7 +102,7 @@ function visibility(doc) {
     if (isName(operator, 'Not') && args.length === 1) return !value(args[0]);
     if (isName(operator, 'And') && args.length) return args.every(value);
     if (isName(operator, 'Or') && args.length) return args.some(value);
-    throw new PdfError(`${REFUSED} (expressão de camada inválida).`);
+    throw refused(t('expressão de camada inválida'));
   }
 
   return visible;
@@ -144,7 +146,7 @@ function rewrite(doc, data, resources, visible, drawn) {
     try {
       return parser.value();
     } catch {
-      throw new PdfError(`${REFUSED} (conteúdo da página mal formado).`);
+      throw refused(t('conteúdo da página mal formado'));
     }
   };
   const out = [];
@@ -175,12 +177,12 @@ function rewrite(doc, data, resources, visible, drawn) {
     if (op === 'BI') {
       for (let n = 0; ; n++) { // dicionário da imagem até o ID
         parser.skip();
-        if (parser.pos >= data.length || n > 1000) throw new PdfError(`${REFUSED} (imagem embutida sem fim).`);
+        if (parser.pos >= data.length || n > 1000) throw refused(t('imagem embutida sem fim'));
         const item = read();
         if (item instanceof Keyword && item.value === 'ID') break;
       }
       const end = inlineImageEnd(data, parser.pos + 1);
-      if (end < 0) throw new PdfError(`${REFUSED} (imagem embutida sem fim).`);
+      if (end < 0) throw refused(t('imagem embutida sem fim'));
       parser.pos = end;
       if (hidden) drop(); else keep();
     } else if (op === 'BDC' && isName(operands[0], 'OC')) {
@@ -214,7 +216,7 @@ function rewrite(doc, data, resources, visible, drawn) {
       }
     } else if (!hidden) {
       if ((op === 'Tj' || op === 'TJ') && lost) {
-        throw new PdfError(`${REFUSED} (um texto visível continua na mesma linha de um texto oculto).`);
+        throw refused(t('um texto visível continua na mesma linha de um texto oculto'));
       }
       if (MOVE.has(op)) lost = false;
       keep();
@@ -222,7 +224,7 @@ function rewrite(doc, data, resources, visible, drawn) {
       replace('n');
     } else if (op === 'Tj' || op === 'TJ' || op === "'" || op === '"') {
       // Texto que recorta (Tr 4 a 7) muda o que aparece depois: não dá para tirar sem mudar a página.
-      if (textMode.at(-1) >= 4) throw new PdfError(`${REFUSED} (texto oculto usado como recorte).`);
+      if (textMode.at(-1) >= 4) throw refused(t('texto oculto usado como recorte'));
       if (op === "'") replace('T*');
       else if (op === '"') replace(`${number(operands[0])} Tw ${number(operands[1])} Tc T*`);
       else drop();
@@ -274,7 +276,7 @@ export async function prepareLayers(doc) {
     try {
       return await doc.decode(stream);
     } catch (err) {
-      if (err instanceof PdfError) throw new PdfError(`${REFUSED} (conteúdo compactado num formato que o app não lê).`);
+      if (err instanceof PdfError) throw refused(t('conteúdo compactado num formato que o app não lê'));
       throw err;
     }
   };
@@ -316,12 +318,12 @@ export async function prepareLayers(doc) {
       const resources = stream.dict.get('Resources') ?? inherited;
       const seen = done.get(stream);
       if (seen && (seen.resources === resources || stream.dict.has('Resources'))) continue;
-      if (++count > MAX_STREAMS) throw new PdfError(`${REFUSED} (conteúdos demais).`);
+      if (++count > MAX_STREAMS) throw refused(t('conteúdos demais'));
       const result = rewrite(doc, await decode(stream), resources, visible, layers.drawn);
       if (seen) {
         // Formulário sem recursos próprios, usado em lugares com recursos diferentes: o resultado tem que bater.
         const same = (a, b) => a === b || (a && b && a.length === b.length && a.every((byte, i) => byte === b[i]));
-        if (!same(seen.data, result?.data ?? null)) throw new PdfError(`${REFUSED} (formulário com recursos diferentes).`);
+        if (!same(seen.data, result?.data ?? null)) throw refused(t('formulário com recursos diferentes'));
         continue;
       }
       done.set(stream, { resources, data: result?.data ?? null });

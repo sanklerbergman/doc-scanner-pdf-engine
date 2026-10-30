@@ -13,6 +13,7 @@
 // O app conversa direto com o worker do Tesseract.js, sem a biblioteca da página (tesseract.esm.min.js): na
 // versão 7.0.0 ela manda os bytes do modelo no lugar do nome do idioma ao inicializar, e o Tesseract não inicia.
 import { textSkew, unskew, unskewRect } from './geometry.js';
+import { t } from './i18n.js';
 
 const VENDOR = new URL('../vendor/tesseract/', import.meta.url).href;
 const OEM_LSTM_ONLY = 1;
@@ -24,7 +25,7 @@ export class OcrError extends Error {
 export class OcrCancelled extends Error {
   name = 'OcrCancelled';
   constructor() {
-    super('Reconhecimento de texto cancelado.');
+    super(t('Reconhecimento de texto cancelado.'));
   }
 }
 
@@ -73,13 +74,13 @@ function spawn() {
     if (!job) return;
     jobs.delete(data.jobId);
     if (data.status === 'resolve') job.resolve(data.data);
-    else if (job.action === 'recognize') job.reject(new OcrError('O reconhecimento de texto falhou nesta foto.'));
-    else job.reject(new OcrError('O reconhecimento de texto não carregou. Confira a conexão e tente de novo.'));
+    else if (job.action === 'recognize') job.reject(new OcrError(t('O reconhecimento de texto falhou nesta foto.')));
+    else job.reject(new OcrError(t('O reconhecimento de texto não carregou. Confira a conexão e tente de novo.')));
   });
   // Script que não carregou (sem rede e sem cache) ou erro fora de um trabalho: o worker não serve mais.
   worker.addEventListener('error', (event) => {
     event.preventDefault();
-    stop(new OcrError('O reconhecimento de texto não carregou. Confira a conexão e tente de novo.'));
+    stop(new OcrError(t('O reconhecimento de texto não carregou. Confira a conexão e tente de novo.')));
   });
   return {
     call(action, payload, transfer = []) {
@@ -186,7 +187,7 @@ function pool(engines, restart) {
  */
 export async function startOcr({ workers = 1 } = {}) {
   const { default: base64 } = await loadModel().catch(() => {
-    throw new OcrError('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.');
+    throw new OcrError(t('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.'));
   });
   // Um worker a mais que não ligou (falta de memória, por exemplo) não impede o OCR: segue com os que ligaram.
   const started = await Promise.allSettled(Array.from({ length: Math.max(1, workers) }, () => startEngine(base64)));

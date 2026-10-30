@@ -5,10 +5,11 @@
 import { FULL_QUAD, fromRotated, toRotated, isConvex, isFullFrame } from './geometry.js';
 import { normalizeRect } from './redact.js';
 import { wordCount } from './page-text.js';
+import { t, plural } from './i18n.js';
 
 const $ = (selector) => document.querySelector(selector);
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
-const CORNERS = ['superior esquerdo', 'superior direito', 'inferior direito', 'inferior esquerdo'];
+const CORNERS = [t('Canto superior esquerdo'), t('Canto superior direito'), t('Canto inferior direito'), t('Canto inferior esquerdo')];
 const START_INSET = 0.04; // sem recorte ainda: os cantos começam um pouco para dentro, fáceis de pegar
 const LOUPE_SIZE = 120; // diâmetro da lupa do recorte, em px da tela
 const LOUPE_ZOOM = 3; // ampliação sobre a foto como ela aparece na tela
@@ -130,15 +131,15 @@ export function setupViewer({
     image.hidden = false;
     stage.classList.remove('zoomed');
     image.src = page.thumbUrl; // aparece na hora; a versão nítida entra em seguida
-    image.alt = `${label}, como vai sair no PDF`;
+    image.alt = t('{label}, como vai sair no PDF', { label });
     const message = typeof note === 'string' ? note : '';
-    hint.textContent = message || 'Carregando em alta qualidade…';
+    hint.textContent = message || t('Carregando em alta qualidade…');
     try {
       const blob = await renderProcessed(page);
       if (mine !== token) return;
       setUrl('view', image, blob);
       // Com a cópia do texto em andamento, o aviso dela continua na tela.
-      if (!copying) hint.textContent = message || (viewHint(page) ?? 'É assim que a página vai sair no PDF. Toque na imagem para ampliar.');
+      if (!copying) hint.textContent = message || (viewHint(page) ?? t('É assim que a página vai sair no PDF. Toque na imagem para ampliar.'));
       // Página de PDF sem campos que parece um formulário: a dica de sempre dá lugar à do Editar → Texto.
       if (!message && !viewHint(page)) {
         formHint(page).then((tip) => {
@@ -147,18 +148,18 @@ export function setupViewer({
       }
     } catch (err) {
       console.error(err);
-      if (mine === token && !copying) hint.textContent = 'Mostrando a miniatura (não deu para carregar em alta qualidade).';
+      if (mine === token && !copying) hint.textContent = t('Mostrando a miniatura (não deu para carregar em alta qualidade).');
     }
   }
 
   async function showCrop() {
     const mine = nextToken();
-    title.textContent = `Recorte: ${label}`;
+    title.textContent = t('Recorte: {label}', { label });
     updateNav(false); // no meio do recorte, trocar de página perderia os cantos arrastados
     image.hidden = true;
     viewActions.hidden = true;
     stage.classList.remove('zoomed');
-    hint.textContent = 'Preparando a foto…';
+    hint.textContent = t('Preparando a foto…');
     const blob = await renderOriginal(page);
     if (mine !== token) return;
     points = page.quad
@@ -170,10 +171,12 @@ export function setupViewer({
     hideLoupe(); // a tela pode ter fechado no meio de um arrasto
     crop.hidden = false;
     cropActions.hidden = false;
-    const lost = [page.redactions?.length && 'as tarjas', page.edits?.length && 'as edições'].filter(Boolean).join(' e ');
-    hint.textContent = lost
-      ? `Arraste os quatro cantos até as bordas do papel. Mudar o recorte apaga ${lost} desta página.`
-      : 'Arraste os quatro cantos até as bordas do papel.';
+    const redacted = page.redactions?.length;
+    const edited = page.edits?.length;
+    hint.textContent = redacted && edited ? t('Arraste os quatro cantos até as bordas do papel. Mudar o recorte apaga as tarjas e as edições desta página.')
+      : redacted ? t('Arraste os quatro cantos até as bordas do papel. Mudar o recorte apaga as tarjas desta página.')
+      : edited ? t('Arraste os quatro cantos até as bordas do papel. Mudar o recorte apaga as edições desta página.')
+      : t('Arraste os quatro cantos até as bordas do papel.');
     fitCrop();
     drawPoints();
     handles[0].focus();
@@ -199,17 +202,17 @@ export function setupViewer({
     const valid = isConvex(points);
     crop.classList.toggle('invalid', !valid);
     applyButton.disabled = !valid;
-    if (!valid) hint.textContent = 'Os cantos se cruzaram. Arraste-os de volta para formar um quadrilátero.';
+    if (!valid) hint.textContent = t('Os cantos se cruzaram. Arraste-os de volta para formar um quadrilátero.');
   }
 
   function movePoint(index, x, y) {
     points = points.map((point, i) => (i === index ? [clamp01(x), clamp01(y)] : point));
-    hint.textContent = 'Arraste os quatro cantos até as bordas do papel.';
+    hint.textContent = t('Arraste os quatro cantos até as bordas do papel.');
     drawPoints();
   }
 
   handles.forEach((handle, index) => {
-    handle.setAttribute('aria-label', `Canto ${CORNERS[index]}: arraste ou use as setas`);
+    handle.setAttribute('aria-label', t('{corner}: arraste ou use as setas', { corner: CORNERS[index] }));
     handle.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       handle.setPointerCapture(event.pointerId);
@@ -316,18 +319,18 @@ export function setupViewer({
 
   async function showRedact() {
     const mine = nextToken();
-    title.textContent = `Tarjas: ${label}`;
+    title.textContent = t('Tarjas: {label}', { label });
     updateNav(false);
     image.hidden = true;
     viewActions.hidden = true;
     stage.classList.remove('zoomed');
-    hint.textContent = 'Preparando a página…';
+    hint.textContent = t('Preparando a página…');
     let blob;
     try {
       blob = await renderPlain(page);
     } catch (err) {
       console.error(err);
-      if (mine === token) hint.textContent = 'Não deu para preparar a página para tarjar.';
+      if (mine === token) hint.textContent = t('Não deu para preparar a página para tarjar.');
       return;
     }
     if (mine !== token) return;
@@ -367,14 +370,14 @@ export function setupViewer({
       box.tabIndex = 0;
       box.dataset.index = i;
       box.setAttribute('role', 'group');
-      box.setAttribute('aria-label', `Tarja ${i + 1}: as setas movem, Shift e setas mudam o tamanho, Delete remove`);
+      box.setAttribute('aria-label', t('Tarja {n}: as setas movem, Shift e setas mudam o tamanho, Delete remove', { n: i + 1 }));
       place(box, mark);
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'redact-remove';
       remove.dataset.index = i;
       remove.textContent = '×';
-      remove.setAttribute('aria-label', `Remover a tarja ${i + 1}`);
+      remove.setAttribute('aria-label', t('Remover a tarja {n}', { n: i + 1 }));
       box.append(remove);
       return box;
     }));
@@ -386,7 +389,7 @@ export function setupViewer({
     marks.splice(index, 1);
     drawMarks(Math.min(index, marks.length - 1));
     if (!marks.length) redactAdd.focus();
-    hint.textContent = marks.length ? `Tarja removida. Ficam ${marks.length}.` : 'Tarja removida. Nenhuma tarja nesta página.';
+    hint.textContent = marks.length ? t('Tarja removida. Ficam {n}.', { n: marks.length }) : t('Tarja removida. Nenhuma tarja nesta página.');
   }
 
   let drawing = null; // {id, x, y}: ponto onde o dedo (ou o mouse) começou a arrastar
@@ -417,7 +420,7 @@ export function setupViewer({
     if (!rect) return; // toque sem arrastar
     marks.push(rect);
     drawMarks();
-    hint.textContent = `${marks.length === 1 ? '1 tarja marcada' : `${marks.length} tarjas marcadas`}. Toque em "Aplicar tarjas" quando terminar.`;
+    hint.textContent = plural(marks.length, '{n} tarja marcada. Toque em "Aplicar tarjas" quando terminar.', '{n} tarjas marcadas. Toque em "Aplicar tarjas" quando terminar.');
   });
   redact.addEventListener('pointercancel', () => {
     drawing = null;
@@ -458,19 +461,19 @@ export function setupViewer({
   redactAdd.addEventListener('click', () => {
     marks.push({ x0: 0.3, y0: 0.45, x1: 0.7, y1: 0.55 });
     drawMarks(marks.length - 1);
-    hint.textContent = 'Tarja criada no meio da página: use as setas para mover e Shift e setas para mudar o tamanho.';
+    hint.textContent = t('Tarja criada no meio da página: use as setas para mover e Shift e setas para mudar o tamanho.');
   });
   redactUndo.addEventListener('click', () => {
     if (!marks.length) return;
     marks.pop();
     drawMarks();
-    hint.textContent = marks.length ? 'Última tarja desfeita.' : 'Última tarja desfeita. Nenhuma tarja nesta página.';
+    hint.textContent = marks.length ? t('Última tarja desfeita.') : t('Última tarja desfeita. Nenhuma tarja nesta página.');
   });
   const redactDirty = () => !redact.hidden && JSON.stringify(marks) !== JSON.stringify(page?.redactions ?? []);
   $('#redact-cancel').addEventListener('click', () => leaveIfSure(showView));
   redactApply.addEventListener('click', async () => {
     redactApply.disabled = true;
-    hint.textContent = 'Aplicando as tarjas…';
+    hint.textContent = t('Aplicando as tarjas…');
     try {
       await saveRedactions(page, marks.map((mark) => ({ ...mark })));
     } finally {
@@ -501,12 +504,12 @@ export function setupViewer({
 
   async function showEdit() {
     const mine = nextToken();
-    title.textContent = `Editar: ${label}`;
+    title.textContent = t('Editar: {label}', { label });
     updateNav(false);
     image.hidden = true;
     viewActions.hidden = true;
     stage.classList.remove('zoomed');
-    hint.textContent = 'Preparando a página…';
+    hint.textContent = t('Preparando a página…');
     let base;
     try {
       [, base] = await Promise.all([loadEditor(), editBase(page)]);
@@ -516,7 +519,7 @@ export function setupViewer({
       image.hidden = false;
       viewActions.hidden = false;
       updateNav(true);
-      hint.textContent = 'Não deu para preparar a página para editar. Confira a conexão e tente de novo.';
+      hint.textContent = t('Não deu para preparar a página para editar. Confira a conexão e tente de novo.');
       return;
     }
     if (mine !== token) return;
@@ -544,12 +547,12 @@ export function setupViewer({
   async function showFill() {
     if (!canFill(page)) return;
     const mine = nextToken();
-    title.textContent = `Preencher: ${label}`;
+    title.textContent = t('Preencher: {label}', { label });
     updateNav(false);
     image.hidden = true;
     viewActions.hidden = true;
     stage.classList.remove('zoomed');
-    hint.textContent = 'Preparando a página…';
+    hint.textContent = t('Preparando a página…');
     let base;
     try {
       [, base] = await Promise.all([loadFill(), fillBase(page)]);
@@ -559,7 +562,7 @@ export function setupViewer({
       image.hidden = false;
       viewActions.hidden = false;
       updateNav(true);
-      hint.textContent = 'Não deu para preparar a página para preencher. Confira a conexão e tente de novo.';
+      hint.textContent = t('Não deu para preparar a página para preencher. Confira a conexão e tente de novo.');
       return;
     }
     if (mine !== token) return;
@@ -593,9 +596,9 @@ export function setupViewer({
     });
   }
 
-  const unsaved = () => (editor?.dirty() ? 'As edições desta página ainda não foram aplicadas. Se sair agora, elas se perdem.'
-    : redactDirty() ? 'As tarjas desta página ainda não foram aplicadas. Se sair agora, elas se perdem.'
-    : filler?.dirty() ? 'Os valores desta página ainda não foram aplicados. Se sair agora, eles se perdem.' : '');
+  const unsaved = () => (editor?.dirty() ? t('As edições desta página ainda não foram aplicadas. Se sair agora, elas se perdem.')
+    : redactDirty() ? t('As tarjas desta página ainda não foram aplicadas. Se sair agora, elas se perdem.')
+    : filler?.dirty() ? t('Os valores desta página ainda não foram aplicados. Se sair agora, eles se perdem.') : '');
 
   async function leaveIfSure(action) {
     const message = unsaved();
@@ -652,7 +655,7 @@ export function setupViewer({
     const say = (message) => {
       if (mine === token) hint.textContent = message;
     };
-    say('Copiando o texto…');
+    say(t('Copiando o texto…'));
     // Tudo dentro do toque: o pedido do texto começa e a escrita na área de transferência já fica esperando por ele.
     const text = copyText(target, { signal: job.signal, progress: say });
     let blocked = false;
@@ -667,18 +670,18 @@ export function setupViewer({
     if (result.error) {
       const known = ['CopyError', 'OcrError'].includes(result.error?.name);
       if (!known) console.error(result.error);
-      hint.textContent = known ? result.error.message : 'Não deu para ler o texto desta página.';
+      hint.textContent = known ? result.error.message : t('Não deu para ler o texto desta página.');
       return;
     }
     if (blocked) {
-      hint.textContent = 'O navegador não liberou a área de transferência. Toque em "Copiar texto" de novo.';
+      hint.textContent = t('O navegador não liberou a área de transferência. Toque em "Copiar texto" de novo.');
       return;
     }
     const count = wordCount(result.value);
-    const words = count === 1 ? '1 palavra' : `${count} palavras`;
+    const words = plural(count, '{n} palavra', '{n} palavras');
     hint.textContent = target.redactions?.length
-      ? `Texto copiado (${words}), sem o que está sob as tarjas. Ele não sai do aparelho.`
-      : `Texto copiado (${words}). Ele não sai do aparelho.`;
+      ? t('Texto copiado ({words}), sem o que está sob as tarjas. Ele não sai do aparelho.', { words })
+      : t('Texto copiado ({words}). Ele não sai do aparelho.', { words });
   });
 
   // ---------- Anterior / próxima ----------
@@ -753,21 +756,21 @@ export function setupViewer({
     if (quad) {
       points = toRotated(quad, page.rotation);
       drawPoints();
-      hint.textContent = 'Cantos encontrados. Confira e ajuste se precisar.';
+      hint.textContent = t('Cantos encontrados. Confira e ajuste se precisar.');
     } else {
-      hint.textContent = 'Não achei as bordas do papel nesta foto. Arraste os cantos manualmente.';
+      hint.textContent = t('Não achei as bordas do papel nesta foto. Arraste os cantos manualmente.');
     }
   });
   $('#crop-full').addEventListener('click', () => {
     points = FULL_QUAD;
     drawPoints();
-    hint.textContent = 'Foto inteira, sem recorte.';
+    hint.textContent = t('Foto inteira, sem recorte.');
   });
   $('#crop-cancel').addEventListener('click', showView);
   applyButton.addEventListener('click', async () => {
     if (!isConvex(points)) return;
     applyButton.disabled = true;
-    hint.textContent = 'Aplicando o recorte…';
+    hint.textContent = t('Aplicando o recorte…');
     try {
       await applyCrop(page, isFullFrame(points) ? null : fromRotated(points, page.rotation));
     } finally {

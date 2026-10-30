@@ -4,13 +4,14 @@
 // O texto e as escolhas ficam só na memória da aba.
 import { addAllPagesOption, spotGrid } from './all-pages.js';
 import { allPagesText, NUMBER_FORMATS, winAnsiText, droppedMessage } from './edit-text.js';
+import { t } from './i18n.js';
 
 const settings = {
   number: { on: false, format: 'n-of', spot: 'bottom-right' },
   header: { on: false, text: '', align: 'center' },
   footer: { on: false, text: '', align: 'center' },
 };
-const ALIGN = { left: 'À esquerda', center: 'No centro', right: 'À direita' };
+const ALIGN = { left: t('À esquerda'), center: t('No centro'), right: t('À direita') };
 
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -41,7 +42,7 @@ function group(id, label, details, onToggle) {
 }
 
 // Cabeçalho ou rodapé: texto livre, só com as letras das fontes do PDF, e o alinhamento.
-function lineGroup(key, label, changed) {
+function lineGroup(key, label, textLabel, changed) {
   const part = settings[key];
   const note = el('p', { className: 'field-note', role: 'status' });
   const input = el('input', { type: 'text', id: `${key}-text`, maxLength: 120, autocomplete: 'off', spellcheck: true });
@@ -62,9 +63,9 @@ function lineGroup(key, label, changed) {
     changed();
   });
   return group(`${key}-on`, label, [
-    el('label', { className: 'field' }, [el('span', { textContent: `Texto do ${label.toLowerCase()}` }), input]),
+    el('label', { className: 'field' }, [el('span', { textContent: textLabel }), input]),
     note,
-    el('label', { className: 'field' }, [el('span', { textContent: 'Alinhamento' }), align]),
+    el('label', { className: 'field' }, [el('span', { textContent: t('Alinhamento') }), align]),
   ], (on) => {
     part.on = on;
     changed();
@@ -87,16 +88,16 @@ addAllPagesOption({
       changed();
     });
     container.append(
-      group('number-on', 'Numerar as páginas', [
-        el('label', { className: 'field' }, [el('span', { textContent: 'Formato' }), format]),
-        el('fieldset', { className: 'stamp-positions' }, [el('legend', { textContent: 'Lugar na página' }), grid]),
-        el('p', { className: 'field-note', textContent: 'Cada PDF gerado começa do 1, também com "um PDF por página" e por intervalos.' }),
+      group('number-on', t('Numerar as páginas'), [
+        el('label', { className: 'field' }, [el('span', { textContent: t('Formato') }), format]),
+        el('fieldset', { className: 'stamp-positions' }, [el('legend', { textContent: t('Lugar na página') }), grid]),
+        el('p', { className: 'field-note', textContent: t('Cada PDF gerado começa do 1, também com "um PDF por página" e por intervalos.') }),
       ], (on) => {
         settings.number.on = on;
         changed();
       }),
-      lineGroup('header', 'Cabeçalho', changed),
-      lineGroup('footer', 'Rodapé', changed),
+      lineGroup('header', t('Cabeçalho'), t('Texto do cabeçalho'), changed),
+      lineGroup('footer', t('Rodapé'), t('Texto do rodapé'), changed),
     );
   },
   active: () => settings.number.on || (settings.header.on && !!settings.header.text.trim()) || (settings.footer.on && !!settings.footer.text.trim()),

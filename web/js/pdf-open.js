@@ -5,6 +5,7 @@
 import { openPdf, copyPages, PdfError } from './pdf-reader.js';
 import { compressObjects, compressibleBytes } from './pdf-compress.js';
 import { buildPdf } from './pdf.js';
+import { t, plural } from './i18n.js';
 
 // PDF "pesado": imagens que dá para recomprimir somando 1 MB ou mais, e pelo menos 40% do arquivo.
 // Aí o app já liga a compressão e avisa (dá para desligar com um toque).
@@ -168,7 +169,7 @@ export async function releasePdfPreviews() {
  *   heavy: boolean}>} heavy: PDF pesado por causa de imagens que a compressão consegue diminuir
  */
 export async function openPdfFile(file, password = null) {
-  if (file.size > MAX_FILE) throw new PdfError('O PDF passa de 200 MB.');
+  if (file.size > MAX_FILE) throw new PdfError(t('O PDF passa de 200 MB.'));
   const doc = await openPdf(new Uint8Array(await file.arrayBuffer()), { password });
   // Formulário: os campos e os valores (pdf-form.js), carregado só quando o PDF tem campos ou é um formulário XFA.
   let formNotes = [];
@@ -179,9 +180,9 @@ export async function openPdfFile(file, password = null) {
   }
   const notes = [];
   if (doc.security?.hadPassword) {
-    notes.push('Este PDF tinha senha: o PDF novo sai sem ela, a não ser que você ligue "Proteger o PDF com senha".');
+    notes.push(t('Este PDF tinha senha: o PDF novo sai sem ela, a não ser que você ligue "Proteger o PDF com senha".'));
   } else if (doc.security?.restricted) {
-    notes.push('Este PDF tinha restrições do autor (como não permitir imprimir ou alterar): o PDF novo sai sem elas.');
+    notes.push(t('Este PDF tinha restrições do autor (como não permitir imprimir ou alterar): o PDF novo sai sem elas.'));
   }
   if (doc.security) {
     // O PDF.js desenha uma cópia já decifrada, com as mesmas páginas que vão para o PDF novo: assim a senha não
@@ -193,15 +194,15 @@ export async function openPdfFile(file, password = null) {
   if (doc.isSigned()) {
     // Com senha, o app sempre monta um PDF novo (pdf-append.js não acrescenta em arquivo cifrado).
     notes.push(doc.security
-      ? 'Este PDF tem assinatura digital: no PDF novo a assinatura deixa de valer (ela só vale no arquivo original).'
-      : 'Este PDF tem assinatura digital. Se você só assinar, sem mudar nada, ela continua valendo; se juntar, separar ou mudar as páginas, ela deixa de valer no PDF novo.');
+      ? t('Este PDF tem assinatura digital: no PDF novo a assinatura deixa de valer (ela só vale no arquivo original).')
+      : t('Este PDF tem assinatura digital. Se você só assinar, sem mudar nada, ela continua valendo; se juntar, separar ou mudar as páginas, ela deixa de valer no PDF novo.'));
   }
   if (doc.layers?.removed) {
-    notes.push('Este PDF tem camadas ocultas: o conteúdo delas não vai para o PDF novo, como já estava escondido na tela.');
+    notes.push(t('Este PDF tem camadas ocultas: o conteúdo delas não vai para o PDF novo, como já estava escondido na tela.'));
   }
   notes.push(...formNotes);
   if (doc.hasAnnotations()) {
-    notes.push('No PDF novo, links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.');
+    notes.push(t('No PDF novo, links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.'));
   }
   const pages = doc.pages.map((page, index) => ({ index, width: page.width, height: page.height }));
   const images = compressibleBytes(doc);
@@ -209,7 +210,7 @@ export async function openPdfFile(file, password = null) {
   return { doc, pages, notes, heavy };
 }
 
-const FORM_ERROR = 'Não deu para ler os campos do formulário deste PDF: ele sai com os campos como estão, e não dá para preenchê-lo aqui.';
+const FORM_ERROR = t('Não deu para ler os campos do formulário deste PDF: ele sai com os campos como estão, e não dá para preenchê-lo aqui.');
 
 /**
  * Os campos do formulário (pdf-form.js) e as notas ao abrir. Rede de segurança: se a leitura falhar num PDF estranho
@@ -246,19 +247,19 @@ function safeFill(doc) {
 function describeForm(form) {
   const count = form.fields.length;
   if (form.xfa === 'pure') {
-    return ['Este PDF é um formulário XFA, que só o Adobe Reader mostra e preenche: aqui não dá para preencher, e as páginas podem aparecer vazias ou só com um aviso do Adobe.'];
+    return [t('Este PDF é um formulário XFA, que só o Adobe Reader mostra e preenche: aqui não dá para preencher, e as páginas podem aparecer vazias ou só com um aviso do Adobe.')];
   }
   const notes = [];
-  if (count) notes.push(count === 1 ? 'Este PDF tem um formulário com 1 campo.' : `Este PDF tem um formulário com ${count} campos.`);
+  if (count) notes.push(plural(count, 'Este PDF tem um formulário com {n} campo.', 'Este PDF tem um formulário com {n} campos.'));
   const { clipped, missing } = form.redrawn();
   const letters = [...missing];
   const quoted = letters.slice(0, 8).map((char) => `“${char}”`).join(', ');
   const problems = [
-    letters.length && (letters.length === 1 ? `a letra ${quoted} não existe nas fontes do PDF e fica de fora` : `as letras ${quoted} não existem nas fontes do PDF e ficam de fora`),
-    clipped && (clipped === 1 ? 'um dos valores não cabe no campo e sai cortado' : `${clipped} valores não cabem no campo e saem cortados`),
+    letters.length && plural(letters.length, 'a letra {letters} não existe nas fontes do PDF e fica de fora', 'as letras {letters} não existem nas fontes do PDF e ficam de fora', { letters: quoted }),
+    clipped && plural(clipped, 'um dos valores não cabe no campo e sai cortado', '{n} valores não cabem no campo e saem cortados'),
   ].filter(Boolean);
   if (problems.length) {
-    notes.push(`Este formulário foi preenchido em outro programa, que não desenhou os valores nos campos. O app desenha de novo, mas ${problems.join('; e ')}.`);
+    notes.push(t('Este formulário foi preenchido em outro programa, que não desenhou os valores nos campos. O app desenha de novo, mas {problems}.', { problems: problems.join(t('; e ')) }));
   }
   return notes;
 }
@@ -266,8 +267,8 @@ function describeForm(form) {
 // Nome do formato, quando é um dos comuns (tolerância de 2 pt).
 function paperName(width, height) {
   const [short, long] = [Math.min(width, height), Math.max(width, height)];
-  const sizes = { A4: [595, 842], A3: [842, 1191], A5: [420, 595], Carta: [612, 792], Ofício: [612, 1008] };
-  for (const [name, [w, h]] of Object.entries(sizes)) if (Math.abs(short - w) < 2 && Math.abs(long - h) < 2) return name;
+  const sizes = [['A4', 595, 842], ['A3', 842, 1191], ['A5', 420, 595], [t('Carta'), 612, 792], [t('Ofício'), 612, 1008]];
+  for (const [name, w, h] of sizes) if (Math.abs(short - w) < 2 && Math.abs(long - h) < 2) return name;
   return `${Math.round(short / 72 * 25.4)} × ${Math.round(long / 72 * 25.4)} mm`;
 }
 
@@ -316,7 +317,7 @@ export function drawPdfCard(page, { maxSide, rotation = 0, number }) {
   ctx.fillText('PDF', canvas.width / 2, y + boxH * 0.24);
   ctx.fillStyle = '#16191d';
   ctx.font = `bold ${unit * 0.12}px system-ui, sans-serif`;
-  ctx.fillText(`pág. ${number}`, canvas.width / 2, y + boxH * 0.55);
+  ctx.fillText(t('pág. {n}', { n: number }), canvas.width / 2, y + boxH * 0.55);
   ctx.fillStyle = '#5b6470';
   ctx.font = `${unit * 0.055}px system-ui, sans-serif`;
   ctx.fillText(paperName(width, height), canvas.width / 2, y + boxH * 0.82);

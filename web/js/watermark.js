@@ -3,8 +3,10 @@
 import { addAllPagesOption } from './all-pages.js';
 import { winAnsiCode } from './fonts.js';
 import { watermarkEdit, watermarkText, WATERMARK_MAX } from './edit-marks.js';
+import { t } from './i18n.js';
 
-const PRESETS = ['CÓPIA', 'CONFIDENCIAL'];
+// O texto vai para o PDF no idioma da página ("COPY" no /en/).
+const PRESETS = [t('CÓPIA'), t('CONFIDENCIAL')];
 
 // Cria um elemento. Chaves "aria-*" e "data-*" viram atributos; o resto, propriedades.
 function el(tag, props = {}, children = []) {
@@ -26,25 +28,25 @@ addAllPagesOption({
     toggle = el('input', { type: 'checkbox', id: 'watermark', 'aria-describedby': 'watermark-note' });
     const note = el('p', {
       id: 'watermark-note', className: 'field-note',
-      textContent: 'Texto grande na diagonal de cada página, claro e transparente: o que está embaixo continua legível.',
+      textContent: t('Texto grande na diagonal de cada página, claro e transparente: o que está embaixo continua legível.'),
     });
     const radios = [...PRESETS, ''].map((value, i) => el('label', { className: 'check' }, [
       el('input', { type: 'radio', name: 'watermark-text', value, checked: i === 0 }),
-      value || 'Outro texto',
+      value || t('Outro texto'),
     ]));
     const own = el('input', { type: 'text', maxLength: WATERMARK_MAX, autocomplete: 'off', spellcheck: false });
-    const ownField = el('label', { className: 'field watermark-own', hidden: true }, [el('span', { textContent: "Texto da marca d'água" }), own]);
+    const ownField = el('label', { className: 'field watermark-own', hidden: true }, [el('span', { textContent: t('Texto da marca d\'água') }), own]);
     const status = el('p', { className: 'field-note', role: 'status' });
     const choices = el('fieldset', { className: 'watermark-choices', hidden: true }, [
-      el('legend', { className: 'sr-only', textContent: "Texto da marca d'água" }), ...radios, ownField, status,
+      el('legend', { className: 'sr-only', textContent: t('Texto da marca d\'água') }), ...radios, ownField, status,
     ]);
-    container.append(el('label', { className: 'check' }, [toggle, "Marca d'água"]), note, choices);
+    container.append(el('label', { className: 'check' }, [toggle, t('Marca d\'água')]), note, choices);
 
     const preset = () => choices.querySelector('input[name="watermark-text"]:checked')?.value ?? '';
     chosen = () => watermarkText(preset() || own.value);
     const update = () => {
       ownField.hidden = !!preset();
-      status.textContent = toggle.checked && !preset() && !chosen() ? "Escreva o texto da marca d'água." : '';
+      status.textContent = toggle.checked && !preset() && !chosen() ? t('Escreva o texto da marca d\'água.') : '';
     };
 
     toggle.addEventListener('change', () => {
@@ -68,8 +70,9 @@ addAllPagesOption({
         const caret = Math.max(0, (own.selectionStart ?? own.value.length) - (own.value.length - kept.join('').length));
         own.value = kept.join('');
         own.setSelectionRange(caret, caret);
-        const one = left.length === 1;
-        status.textContent = `${left.map((char) => `“${char}”`).join(', ')} não ${one ? 'existe' : 'existem'} nas fontes do PDF e ${one ? 'ficou' : 'ficaram'} de fora.`;
+        const chars = left.map((char) => `“${char}”`).join(', ');
+        status.textContent = left.length === 1 ? t('{chars} não existe nas fontes do PDF e ficou de fora.', { chars })
+          : t('{chars} não existem nas fontes do PDF e ficaram de fora.', { chars });
       }
       changed();
     });

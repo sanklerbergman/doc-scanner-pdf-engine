@@ -13,6 +13,7 @@ import { readCertificate, privateKeyInfo, sameBytes, displayName } from './x509.
 import { signedAttributes, signedData, readSignedData } from './cms.js';
 import { buildPdfToSign, fillSignature, signedRanges } from './pdf.js';
 import { seq, encodeInteger, encodeOid, nullValue, octetString } from './asn1.js';
+import { t, LOCALE } from './i18n.js';
 
 export class SignError extends Error {
   name = 'SignError';
@@ -25,16 +26,16 @@ const SLACK = 32; // folga do espaço reservado, em bytes (o tamanho do CMS já 
 const MAX_CHAIN = 10;
 
 const sha256 = async (bytes) => new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-const day = (date) => date.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+const day = (date) => date.toLocaleDateString(LOCALE, { timeZone: 'UTC' });
 
 // Recusa, com o motivo, o certificado que não serve para assinar agora.
 function check(certificate, now) {
-  if (certificate.ca) throw new SignError('Este é o certificado de uma autoridade certificadora, não de uma pessoa ou empresa.');
-  if (now < certificate.notBefore) throw new SignError(`O certificado só vale a partir de ${day(certificate.notBefore)}. Confira a data e a hora do aparelho.`);
-  if (now > certificate.notAfter) throw new SignError(`O certificado venceu em ${day(certificate.notAfter)}. Para assinar, renove com a certificadora.`);
+  if (certificate.ca) throw new SignError(t('Este é o certificado de uma autoridade certificadora, não de uma pessoa ou empresa.'));
+  if (now < certificate.notBefore) throw new SignError(t('O certificado só vale a partir de {day}. Confira a data e a hora do aparelho.', { day: day(certificate.notBefore) }));
+  if (now > certificate.notAfter) throw new SignError(t('O certificado venceu em {day}. Para assinar, renove com a certificadora.', { day: day(certificate.notAfter) }));
   const usage = certificate.keyUsage;
-  if (usage && !usage.digitalSignature && !usage.nonRepudiation) throw new SignError('Este certificado não serve para assinar documentos (o uso dele é outro).');
-  if (certificate.bits < MIN_BITS) throw new SignError(`A chave deste certificado é pequena demais (${certificate.bits} bits). O mínimo para assinar é ${MIN_BITS}.`);
+  if (usage && !usage.digitalSignature && !usage.nonRepudiation) throw new SignError(t('Este certificado não serve para assinar documentos (o uso dele é outro).'));
+  if (certificate.bits < MIN_BITS) throw new SignError(t('A chave deste certificado é pequena demais ({bits} bits). O mínimo para assinar é {min}.', { bits: certificate.bits, min: MIN_BITS }));
 }
 
 // Cadeia do titular até a raiz, com os certificados que vieram no arquivo.
@@ -88,8 +89,8 @@ export async function openCertificate(file, password, now = new Date()) {
         break;
       }
     }
-    if (!holder && elliptic) throw new SignError('Este certificado usa chave de curva elíptica, que o app ainda não assina.');
-    if (!holder) throw new SignError('O arquivo não tem o certificado da chave. Exporte de novo, com o certificado.');
+    if (!holder && elliptic) throw new SignError(t('Este certificado usa chave de curva elíptica, que o app ainda não assina.'));
+    if (!holder) throw new SignError(t('O arquivo não tem o certificado da chave. Exporte de novo, com o certificado.'));
     check(holder, now);
     const chain = buildChain(holder, certs);
     const chainDer = chain.map((cert) => cert.der);
@@ -101,7 +102,7 @@ export async function openCertificate(file, password, now = new Date()) {
     try {
       key = await crypto.subtle.importKey('pkcs8', pkcs8, RSA_PKCS1, false, ['sign']);
     } catch {
-      throw new SignError('Não deu para usar a chave deste certificado.');
+      throw new SignError(t('Não deu para usar a chave deste certificado.'));
     } finally {
       pkcs8.fill(0);
     }
@@ -119,12 +120,12 @@ export async function openCertificate(file, password, now = new Date()) {
       const signature = new Uint8Array(await crypto.subtle.sign(RSA_PKCS1, key, signed));
       fillSignature(prepared, signedData({ signed, signature, certificate: holder, chain: chainDer }));
       if (!(await verifySignedPdf(prepared.bytes, holder.spki))) {
-        throw new SignError('A conferência da assinatura falhou, e o PDF não foi entregue. Tente de novo.');
+        throw new SignError(t('A conferência da assinatura falhou, e o PDF não foi entregue. Tente de novo.'));
       }
       return prepared.bytes;
     };
     const ready = (time) => {
-      if (!key) throw new SignError('O certificado já foi fechado. Abra de novo para assinar.');
+      if (!key) throw new SignError(t('O certificado já foi fechado. Abra de novo para assinar.'));
       check(holder, time);
     };
 
@@ -145,7 +146,7 @@ export async function openCertificate(file, password, now = new Date()) {
        *   do PDF/A (pdfa-fonts.js), nas páginas de Word e, com o carimbo, com as letras dele (stampCharacters)
        */
       async sign(pages, time = new Date(), { password, pdfa = false, stamp, fonts } = {}) {
-        if (password && pdfa) throw new SignError('O PDF/A não permite senha: escolha um dos dois.');
+        if (password && pdfa) throw new SignError(t('O PDF/A não permite senha: escolha um dos dois.'));
         ready(time);
         let prepared = buildPdfToSign(pages, { reserve, time, pdfa, fonts, stamp: stamp && { ...stamp, name } });
         if (password) {
@@ -170,14 +171,14 @@ export async function openCertificate(file, password, now = new Date()) {
         // Campo visível novo depois de uma certificação: o Acrobat aceita, mas outros validadores (o pyHanko, por
         // exemplo) dão a certificação como violada. Num PDF certificado, a assinatura entra sem carimbo.
         if (stamp && changePermission(doc) !== null) {
-          throw new SignError('Este PDF foi certificado pelo autor: a assinatura entra sem carimbo, para não invalidar a certificação.');
+          throw new SignError(t('Este PDF foi certificado pelo autor: a assinatura entra sem carimbo, para não invalidar a certificação.'));
         }
         const bytes = await fill(buildAppendToSign(doc, { reserve, time, stamp: stamp && { ...stamp, name } }));
         // O original continua byte a byte no começo, e o PDF assinado abre com as mesmas páginas.
         const reopened = await openPdf(bytes).catch(() => null);
         if (!startsWith(bytes, doc.bytes) || !reopened || reopened.repaired
           || reopened.pages.length !== doc.pages.length || !reopened.isSigned()) {
-          throw new SignError('A conferência do PDF assinado falhou, e ele não foi entregue. Tente de novo.');
+          throw new SignError(t('A conferência do PDF assinado falhou, e ele não foi entregue. Tente de novo.'));
         }
         return bytes;
       },

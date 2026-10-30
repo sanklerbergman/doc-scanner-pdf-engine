@@ -4,8 +4,8 @@
 //
 // O que muda:
 // - <html lang="en">;
-// - textos entre as tags e os atributos de texto (aria-label, alt, title, placeholder e a descrição da página), pelo
-//   dicionário. Texto sem tradução faz o gerador parar, com a lista do que falta;
+// - textos entre as tags e os atributos de texto (aria-label, alt, title, placeholder, a descrição da página e o valor
+//   inicial dos campos de texto), pelo dicionário. Texto sem tradução faz o gerador parar, com a lista do que falta;
 // - caminhos relativos ganham "../" (a CSP tem base-uri 'none', então não dá para usar <base>). O manifesto é o da
 //   pasta en/, e o link da marca ("./") continua apontando para a própria página;
 // - o link de troca de idioma aponta para o português.
@@ -60,7 +60,9 @@ export function buildEnglishPage(html, dictionary) {
         return ` ${name}="../${value}"`;
       })
       .replace(new RegExp(` (${TEXT_ATTRIBUTES.join('|')})="([^"]*)"`, 'g'), (attr, name, value) => ` ${name}="${translate(value)}"`)
-      .replace(/^(<meta name="description" content=")([^"]*)"/, (attr, start, value) => `${start}${translate(value)}"`);
+      .replace(/^(<meta name="description" content=")([^"]*)"/, (attr, start, value) => `${start}${translate(value)}"`)
+      // Valor inicial de campo de texto (o nome do arquivo); o value das opções é código e fica.
+      .replace(/^(<input [^>]*type="text"[^>]* value=")([^"]*)"/, (attr, start, value) => `${start}${translate(value)}"`);
   });
   return { html: out, missing: [...missing], used };
 }

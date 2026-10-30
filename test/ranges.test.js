@@ -7,6 +7,7 @@ test('intervalos, páginas soltas e "até o fim"', () => {
   assert.deepEqual(parseRanges(' 2 ; 6 ', 6), [[1], [5]]);
   assert.deepEqual(parseRanges('5-', 6), [[4, 5]]);
   assert.deepEqual(parseRanges('1 a 2,3–4', 4), [[0, 1], [2, 3]]);
+  assert.deepEqual(parseRanges('1 to 2, 3 TO 4', 4), [[0, 1], [2, 3]]); // na página em inglês (#22)
 });
 
 test('mensagens claras para o que não dá', () => {

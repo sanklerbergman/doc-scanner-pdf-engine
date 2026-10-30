@@ -4,6 +4,7 @@
 // descompactado por arquivo e no total; o limite vale para o que sai de fato, não para o que o ZIP declara.
 
 import { inflate, InflateError } from './inflate.js';
+import { t } from './i18n.js';
 
 export const ZIP_LIMITS = {
   maxEntries: 10000,
@@ -13,8 +14,8 @@ export const ZIP_LIMITS = {
 
 export class ZipError extends Error {}
 
-const CORRUPTED = 'O arquivo está corrompido ou incompleto.';
-const TOO_BIG = 'O arquivo é grande demais depois de descompactado.';
+const CORRUPTED = t('O arquivo está corrompido ou incompleto.');
+const TOO_BIG = t('O arquivo é grande demais depois de descompactado.');
 
 const u16 = (b, i) => b[i] | (b[i + 1] << 8);
 const u32 = (b, i) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
@@ -47,12 +48,12 @@ export function openZip(bytes, limits = {}) {
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
     if (u32(bytes, i) === 0x06054b50) { end = i; break; }
   }
-  if (end < 0) throw new ZipError('O arquivo não é um ZIP válido.');
+  if (end < 0) throw new ZipError(t('O arquivo não é um ZIP válido.'));
 
   const count = u16(bytes, end + 10);
   const dirOffset = u32(bytes, end + 16);
-  if (count === 0xffff || dirOffset === 0xffffffff) throw new ZipError('ZIP64 não é suportado.');
-  if (count > maxEntries) throw new ZipError('O arquivo tem itens demais.');
+  if (count === 0xffff || dirOffset === 0xffffffff) throw new ZipError(t('ZIP64 não é suportado.'));
+  if (count > maxEntries) throw new ZipError(t('O arquivo tem itens demais.'));
 
   const decoder = new TextDecoder();
   const entries = new Map();
@@ -76,8 +77,8 @@ export function openZip(bytes, limits = {}) {
 
   async function read(name) {
     const entry = entries.get(name);
-    if (!entry) throw new ZipError(`Falta ${name} dentro do arquivo.`);
-    if (entry.flags & 1) throw new ZipError('O arquivo está protegido por senha.');
+    if (!entry) throw new ZipError(t('Falta {name} dentro do arquivo.', { name }));
+    if (entry.flags & 1) throw new ZipError(t('O arquivo está protegido por senha.'));
     if (entry.size > maxFileSize || total + entry.size > maxTotalSize) throw new ZipError(TOO_BIG);
 
     const local = entry.localOffset;
@@ -89,7 +90,7 @@ export function openZip(bytes, limits = {}) {
     let data;
     if (entry.method === 0) data = raw;
     else if (entry.method === 8) data = await inflateEntry(raw, Math.min(maxFileSize, maxTotalSize - total));
-    else throw new ZipError('O arquivo usa uma compressão que não é suportada.');
+    else throw new ZipError(t('O arquivo usa uma compressão que não é suportada.'));
 
     if (data.length !== entry.size || crc32(data) !== entry.crc) throw new ZipError(CORRUPTED);
     total += data.length;

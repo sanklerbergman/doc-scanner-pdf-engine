@@ -10,6 +10,7 @@ import { textWidth, winAnsiCode, pdfFont } from './fonts.js';
 import { editType, circlePath, pathOps, pdfNumber, pageMatrix } from './edits.js';
 import './edit-shapes.js'; // ✓ e ✗ (os caminhos da v4.0.0)
 import { readFieldFormat, formatFieldValue, fieldInputHints } from './pdf-form-format.js';
+import { t } from './i18n.js';
 
 const encoder = new TextEncoder();
 
@@ -263,7 +264,7 @@ async function buildField(doc, id, { kind, node, nodes, widgets }, { order, lock
   field.editable = field.fillable && !field.locked && (!field.readOnly || field.calculated);
   if (field.fillable && !field.editable) field.reason = field.locked ? 'locked' : 'readOnly';
 
-  field.label = field.tooltip || cleanName(node.partial || nodes.find((n) => n.partial)?.partial || node.name) || `Campo ${id + 1}`;
+  field.label = field.tooltip || cleanName(node.partial || nodes.find((n) => n.partial)?.partial || node.name) || t('Campo {n}', { n: id + 1 });
   return field;
 }
 
@@ -307,8 +308,8 @@ async function readValue(doc, field, raw, optList) {
     const list = Array.isArray(value) ? value.slice(0, 1000) : value == null ? [] : [value];
     const out = [];
     for (const item of list) {
-      const t = await text(item);
-      if (t !== null) out.push(t);
+      const entry = await text(item);
+      if (entry !== null) out.push(entry);
     }
     return field.multiSelect ? out : out[0] ?? '';
   }
@@ -862,7 +863,7 @@ export function optionLabels(field, index, items = []) {
       return;
     }
     const widget = field.widgets.find((w) => w.page === index && w.onState === option.value);
-    out.set(option.value, (widget && nearbyText(widget.box, items, 'right')) || (blank ? `Opção ${i + 1}` : `${label} (${i + 1})`));
+    out.set(option.value, (widget && nearbyText(widget.box, items, 'right')) || (blank ? t('Opção {n}', { n: i + 1 }) : `${label} (${i + 1})`));
   });
   return out;
 }

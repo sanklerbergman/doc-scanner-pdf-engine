@@ -7,7 +7,10 @@
 /** 'pt' ou 'en' */
 export const LANG = globalThis.document?.documentElement?.lang === 'en' ? 'en' : 'pt';
 
-const dictionary = LANG === 'en' ? (await import('./i18n-en.js')).default : null;
+/** Datas e números na tela (toLocaleDateString etc.), no idioma da página. */
+export const LOCALE = LANG === 'en' ? 'en-US' : 'pt-BR';
+
+const dictionary =LANG === 'en' ? (await import('./i18n-en.js')).default : null;
 
 /**
  * Texto no idioma da tela. Marcadores {nome} trocados pelos valores: t('{n} páginas', { n: 3 }).

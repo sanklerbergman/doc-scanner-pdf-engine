@@ -6,6 +6,7 @@
 // O arquivo vem de fora: limites de tamanho e de iterações, e qualquer estrutura inesperada é recusada.
 import { parse, sequence, octets, oid, integer, expect, Asn1Error, TAG, CONTEXT, UNIVERSAL } from './asn1.js';
 import { decryptTripleDesCbc, decryptRc2Cbc, CipherError } from './legacy-ciphers.js';
+import { t } from './i18n.js';
 
 export class Pkcs12Error extends Error {
   /** @param {'password' | 'corrupt' | 'unsupported'} reason */
@@ -51,8 +52,8 @@ const HMACS = {
 };
 const AES = { '2.16.840.1.101.3.4.1.2': 16, '2.16.840.1.101.3.4.1.22': 24, '2.16.840.1.101.3.4.1.42': 32 };
 
-const corrupt = () => new Pkcs12Error('corrupt', 'O arquivo do certificado está corrompido ou não é um certificado A1 (.pfx ou .p12).');
-const unsupported = (what) => new Pkcs12Error('unsupported', `Este certificado usa um formato que o app ainda não abre (${what}).`);
+const corrupt = () => new Pkcs12Error('corrupt', t('O arquivo do certificado está corrompido ou não é um certificado A1 (.pfx ou .p12).'));
+const unsupported = (what) => new Pkcs12Error('unsupported', t('Este certificado usa um formato que o app ainda não abre ({what}).', { what }));
 
 /**
  * Abre o .pfx com a senha.
@@ -75,7 +76,7 @@ async function read(file, password) {
   const [version, authSafe, macData] = sequence(parse(file));
   if (integer(version) !== 3) throw corrupt();
   const [contentType, wrapped] = sequence(authSafe);
-  if (oid(contentType) !== OID.data) throw unsupported('integridade por chave pública');
+  if (oid(contentType) !== OID.data) throw unsupported(t('integridade por chave pública'));
   const content = octets(expect(sequence(wrapped, 0, CONTEXT)[0], TAG.OCTET_STRING));
 
   // O MAC confere a senha antes de decifrar qualquer coisa.
@@ -96,11 +97,11 @@ async function read(file, password) {
       if (!encrypted || encrypted.cls !== CONTEXT || encrypted.tag !== 0) throw corrupt();
       safeContents = await decrypt(algorithm, octets(encrypted), password, passwords);
     } else {
-      throw unsupported('conteúdo com envelope');
+      throw unsupported(t('conteúdo com envelope'));
     }
     await readBags(parse(safeContents), password, passwords, keys, certificates, 0);
   }
-  if (!keys.length) throw new Pkcs12Error('corrupt', 'O arquivo não tem a chave do certificado. Exporte de novo marcando "exportar a chave privada".');
+  if (!keys.length) throw new Pkcs12Error('corrupt', t('O arquivo não tem a chave do certificado. Exporte de novo marcando "exportar a chave privada".'));
   return { keys, certificates };
 }
 
@@ -164,7 +165,7 @@ async function checkMac(macData, content, passwords) {
       return;
     }
   }
-  throw new Pkcs12Error('password', 'A senha não confere. Confira maiúsculas e minúsculas e tente de novo.');
+  throw new Pkcs12Error('password', t('A senha não confere. Confira maiúsculas e minúsculas e tente de novo.'));
 }
 
 const HASH_SIZE = { 'SHA-1': 20, 'SHA-256': 32, 'SHA-384': 48, 'SHA-512': 64 };
@@ -178,7 +179,7 @@ const HASH_BLOCK = { 'SHA-1': 64, 'SHA-256': 64, 'SHA-384': 128, 'SHA-512': 128 
  * @param {number} n bytes pedidos
  */
 export async function pkcs12Kdf(hash, password, salt, id, iterations, n) {
-  if (!(iterations >= 1 && iterations <= MAX_KDF_ITERATIONS)) throw unsupported(`${iterations} iterações`);
+  if (!(iterations >= 1 && iterations <= MAX_KDF_ITERATIONS)) throw unsupported(t('{n} iterações', { n: iterations }));
   const u = HASH_SIZE[hash];
   const v = HASH_BLOCK[hash];
   const fill = (source) => {
@@ -240,33 +241,33 @@ async function decrypt(algorithm, data, password, passwords) {
         key.fill(0);
       }
     }
-    if (lastError instanceof CipherError) throw new Pkcs12Error('password', 'A senha não confere. Confira maiúsculas e minúsculas e tente de novo.');
+    if (lastError instanceof CipherError) throw new Pkcs12Error('password', t('A senha não confere. Confira maiúsculas e minúsculas e tente de novo.'));
     throw lastError;
   }
   if (kind === OID.pbes2) return decryptPbes2(params, data, password);
-  throw unsupported(`cifra ${kind}`);
+  throw unsupported(t('cifra {name}', { name: kind }));
 }
 
 // PBES2 (RFC 8018): PBKDF2 e AES (ou 3DES), com a senha em UTF-8, como o OpenSSL e o Windows gravam.
 async function decryptPbes2(params, data, password) {
   const [kdf, scheme] = sequence(params);
   const [kdfOid, kdfParams] = sequence(kdf);
-  if (oid(kdfOid) !== OID.pbkdf2) throw unsupported(`derivação ${oid(kdfOid)}`);
+  if (oid(kdfOid) !== OID.pbkdf2) throw unsupported(t('derivação {name}', { name: oid(kdfOid) }));
   const [salt, iterationsNode, ...rest] = sequence(kdfParams);
   const iterations = integer(iterationsNode);
-  if (!(iterations >= 1 && iterations <= MAX_PBKDF2_ITERATIONS)) throw unsupported(`${iterations} iterações`);
+  if (!(iterations >= 1 && iterations <= MAX_PBKDF2_ITERATIONS)) throw unsupported(t('{n} iterações', { n: iterations }));
   let prf = 'SHA-1';
   for (const node of rest) {
     if (node.tag === TAG.SEQUENCE && node.cls === UNIVERSAL) {
       prf = HMACS[oid(sequence(node)[0])];
-      if (!prf) throw unsupported('derivação com hash desconhecido');
+      if (!prf) throw unsupported(t('derivação com hash desconhecido'));
     }
   }
   const [schemeOid, ivNode] = sequence(scheme);
   const cipher = oid(schemeOid);
   const iv = octets(expect(ivNode, TAG.OCTET_STRING));
   const keyLength = AES[cipher] ?? (cipher === OID.desEde3Cbc ? 24 : 0);
-  if (!keyLength) throw unsupported(`cifra ${cipher}`);
+  if (!keyLength) throw unsupported(t('cifra {name}', { name: cipher }));
 
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
   const key = new Uint8Array(await crypto.subtle.deriveBits(
@@ -277,12 +278,12 @@ async function decryptPbes2(params, data, password) {
     try {
       aes = await crypto.subtle.importKey('raw', key, 'AES-CBC', false, ['decrypt']);
     } catch {
-      throw unsupported(`AES de ${keyLength * 8} bits`); // AES-192: o Chrome não tem
+      throw unsupported(t('AES de {bits} bits', { bits: keyLength * 8 })); // AES-192: o Chrome não tem
     }
     try {
       return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, aes, data));
     } catch {
-      throw new Pkcs12Error('password', 'A senha não confere. Confira maiúsculas e minúsculas e tente de novo.');
+      throw new Pkcs12Error('password', t('A senha não confere. Confira maiúsculas e minúsculas e tente de novo.'));
     }
   } finally {
     key.fill(0);

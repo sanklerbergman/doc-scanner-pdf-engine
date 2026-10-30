@@ -8,6 +8,7 @@
 // - {type: 'rect', x, y, w, h, color}, fundo de célula de tabela;
 // - {type: 'image', image, x, y, w, h}, com image = caminho da imagem no .docx (document.js põe os bytes).
 import { pdfFont, textWidth, winAnsiCode } from './fonts.js';
+import { t } from './i18n.js';
 
 const LINE_HEIGHT = 1.15; // altura da linha simples, em relação ao tamanho da fonte
 const DESCENT = 0.25; // parte da linha abaixo da linha de base
@@ -500,7 +501,7 @@ export function layoutDocument(doc) {
   let sectionFirst = false;
   let currentSection = null;
   const newPage = (next) => {
-    if (pages.length >= MAX_PAGES) throw new RangeError(`O documento passa de ${MAX_PAGES} páginas.`);
+    if (pages.length >= MAX_PAGES) throw new RangeError(t('O documento passa de {max} páginas.', { max: MAX_PAGES }));
     geometry = next;
     page = { width: next.width, height: next.height, items: [] };
     pages.push(page);
