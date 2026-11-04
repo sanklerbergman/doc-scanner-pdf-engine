@@ -16,6 +16,7 @@ import { ocrWorkers, progressNote } from './ocr-plan.js';
 import { moveItem, setupReorder } from './reorder.js';
 import { paintEdits, rotateEdits, fileExtras, editCharacters, redactEdits } from './edits.js';
 import './edit-types.js';
+import { paintReplacements } from './edit-text.js';
 import { setupAllPages, spotGrid } from './all-pages.js';
 import './all-pages-text.js'; // numeração, cabeçalho e rodapé (fase 2)
 import './watermark.js'; // marca d'água em todas as páginas (fase 3)
@@ -387,6 +388,7 @@ async function photoThumb(page) {
     rotation: page.rotation, filter: page.filter, quad: page.quad, maxSide: THUMB_SIDE, redactions: page.redactions,
   });
   page.shape = { width: picture.width, height: picture.height };
+  if (!page.edits?.length) writeOnPicture(picture, page);
   const canvas = page.edits?.length ? photoOnSheet(picture, page, THUMB_SIDE) : picture;
   try {
     return await canvasToBlob(canvas, 'image/jpeg', 0.8);
@@ -407,7 +409,8 @@ function photoSheet(shape) {
 }
 
 // Tarjas da foto (de 0 a 1 na imagem) levadas para a folha.
-const sheetRects = (rects, { width, height, image }) => (rects ?? []).map(({ x0, y0, x1, y1 }) => ({
+const sheetRects = (rects, { width, height, image }) => (rects ?? []).map(({ x0, y0, x1, y1, ...extra }) => ({
+  ...extra,
   x0: (image.x + x0 * image.w) / width, x1: (image.x + x1 * image.w) / width,
   y0: (image.y + y0 * image.h) / height, y1: (image.y + y1 * image.h) / height,
 }));
@@ -438,16 +441,30 @@ function photoOnSheet(picture, page, maxSide, { edits = true, redact = true } = 
   ctx.drawImage(picture, sheet.image.x * scale, sheet.image.y * scale, sheet.image.w * scale, sheet.image.h * scale);
   const covers = sheetRects(page.redactions, sheet);
   if (edits) paintEdits(ctx, redact ? shownEdits(page.edits, covers, sheet) : page.edits, sheet);
-  if (redact) paintRedactions(ctx, covers, canvas.width, canvas.height);
+  if (redact) {
+    paintRedactions(ctx, covers, canvas.width, canvas.height);
+    paintReplacements(ctx, covers, canvas.width, canvas.height);
+  }
   return canvas;
 }
 
-// Edições e, por cima, tarjas, num canvas que é a página como aparece (Word e página de PDF).
+// Edições e, por cima, tarjas e o texto escrito nelas, num canvas que é a página como aparece (Word e página de PDF).
 function paintOver(canvas, page, { redact = true, edits = true } = {}) {
   const ctx = canvas.getContext('2d');
   const size = visibleSize(page);
   if (edits) paintEdits(ctx, redact ? shownEdits(page.edits, page.redactions, size) : page.edits, size);
-  if (redact) paintRedactions(ctx, page.redactions, canvas.width, canvas.height);
+  if (redact) {
+    paintRedactions(ctx, page.redactions, canvas.width, canvas.height);
+    paintReplacements(ctx, page.redactions, canvas.width, canvas.height);
+  }
+}
+
+// Alguma tarja da página tem texto escrito por cima (#24).
+const hasReplacement = (page) => !!page.redactions?.some((rect) => rect.text?.trim());
+
+// Foto sem edição na tela (só a imagem, já tarjada nos pixels): o texto das tarjas por cima.
+function writeOnPicture(picture, page) {
+  if (hasReplacement(page)) paintReplacements(picture.getContext('2d'), page.redactions, picture.width, picture.height);
 }
 
 // As edições como o PDF as leva, para a tela mostrar o mesmo: sem as letras que as tarjas tiram (texto e marca
@@ -749,7 +766,9 @@ async function renderProcessed(page, { redact = true, edits = true } = {}) {
   if (page.kind === 'pdf') return drawPdfPage(page, VIEW_SIDE, { redact, edits });
   if (isDocument(page)) return drawDocument(page, VIEW_SIDE, { redact, edits });
   const picture = await renderPhoto(page, redact);
-  const canvas = edits && page.edits?.length ? photoOnSheet(picture, page, VIEW_SIDE, { redact }) : picture;
+  const onSheet = edits && page.edits?.length;
+  if (redact && !onSheet) writeOnPicture(picture, page);
+  const canvas = onSheet ? photoOnSheet(picture, page, VIEW_SIDE, { redact }) : picture;
   try {
     return await canvasToBlob(canvas, 'image/jpeg', 0.9);
   } finally {
@@ -1328,8 +1347,12 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     const sizeOf = (i) => (pages[i]?.jpeg ? { width: pages[i].width, height: pages[i].height } : visibleSize(list[i]));
     const extras = fileExtras(groups, (context) => allPages.produce({ ...context, page: list[context.index], size: sizeOf(context.index) }));
     const editsIn = (g, p) => [...(list[groups[g][p]].edits ?? []), ...extras[g][p]];
-    const withEdits = (built, page, edits) => (!edits.length ? built
-      : { ...built, edits, ...(built.jpeg && page.redactions?.length ? { redactions: page.redactions } : {}) });
+    // Na foto e na página de PDF tarjada, as tarjas vão junto quando há edição (vão de novo por cima dela) ou texto
+    // escrito numa tarja (vai por cima dela, em pdf.js).
+    const withEdits = (built, page, edits) => {
+      const covers = built.jpeg && (edits.length || hasReplacement(page)) ? { redactions: page.redactions } : null;
+      return !edits.length && !covers ? built : { ...built, ...(edits.length ? { edits } : {}), ...covers };
+    };
 
     // PDF/A com página de Word, com texto nas edições ou com carimbo: as fontes vão embutidas, só com as letras usadas
     // (as mesmas para todos os arquivos). O carimbo leva as letras do nome e todas as que a data e a hora da assinatura
@@ -1656,6 +1679,7 @@ async function checkRedactions(bytes, sources, built, file, files) {
     // Foto e página de PDF tarjada: as tarjas ficam na imagem, que fica dentro da página (com margem).
     const { box, width, height } = built[n];
     const rects = !box ? page.redactions : page.redactions.map((rect) => ({
+      ...rect,
       x0: (box.x + rect.x0 * box.w) / width, x1: (box.x + rect.x1 * box.w) / width,
       y0: (height - box.y - box.h + rect.y0 * box.h) / height, y1: (height - box.y - box.h + rect.y1 * box.h) / height,
     }));

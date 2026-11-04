@@ -349,6 +349,7 @@ Quem usa o OCR baixa uns 5,5 MB uma vez. Depois os arquivos ficam no cache do se
 
 **Fora do escopo, e por quê:**
 
+- **Escolher o A1 numa lista dos certificados instalados no computador** (pedido em 2026-11-04, #25): o navegador não deixa o site usar os certificados do sistema para assinar; a janela de escolha que ele mostra é só para entrar em site, e a chave assina a conexão, não o PDF. Os sites que fazem isso dependem de um programa instalado, com a página conversando com ele pela rede local, o que quebra o `connect-src 'none'`. No lugar, a tela de assinar explica como exportar o A1 para um `.pfx` (Windows e Mac).
 - **A3 (token USB ou cartão):** o navegador não conversa com o token sem um programa instalado no computador, e as extensões que fazem isso são de terceiros e de código fechado. No celular, esse caminho nem existe. O app explica e indica o programa do próprio token.
 - **Certificado em nuvem** (BirdID, VIDaaS, SafeID, NeoID e outros): a assinatura acontece no servidor da certificadora, então o app precisaria conversar com ele. Isso quebra o `connect-src 'none'`.
 - **Assinatura gov.br:** é feita no site do gov.br, com o envio do arquivo para lá.
@@ -1253,3 +1254,20 @@ Ficou assim (2026-10-30):
 ### Perguntas em aberto
 
 - (Respondida em 2026-10-30: README e SECURITY.md também vão para o inglês.) Feito: `README.en.md` à parte, com link de idioma no topo dos dois; o SECURITY.md fica num arquivo só, com a parte em inglês embaixo, porque é ele que o GitHub mostra na aba de segurança. O CONTRIBUTING.md continua em português.
+
+## Tarja com cor e Substituir texto (v5.0.0)
+
+Pedido do dono em 2026-11-04 (#24): a tarja saía sempre preta, e a maioria dos documentos tem fundo branco; para trocar um texto, precisava de uma tarja branca com o texto novo por cima. Junto, o passo a passo para exportar o A1 instalado no computador (#25). Pela regra do projeto, funcionalidade grande é major: v5.0.0.
+
+### Abordagem
+
+- **Cor:** cada tarja guarda a dela (`color: 'white'`; sem cor, preta). A tarja continua apagando o que está embaixo do mesmo jeito (pixels da foto e da página de PDF, letras do Word e das edições); só a caixa muda de cor, no PDF, na tela e na miniatura. Na tela de tarjar, "Preta" e "Branca" mudam a tarja selecionada (a última criada ou tocada) e valem para as próximas; a branca tem borda tracejada para não sumir no papel, e o aviso diz que quem recebe não vê que algo foi tirado.
+- **Substituir texto:** "Escrever por cima" põe um texto na tarja selecionada (`text`). No PDF, ele vira uma edição de texto comum (`replacementEdits`, em `edit-text.js`), desenhada depois da caixa e fora do corte das tarjas: do maior tamanho que cabe na tarja, encostado à esquerda e no meio da altura, em preto na tarja branca e em branco na preta. Fica como texto de verdade (selecionável), nunca nos pixels da foto.
+- **Conferência:** o PDF montado continua sendo relido pelo PDF.js. Sob uma tarja com texto, só não conta o trecho que é parte do texto escrito nela (`textUnderRedactions`): ele é o que a pessoa escreveu e não revela nada do que estava embaixo. Qualquer outro texto sob a tarja continua barrando o PDF.
+- **PDF/A:** as letras do texto escrito entram no subconjunto da fonte embutida (`redactedEdits`).
+
+### Testes
+
+- [x] `test/redact-replace.test.js`: cor e texto passando pelo corte, giro e layout do Word; pixels na cor de cada tarja; tamanho e posição do texto; Word e foto com a caixa na cor certa e o texto depois dela; conferência aceitando só o texto escrito; letras no PDF/A
+- [x] No Chromium (Playwright, `scripts/serve.js`), com o PDF.js de verdade: o texto escrito sai num trecho separado do resto da linha (não se junta a "CPF:"), e a conferência passa; foto e Word com tarja branca e texto, do "Tarjar" ao PDF baixado, sem o CPF no arquivo
+- [ ] No iPhone 16e, no site publicado

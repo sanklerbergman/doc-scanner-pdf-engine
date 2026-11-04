@@ -133,8 +133,17 @@ export default {
   'Ferramentas de edição': 'Editing tools',
   'Novo': 'New',
   'Aplicar': 'Apply',
+  'Tarja selecionada': 'Selected redaction',
+  'Preta': 'Black',
+  'Branca': 'White',
+  'Escrever por cima': 'Write on top',
   'Nova tarja': 'New redaction',
   'Aplicar tarjas': 'Apply redactions',
+  'Texto por cima da tarja': 'Text on top of the redaction',
+  'O que está embaixo da tarja é apagado do PDF, e este texto vai no lugar, do maior tamanho que cabe nela. Para a letra ficar menor, deixe a tarja mais baixa.':
+    'What is under the redaction is erased from the PDF, and this text goes in its place, as large as fits in it. For smaller letters, make the redaction shorter.',
+  'Tirar o texto': 'Remove text',
+  'Pôr na tarja': 'Place on redaction',
   'Anterior': 'Previous',
   'Mostrar o campo ampliado na página': 'Show the field enlarged on the page',
   'Ampliar': 'Zoom',
@@ -159,6 +168,21 @@ export default {
   'a barra do navegador tem que mostrar': 'the browser bar must show',
   '. Uma cópia falsa deste site poderia roubar o certificado e a senha.': '. A fake copy of this site could steal the certificate and the password.',
   'Escolha o certificado A1 (arquivo': 'Choose the A1 certificate (a',
+  'O certificado está instalado no computador e você não tem o arquivo?': 'Is the certificate installed on your computer, and you don\'t have the file?',
+  'O navegador não deixa nenhum site usar os certificados instalados no computador para assinar. Dá para tirar uma cópia em arquivo, uma vez só. No Windows:':
+    'Browsers don\'t let any website sign with the certificates installed on your computer. You can export a copy to a file, just once. On Windows:',
+  'Aperte Windows + R, digite certmgr.msc e aperte Enter.': 'Press Windows + R, type certmgr.msc and press Enter.',
+  'Abra Pessoal e depois Certificados. Clique com o botão direito no seu certificado, depois em Todas as tarefas e em Exportar.':
+    'Open Personal and then Certificates. Right-click your certificate, then All Tasks and Export.',
+  'Marque "Sim, exportar a chave privada". No formato .pfx, marque também "Incluir todos os certificados no caminho de certificação".':
+    'Check "Yes, export the private key". In the .pfx format, also check "Include all certificates in the certification path if possible".',
+  'Crie uma senha forte, salve o arquivo e escolha ele aqui, com essa senha.': 'Create a strong password, save the file and choose it here, with that password.',
+  'No Mac, o caminho é o app Acesso às Chaves: clique com o botão direito no certificado e em Exportar, no formato .p12.':
+    'On a Mac, use the Keychain Access app: right-click the certificate and choose Export, in the .p12 format.',
+  'Se a opção de exportar a chave privada estiver apagada, o certificado foi instalado como não exportável, e só a certificadora consegue emitir uma cópia em arquivo.':
+    'If the option to export the private key is greyed out, the certificate was installed as non-exportable, and only the certificate authority can issue a copy as a file.',
+  'Com o arquivo e a senha, qualquer pessoa assina em seu nome: guarde num lugar seguro ou apague depois de assinar.':
+    'With the file and the password, anyone can sign in your name: keep it somewhere safe or delete it after signing.',
   'ou': 'or',
   ') e digite a senha dele. O arquivo e a senha ficam só aqui no aparelho e não são guardados: na próxima vez, o app pede de novo.':
     'file) and enter its password. The file and the password stay only here on the device and are not kept: next time, the app asks again.',
@@ -431,7 +455,18 @@ export default {
   'Tarjas: {label}': 'Redactions: {label}',
   'Preparando a página…': 'Preparing the page…',
   'Não deu para preparar a página para tarjar.': 'Could not prepare the page for redaction.',
-  'Tarja {n}: as setas movem, Shift e setas mudam o tamanho, Delete remove': 'Redaction {n}: arrow keys move it, Shift and arrow keys resize it, Delete removes it',
+  'branca': 'white',
+  'preta': 'black',
+  'Tarja {n}, {color}, com o texto "{text}": as setas movem, Shift e setas mudam o tamanho, Delete remove':
+    'Redaction {n}, {color}, with the text "{text}": arrow keys move it, Shift and arrow keys resize it, Delete removes it',
+  'Tarja {n}, {color}: as setas movem, Shift e setas mudam o tamanho, Delete remove':
+    'Redaction {n}, {color}: arrow keys move it, Shift and arrow keys resize it, Delete removes it',
+  'Tarja {n} selecionada: escolha a cor ou toque em "Escrever por cima".': 'Redaction {n} selected: pick the color or tap "Write on top".',
+  'Tarja branca: o que fica embaixo é apagado do mesmo jeito, mas quem recebe o PDF não vê que algo foi tirado.':
+    'White redaction: what is underneath is erased all the same, but whoever gets the PDF cannot see that something was removed.',
+  'Tarja preta.': 'Black redaction.',
+  'Texto posto na tarja {n}.': 'Text placed on redaction {n}.',
+  'Texto tirado da tarja {n}.': 'Text removed from redaction {n}.',
   'Remover a tarja {n}': 'Remove redaction {n}',
   'Tarja removida. Ficam {n}.': 'Redaction removed. {n} left.',
   'Tarja removida. Nenhuma tarja nesta página.': 'Redaction removed. No redactions on this page.',

@@ -20,6 +20,8 @@ import {
 import { arrowFromLine, inkFromStrokes, inkStrokes, DEFAULT_COLOR, DEFAULT_WIDTH } from './edit-shapes.js';
 import './edit-types.js';
 import { t, plural } from './i18n.js';
+import { redactionColor } from './redact.js';
+import { replacementSvg } from './viewer.js';
 
 /**
  * @typedef {object} Tool
@@ -306,9 +308,13 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     selected = -1;
     drag = null;
     lastKey = null;
+    // As tarjas, na cor delas e com o texto escrito nelas (#24), por cima das edições.
     cover.replaceChildren(...(base.redactions ?? []).map((rect) => {
       const box = el('div');
       place(box, rect);
+      box.style.background = redactionColor(rect);
+      const svg = replacementSvg(rect, size);
+      if (svg) box.append(svg);
       return box;
     }));
     surface.hidden = false;

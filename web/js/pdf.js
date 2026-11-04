@@ -5,7 +5,8 @@
 //   (Helvetica, Times e Courier, codificação WinAnsi), sem embutir fonte;
 // - copiada de outro PDF (juntar e dividir): os objetos vêm prontos do pdf-reader.js, renumerados aqui.
 // Nas fotos e nas páginas de texto, as edições da pessoa (edits.js) entram no conteúdo da página, por cima do que
-// já está nela e por baixo das tarjas; na página copiada, elas vêm prontas do copyPages.
+// já está nela e por baixo das tarjas; na página copiada, elas vêm prontas do copyPages. O texto escrito por cima de
+// uma tarja (#24) vai depois dela, como texto.
 // Nenhum metadado é gravado (sem /Info, sem datas, sem "Producer"). A única data possível é a hora da assinatura
 // (/M), e só quando a pessoa assina (buildPdfToSign). Com a opção PDF/A, entra só a identificação do padrão (XMP com
 // pdfaid), o perfil de cor sRGB e o /ID, tirado do próprio conteúdo.
@@ -15,7 +16,8 @@ import { md5 } from './md5.js';
 import { buildStamp, stampPageIndex, STAMP_FONTS } from './stamp.js';
 import { ocrLayer, OCR_FONT } from './ocr-layer.js';
 import { editsContent, resourceCollector, redactEdits, pdfValue } from './edits.js';
-import { toRotatedRects } from './redact.js';
+import { toRotatedRects, redactionColor } from './redact.js';
+import { replacementEdits } from './edit-text.js';
 import './edit-types.js';
 
 const encoder = new TextEncoder();
@@ -82,8 +84,10 @@ function pdfString(text) {
 }
 
 const rgb = (color) => (color ?? [0, 0, 0]).map(num).join(' ');
+// Cor da tarja no PDF.
+const fillOf = (rect) => (redactionColor(rect) === '#ffffff' ? '1 1 1' : '0 0 0');
 
-// Caixa preta da tarja (x0 y0 x1 y1 no espaço do PDF), arredondada para fora, como os pixels da tarja: o
+// Caixa da tarja (x0 y0 x1 y1 no espaço do PDF), arredondada para fora, como os pixels da tarja: o
 // arredondamento de duas casas nunca deixa uma lasca do que está embaixo aparecer na borda.
 function coverBox(x0, y0, x1, y1) {
   const [a, b] = [x0, y0].map((v) => Math.floor(Math.round(v * 1e6) / 1e4) / 100);
@@ -93,7 +97,7 @@ function coverBox(x0, y0, x1, y1) {
 
 // Conteúdo de uma página de texto. Os itens vêm com a origem no canto superior esquerdo;
 // no PDF ela fica no inferior, por isso y vira height - y.
-function textContent(page, fontNames, imageNames, edits = '') {
+function textContent(page, fontNames, imageNames, edits = '', over = '') {
   // Fundos e imagens primeiro (ficam por baixo do texto), cada um entre q e Q para não mexer na cor do texto.
   const ops = [];
   for (const item of page.items) {
@@ -128,11 +132,13 @@ function textContent(page, fontNames, imageNames, edits = '') {
   }
   // Edições (edits.js): por cima do documento e por baixo das tarjas.
   if (edits) ops.push(edits);
-  // Tarjas: caixas pretas por cima de tudo. O texto que estava embaixo já saiu da página (redact.js).
+  // Tarjas: caixas por cima de tudo, na cor de cada uma. O texto que estava embaixo já saiu da página (redact.js).
+  // Por cima delas, o texto escrito nas tarjas (over).
   for (const item of page.items) {
     if (item.type !== 'redaction') continue;
-    ops.push(`q 0 0 0 rg ${coverBox(item.x, page.height - item.y - item.h, item.x + item.w, page.height - item.y)} f Q`);
+    ops.push(`q ${fillOf(item)} rg ${coverBox(item.x, page.height - item.y - item.h, item.x + item.w, page.height - item.y)} f Q`);
   }
+  if (over) ops.push(over);
   return ops.join('\n');
 }
 
@@ -153,7 +159,7 @@ export function pdfDate(date) {
  *   pintadas nos pixels, que vão de novo como caixas por cima das edições;
  * - texto: {width, height, items, rotation?}, com items vindos de layout.js: {type: 'text', x, y, text, font,
  *   size, color?, wordSpacing?, rise?}, {type: 'line', x1, x2, y (ou y1 e y2), width, color?}, {type: 'rect', x, y,
- *   w, h, color}, {type: 'image', jpeg, x, y, w, h} e {type: 'redaction', x, y, w, h} (tarja, desenhada por cima
+ *   w, h, color}, {type: 'image', jpeg, x, y, w, h} e {type: 'redaction', x, y, w, h, color?, text?} (tarja, por cima
  *   de tudo), origem no canto superior esquerdo e y do texto na linha de base. A mesma imagem (o mesmo
  *   Uint8Array) usada em várias páginas é gravada uma vez só.
  *   rotation (0, 90, 180 ou 270) vira /Rotate. edits: edições (edits.js), de 0 a 1 na página como aparece (com o
@@ -240,11 +246,13 @@ export function pageCovers(page) {
     const { x, y, w, h } = page.box;
     const top = page.height - y - h;
     return (page.redactions ?? []).map((rect) => ({
+      ...rect,
       x0: (x + rect.x0 * w) / page.width, x1: (x + rect.x1 * w) / page.width,
       y0: (top + rect.y0 * h) / page.height, y1: (top + rect.y1 * h) / page.height,
     }));
   }
   const boxes = page.items.filter((item) => item.type === 'redaction').map((item) => ({
+    ...(item.color ? { color: item.color } : {}), ...(item.text ? { text: item.text } : {}),
     x0: item.x / page.width, x1: (item.x + item.w) / page.width, y0: item.y / page.height, y1: (item.y + item.h) / page.height,
   }));
   return toRotatedRects(boxes, page.rotation ?? 0);
@@ -257,20 +265,30 @@ export function pageCovers(page) {
  * @param {object} page uma página de buildPdf (foto ou texto)
  */
 export function redactedEdits(page) {
-  if (page.copy || !page.edits?.length) return [];
-  const sideways = !page.jpeg && (page.rotation ?? 0) % 180;
-  const visible = sideways ? { width: page.height, height: page.width } : { width: page.width, height: page.height };
-  return redactEdits(page.edits, pageCovers(page), visible);
+  return page.copy ? [] : [...cutEdits(page), ...overEdits(page)];
 }
 
-// Edições de uma foto ou página de texto: os operadores, os recursos que eles pedem e as tarjas que vão por cima.
-// null sem nada a desenhar.
+// A página como aparece, em pontos.
+function visibleOf(page) {
+  const sideways = !page.jpeg && (page.rotation ?? 0) % 180;
+  return sideways ? { width: page.height, height: page.width } : { width: page.width, height: page.height };
+}
+
+// As edições da pessoa, sem o que fica sob as tarjas.
+const cutEdits = (page) => (page.edits?.length ? redactEdits(page.edits, pageCovers(page), visibleOf(page)) : []);
+
+// O texto escrito por cima das tarjas (replacementEdits, em edit-text.js): vai depois delas e não é cortado.
+const overEdits = (page) => (page.copy ? [] : replacementEdits(pageCovers(page), visibleOf(page)));
+
+// Edições de uma foto ou página de texto: os operadores, os recursos que eles pedem, as tarjas que vão por cima e o
+// texto por cima das tarjas. null sem nada a desenhar.
 function prepareEdits(page) {
   const covers = pageCovers(page);
   const res = resourceCollector();
   const frame = { box: [0, 0, page.width, page.height], rotate: page.jpeg ? 0 : page.rotation ?? 0 };
-  const ops = editsContent(redactedEdits(page), frame, res);
-  return ops ? { ops, res, covers } : null;
+  const ops = editsContent(cutEdits(page), frame, res);
+  const over = editsContent(overEdits(page), frame, res);
+  return ops || over ? { ops, over, res, covers } : null;
 }
 
 // Recursos das edições de uma página, como entradas dos dicionários (" /Ed1 12 0 R"), e o /ExtGState inteiro.
@@ -347,7 +365,7 @@ function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
 
   // Edições das fotos e das páginas de texto: o conteúdo de cada uma e o que ele pede. As fontes entram com as das
   // páginas (uma vez só no arquivo); imagens, formulários e máscaras, uma vez só pela chave, mesmo em várias páginas.
-  const edited = pages.map((page) => (page.copy || !page.edits?.length ? null : prepareEdits(page)));
+  const edited = pages.map((page) => (page.copy || (!page.edits?.length && !overEdits(page).length) ? null : prepareEdits(page)));
   const editIds = new Map();
   for (const prepared of edited) {
     if (!prepared) continue;
@@ -447,7 +465,7 @@ function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
       const pictures = [...new Set(page.items.filter((item) => item.type === 'image').map((item) => item.jpeg))]
         .map((jpeg) => ` ${imageNames.get(jpeg)} ${imageIds.get(jpeg)} 0 R`).join('') + extra.xobjects;
       const rotate = page.rotation ? ` /Rotate ${page.rotation}` : '';
-      const content = textContent(page, fontNames, imageNames, edited[i]?.ops); // só ASCII: o tamanho em caracteres é o tamanho em bytes
+      const content = textContent(page, fontNames, imageNames, edited[i]?.ops, edited[i]?.over); // só ASCII: o tamanho em caracteres é o tamanho em bytes
       object(id,
         `<< /Type /Page /Parent 2 0 R ${mediaBox}${rotate}` +
         ` /Resources <<${fonts ? ` /Font <<${fonts} >>` : ''}${pictures ? ` /XObject <<${pictures} >>` : ''}${extra.states} >> /Contents ${id + 1} 0 R${annots} >>`);
@@ -459,10 +477,11 @@ function assemble(pages, signature, { pdfa = false, fonts = null } = {}) {
     const ocr = page.ocr?.length ? fontNames.get(OCR_FONT) : null;
     let content = `q ${num(w)} 0 0 ${num(h)} ${num(x)} ${num(y)} cm /Im0 Do Q`;
     if (edited[i]) {
-      // Edições por cima da imagem e, por cima delas, as tarjas da imagem de novo (nos pixels elas já estão).
-      const { ops, covers } = edited[i];
-      const boxes = covers.map((r) => coverBox(r.x0 * page.width, (1 - r.y1) * page.height, r.x1 * page.width, (1 - r.y0) * page.height));
-      content += `\n${ops}${boxes.length ? `\nq 0 0 0 rg ${boxes.join(' ')} f Q` : ''}`;
+      // Edições por cima da imagem, por cima delas as tarjas da imagem de novo (nos pixels elas já estão), cada uma
+      // na cor dela, e por cima de tudo o texto escrito nas tarjas.
+      const { ops, over, covers } = edited[i];
+      const boxes = covers.map((r) => `q ${fillOf(r)} rg ${coverBox(r.x0 * page.width, (1 - r.y1) * page.height, r.x1 * page.width, (1 - r.y0) * page.height)} f Q`);
+      content += [ops, ...boxes, over].filter(Boolean).map((part) => `\n${part}`).join('');
     }
     if (ocr) content += `\n${ocrLayer(page.ocr, { box: [x, y, x + w, y + h], width: w, height: h }, ocr)}`; // só ASCII
     const fontEntries = (ocr ? ` ${ocr} ${fontIds.get(OCR_FONT)} 0 R` : '') + extra.fonts;

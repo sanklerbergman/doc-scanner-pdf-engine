@@ -8,7 +8,7 @@
 // A caixa é do tamanho do texto: largura da linha mais comprida e altura das linhas, com uma folga de 0,2 da letra.
 // O tamanho da letra sai da caixa, então mudar o tamanho pelas alças aumenta ou diminui a letra (a proporção fica
 // travada); só quebra linha onde a pessoa quebrou.
-import { registerEditType, editFrame, boxAround, pdfNumber } from './edits.js';
+import { registerEditType, editFrame, boxAround, pdfNumber, paintEdits } from './edits.js';
 import { textWidth, winAnsiCode } from './fonts.js';
 import { t } from './i18n.js';
 
@@ -260,4 +260,76 @@ export function allPagesText(settings, { position, total, size: page }) {
     const y0 = Math.min(1 - height / page.height, Math.max(0, v / page.height));
     return { type: 'text', x0, y0, x1: Math.min(1, x0 + width / page.width), y1: y0 + height / page.height, text, family: 'sans', color: '#000000' };
   });
+}
+
+// ---------- Substituir texto (tarja com texto por cima) ----------
+// A tarja (redact.js) pode levar um texto (rect.text): o que estava embaixo sai, a caixa é pintada e o texto novo vai
+// por cima dela, na cor que contrasta (preto na tarja branca, branco na preta). O texto fica do maior tamanho que cabe
+// na tarja, encostado à esquerda e no meio da altura. A conta não depende da unidade: pontos no PDF, pixels na tela.
+
+/** Cor do texto escrito por cima de uma tarja. */
+export const replacementColor = (rect) => (rect.color === 'white' ? '#000000' : '#ffffff');
+
+/**
+ * As edições de texto escritas por cima das tarjas que têm texto, de 0 a 1 na página como aparece.
+ * @param {Array<{x0: number, y0: number, x1: number, y1: number, color?: string, text?: string}>} rects tarjas na
+ *   página como aparece
+ * @param {{width: number, height: number}} page a página como aparece, em qualquer unidade
+ */
+export function replacementEdits(rects, page) {
+  const out = [];
+  for (const rect of rects ?? []) {
+    const text = String(rect.text ?? '').replace(/\s+$/, '');
+    if (!text.trim()) continue;
+    const [bw, bh] = textBox(text, 'sans', 1);
+    const w = (rect.x1 - rect.x0) * page.width;
+    const h = (rect.y1 - rect.y0) * page.height;
+    const size = Math.min(w / bw, h / bh);
+    if (!(size > 0)) continue;
+    const y0 = rect.y0 + (h - size * bh) / 2 / page.height;
+    out.push({
+      type: 'text', x0: rect.x0, y0, x1: rect.x0 + (size * bw) / page.width, y1: y0 + (size * bh) / page.height,
+      text, family: 'sans', color: replacementColor(rect),
+    });
+  }
+  return out;
+}
+
+/**
+ * Texto por cima das tarjas, num canvas que mostra a página como aparece (as tarjas já pintadas). Só na tela: nos
+ * pixels da foto que vai para o PDF ele não entra, porque o PDF leva o texto como texto (pdf.js).
+ * @param {CanvasRenderingContext2D} ctx
+ */
+export function paintReplacements(ctx, rects, width, height) {
+  const size = { width, height };
+  const edits = replacementEdits(rects, size);
+  if (!edits.length) return;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  paintEdits(ctx, edits, size);
+  ctx.restore();
+}
+
+/**
+ * O texto de uma tarja para mostrar num SVG por cima da caixa dela (telas de tarjar e de editar): as linhas no quadro
+ * da tarja, na unidade de page, com o viewBox do tamanho dela.
+ * @returns {{viewBox: string, size: number, font: string, color: string, lines: Array<{text: string, x: number,
+ *   y: number, width: number}>} | null}
+ */
+export function replacementLayout(rect, page) {
+  const [edit] = replacementEdits([rect], page);
+  if (!edit) return null;
+  const font = textFont(edit.family);
+  const w = (edit.x1 - edit.x0) * page.width;
+  const h = (edit.y1 - edit.y0) * page.height;
+  const { lines, size } = layout(edit, { w, h });
+  const left = (edit.x0 - rect.x0) * page.width;
+  const top = (edit.y0 - rect.y0) * page.height;
+  return {
+    viewBox: `0 0 ${(rect.x1 - rect.x0) * page.width} ${(rect.y1 - rect.y0) * page.height}`,
+    size, font: CSS_FAMILIES[font], color: edit.color,
+    lines: lines.map((line, i) => ({
+      text: line, x: left + PAD * size, y: top + (PAD + i * LINE + BASE) * size, width: textWidth(line, font, size),
+    })).filter((line) => line.text.trim()),
+  };
 }

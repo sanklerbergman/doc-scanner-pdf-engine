@@ -364,11 +364,29 @@
       <button id="edit-apply" type="button" class="btn btn-primary">Apply</button>
     </div>
     <div id="viewer-redact-actions" class="viewer-actions" hidden>
+      <!-- Cor e texto da tarja selecionada (a última criada ou tocada); a cor também vale para as próximas (#24). -->
+      <div class="redact-options" role="group" aria-label="Selected redaction">
+        <button id="redact-black" type="button" class="btn redact-color" data-color="black" aria-pressed="true"><span class="redact-swatch" aria-hidden="true"></span> Black</button>
+        <button id="redact-white" type="button" class="btn redact-color" data-color="white" aria-pressed="false"><span class="redact-swatch redact-swatch-white" aria-hidden="true"></span> White</button>
+        <button id="redact-write" type="button" class="btn">Write on top</button>
+      </div>
       <button id="redact-add" type="button" class="btn">New redaction</button>
       <button id="redact-undo" type="button" class="btn">Undo</button>
       <button id="redact-cancel" type="button" class="btn">Cancel</button>
       <button id="redact-apply" type="button" class="btn btn-primary">Apply redactions</button>
     </div>
+    <!-- Texto escrito por cima da tarja ("Substituir texto", #24): o que estava embaixo sai do PDF, e este texto vai no
+         lugar, do maior tamanho que cabe na tarja. Fica acima do teclado virtual (js/keyboard-panel.js). -->
+    <section id="redact-text-panel" class="text-panel" role="group" aria-labelledby="redact-text-title" hidden>
+      <p id="redact-text-title" class="edit-props-title">Text on top of the redaction</p>
+      <textarea id="redact-text" class="text-input" rows="2" maxlength="500" spellcheck="true" aria-labelledby="redact-text-title" aria-describedby="redact-text-note"></textarea>
+      <p id="redact-text-note" class="field-note" role="status">What is under the redaction is erased from the PDF, and this text goes in its place, as large as fits in it. For smaller letters, make the redaction shorter.</p>
+      <div class="sheet-actions">
+        <button id="redact-text-clear" type="button" class="btn">Remove text</button>
+        <button id="redact-text-cancel" type="button" class="btn">Cancel</button>
+        <button id="redact-text-put" type="button" class="btn btn-primary">Place on redaction</button>
+      </div>
+    </section>
     <!-- Campos do formulário (js/form-panel.js): um por vez, com os controles do navegador, num painel que abre de baixo e
          fica acima do teclado virtual (js/keyboard-panel.js). Nada sai do aparelho: sem name, fora de <form>. -->
     <section id="fill-panel" class="fill-panel" role="group" aria-labelledby="fill-title" hidden>
@@ -448,6 +466,21 @@
         <input id="sign-password" type="password" autocomplete="off" spellcheck="false" maxlength="200">
       </label>
       <p class="muted small">Only the A1 certificate, which is a file, works. Tokens, smart cards (A3) and cloud certificates don't work here: use the certificate authority's program.</p>
+      <!-- Certificado instalado no computador (#25): o navegador não deixa o site usar os certificados do sistema para
+           assinar (só para entrar em site, na conexão). O caminho é exportar o A1 para um arquivo, uma vez. -->
+      <details class="sign-help">
+        <summary>Is the certificate installed on your computer, and you don't have the file?</summary>
+        <p>Browsers don't let any website sign with the certificates installed on your computer. You can export a copy to a file, just once. On Windows:</p>
+        <ol>
+          <li>Press Windows + R, type certmgr.msc and press Enter.</li>
+          <li>Open Personal and then Certificates. Right-click your certificate, then All Tasks and Export.</li>
+          <li>Check "Yes, export the private key". In the .pfx format, also check "Include all certificates in the certification path if possible".</li>
+          <li>Create a strong password, save the file and choose it here, with that password.</li>
+        </ol>
+        <p>On a Mac, use the Keychain Access app: right-click the certificate and choose Export, in the .p12 format.</p>
+        <p>If the option to export the private key is greyed out, the certificate was installed as non-exportable, and only the certificate authority can issue a copy as a file.</p>
+        <p>With the file and the password, anyone can sign in your name: keep it somewhere safe or delete it after signing.</p>
+      </details>
     </div>
     <div id="sign-step-confirm" hidden>
       <dl class="cert-info">

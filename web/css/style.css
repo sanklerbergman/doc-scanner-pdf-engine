@@ -413,6 +413,11 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .sheet p { margin: 0 0 12px; }
 .sheet .field { margin-bottom: 12px; }
 .sheet .tip { margin-bottom: 12px; }
+/* Como exportar o A1 instalado no computador (#25): fechado, uma linha só; aberto, os passos. */
+.sign-help { margin: -4px 0 12px; font-size: 0.92rem; }
+.sign-help summary { cursor: pointer; padding: 10px 0; color: var(--accent); font-weight: 600; }
+.sign-help ol { margin: 0 0 12px; padding-left: 1.4em; }
+.sign-help li { margin-bottom: 6px; }
 .sheet-alert { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-soft); font-size: 0.92rem; }
 .sign-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
 .sign-file .muted { overflow-wrap: anywhere; }
@@ -479,7 +484,8 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .viewer-actions .btn { flex: 1 1 140px; max-width: 260px; }
 
 /* Tarjas: a página do tamanho da tela; as caixas ficam por cima, quase opacas, para ainda dar para ver a borda
-   do que está sendo coberto. No PDF a tarja é preta e apaga o que está embaixo. */
+   do que está sendo coberto. No PDF a tarja é preta ou branca e apaga o que está embaixo; a branca leva a borda
+   tracejada para não sumir no papel. A selecionada (a que a cor e o texto mudam) tem a borda azul. */
 .redact { position: relative; flex: none; touch-action: none; cursor: crosshair; }
 .redact img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; box-shadow: 0 0 0 1px var(--border); }
 .redact-boxes { position: absolute; inset: 0; pointer-events: none; }
@@ -487,8 +493,21 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
   position: absolute; box-sizing: border-box; background: rgb(0 0 0 / 82%); border: 2px solid #f97066;
   pointer-events: auto;
 }
+.redact-box.white { background: rgb(255 255 255 / 90%); border-style: dashed; }
+.redact-box.selected { border-color: var(--accent); }
+/* Com texto escrito por cima, a caixa fica quase opaca: o texto novo não se mistura com o que ela cobre. */
+.redact-box.has-text { background: rgb(0 0 0 / 96%); }
+.redact-box.white.has-text { background: rgb(255 255 255 / 97%); }
 .redact-box:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.redact-box svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .redact-preview { pointer-events: none; background: rgb(0 0 0 / 55%); border-style: dashed; }
+.redact-preview.white { background: rgb(255 255 255 / 60%); }
+/* Cor e texto da tarja: uma linha só acima dos botões. */
+.redact-options { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.redact-options .btn { flex: 0 1 auto; min-width: 0; }
+.redact-color[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.redact-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 3px; background: #000; box-shadow: 0 0 0 1px var(--border); vertical-align: -3px; }
+.redact-swatch-white { background: #fff; }
 /* Remover: alvo de 32 px no canto da tarja, sem depender do tamanho dela. */
 .redact-remove {
   position: absolute; top: -14px; right: -14px; width: 28px; height: 28px; padding: 0;
@@ -506,6 +525,7 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .edit img { display: block; width: 100%; height: 100%; -webkit-user-drag: none; box-shadow: 0 0 0 1px var(--border); }
 .edit-canvas, .edit-cover, .edit-boxes { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .edit-cover > div { position: absolute; background: #000; }
+.edit-cover svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .edit-box { position: absolute; box-sizing: border-box; pointer-events: auto; cursor: move; }
 .edit[data-tool="create"] .edit-box:not(.selected) { cursor: crosshair; }
 /* Alvo maior que a edição: um ✓ pequeno ainda dá para pegar com o dedo. */

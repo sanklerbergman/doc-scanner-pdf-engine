@@ -364,11 +364,29 @@
       <button id="edit-apply" type="button" class="btn btn-primary">Aplicar</button>
     </div>
     <div id="viewer-redact-actions" class="viewer-actions" hidden>
+      <!-- Cor e texto da tarja selecionada (a última criada ou tocada); a cor também vale para as próximas (#24). -->
+      <div class="redact-options" role="group" aria-label="Tarja selecionada">
+        <button id="redact-black" type="button" class="btn redact-color" data-color="black" aria-pressed="true"><span class="redact-swatch" aria-hidden="true"></span> Preta</button>
+        <button id="redact-white" type="button" class="btn redact-color" data-color="white" aria-pressed="false"><span class="redact-swatch redact-swatch-white" aria-hidden="true"></span> Branca</button>
+        <button id="redact-write" type="button" class="btn">Escrever por cima</button>
+      </div>
       <button id="redact-add" type="button" class="btn">Nova tarja</button>
       <button id="redact-undo" type="button" class="btn">Desfazer</button>
       <button id="redact-cancel" type="button" class="btn">Cancelar</button>
       <button id="redact-apply" type="button" class="btn btn-primary">Aplicar tarjas</button>
     </div>
+    <!-- Texto escrito por cima da tarja ("Substituir texto", #24): o que estava embaixo sai do PDF, e este texto vai no
+         lugar, do maior tamanho que cabe na tarja. Fica acima do teclado virtual (js/keyboard-panel.js). -->
+    <section id="redact-text-panel" class="text-panel" role="group" aria-labelledby="redact-text-title" hidden>
+      <p id="redact-text-title" class="edit-props-title">Texto por cima da tarja</p>
+      <textarea id="redact-text" class="text-input" rows="2" maxlength="500" spellcheck="true" aria-labelledby="redact-text-title" aria-describedby="redact-text-note"></textarea>
+      <p id="redact-text-note" class="field-note" role="status">O que está embaixo da tarja é apagado do PDF, e este texto vai no lugar, do maior tamanho que cabe nela. Para a letra ficar menor, deixe a tarja mais baixa.</p>
+      <div class="sheet-actions">
+        <button id="redact-text-clear" type="button" class="btn">Tirar o texto</button>
+        <button id="redact-text-cancel" type="button" class="btn">Cancelar</button>
+        <button id="redact-text-put" type="button" class="btn btn-primary">Pôr na tarja</button>
+      </div>
+    </section>
     <!-- Campos do formulário (js/form-panel.js): um por vez, com os controles do navegador, num painel que abre de baixo e
          fica acima do teclado virtual (js/keyboard-panel.js). Nada sai do aparelho: sem name, fora de <form>. -->
     <section id="fill-panel" class="fill-panel" role="group" aria-labelledby="fill-title" hidden>
@@ -448,6 +466,21 @@
         <input id="sign-password" type="password" autocomplete="off" spellcheck="false" maxlength="200">
       </label>
       <p class="muted small">Só funciona o certificado A1, que é um arquivo. Token, cartão (A3) e certificado em nuvem não funcionam aqui: use o programa da certificadora.</p>
+      <!-- Certificado instalado no computador (#25): o navegador não deixa o site usar os certificados do sistema para
+           assinar (só para entrar em site, na conexão). O caminho é exportar o A1 para um arquivo, uma vez. -->
+      <details class="sign-help">
+        <summary>O certificado está instalado no computador e você não tem o arquivo?</summary>
+        <p>O navegador não deixa nenhum site usar os certificados instalados no computador para assinar. Dá para tirar uma cópia em arquivo, uma vez só. No Windows:</p>
+        <ol>
+          <li>Aperte Windows + R, digite certmgr.msc e aperte Enter.</li>
+          <li>Abra Pessoal e depois Certificados. Clique com o botão direito no seu certificado, depois em Todas as tarefas e em Exportar.</li>
+          <li>Marque "Sim, exportar a chave privada". No formato .pfx, marque também "Incluir todos os certificados no caminho de certificação".</li>
+          <li>Crie uma senha forte, salve o arquivo e escolha ele aqui, com essa senha.</li>
+        </ol>
+        <p>No Mac, o caminho é o app Acesso às Chaves: clique com o botão direito no certificado e em Exportar, no formato .p12.</p>
+        <p>Se a opção de exportar a chave privada estiver apagada, o certificado foi instalado como não exportável, e só a certificadora consegue emitir uma cópia em arquivo.</p>
+        <p>Com o arquivo e a senha, qualquer pessoa assina em seu nome: guarde num lugar seguro ou apague depois de assinar.</p>
+      </details>
     </div>
     <div id="sign-step-confirm" hidden>
       <dl class="cert-info">

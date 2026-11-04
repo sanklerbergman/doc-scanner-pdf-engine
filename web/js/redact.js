@@ -7,18 +7,23 @@
 // Depois de montar, o app relê o PDF novo com o PDF.js e confere que não há texto sob nenhuma tarja
 // (textUnderRedactions); se houver, o PDF não sai.
 //
-// Cada tarja é {x0, y0, x1, y1}, de 0 a 1, na página como ela aparece na tela (depois do giro), com a origem no
-// canto superior esquerdo. Código puro, sem DOM.
+// Cada tarja é {x0, y0, x1, y1, color?, text?}, de 0 a 1, na página como ela aparece na tela (depois do giro), com a
+// origem no canto superior esquerdo. color: 'white' na tarja branca (sem: preta). text: o texto escrito por cima dela
+// ("Substituir texto", #24), que vai como texto no PDF (replacementEdits, em edit-text.js) e é a única coisa que a
+// conferência aceita sob a tarja. Código puro, sem DOM.
 import { ROTATE } from './geometry.js';
 import { textWidth } from './fonts.js';
 
-export const REDACTION_COLOR = '#000';
+/** As cores da tarja, pelo nome guardado nela. */
+export const REDACTION_COLORS = { black: '#000000', white: '#ffffff' };
+/** A cor de uma tarja: branca ou, sem uma cor conhecida, preta. */
+export const redactionColor = (rect) => (rect?.color === 'white' ? REDACTION_COLORS.white : REDACTION_COLORS.black);
 const MIN_SIZE = 0.005; // tarja menor que isso (meio por cento da página) é um toque sem querer
 
-// Retângulo com os cantos em ordem, cortado na página. null se ficar pequeno demais.
-export function normalizeRect({ x0, y0, x1, y1 }) {
+// Retângulo com os cantos em ordem, cortado na página. null se ficar pequeno demais. A cor e o texto ficam.
+export function normalizeRect({ x0, y0, x1, y1, ...extra }) {
   const clamp = (v) => Math.min(1, Math.max(0, v));
-  const rect = { x0: clamp(Math.min(x0, x1)), y0: clamp(Math.min(y0, y1)), x1: clamp(Math.max(x0, x1)), y1: clamp(Math.max(y0, y1)) };
+  const rect = { ...extra, x0: clamp(Math.min(x0, x1)), y0: clamp(Math.min(y0, y1)), x1: clamp(Math.max(x0, x1)), y1: clamp(Math.max(y0, y1)) };
   return rect.x1 - rect.x0 >= MIN_SIZE && rect.y1 - rect.y0 >= MIN_SIZE ? rect : null;
 }
 
@@ -26,7 +31,7 @@ function mapRect(rect, rotation) {
   const map = ROTATE[((rotation % 360) + 360) % 360];
   const a = map([rect.x0, rect.y0]);
   const b = map([rect.x1, rect.y1]);
-  return { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) };
+  return { ...rect, x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) };
 }
 
 /** Tarjas de uma página que acabou de girar `degrees` graus no sentido horário: acompanham o conteúdo. */
@@ -48,8 +53,9 @@ export function paintRedactions(ctx, list, width, height) {
   if (!list?.length) return;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = REDACTION_COLOR;
-  for (const { x0, y0, x1, y1 } of list) {
+  for (const rect of list) {
+    const { x0, y0, x1, y1 } = rect;
+    ctx.fillStyle = redactionColor(rect);
     // Arredonda para fora: nenhum pixel da borda fica meio coberto.
     const left = Math.floor(x0 * width);
     const top = Math.floor(y0 * height);
@@ -63,13 +69,14 @@ export function paintRedactions(ctx, list, width, height) {
  * - Texto: sai letra por letra; o que sobra de cada trecho vira trechos menores, no mesmo lugar. A caixa de cada
  *   letra vai do topo das maiúsculas até abaixo das letras como "g".
  * - Imagem sob a tarja: fica na página, e vem na lista `images` com as áreas a pintar (de 0 a 1 na imagem).
- * - No fim, uma caixa preta ({type: 'redaction'}) por tarja, desenhada por cima de tudo (pdf.js).
+ * - No fim, uma caixa ({type: 'redaction'}, com a cor e o texto da tarja) por tarja, desenhada por cima de tudo
+ *   (pdf.js).
  * @param {{width: number, height: number, items: object[]}} page
  * @param {Array<{x0: number, y0: number, x1: number, y1: number}>} rects tarjas na página antes do giro
  * @returns {{items: object[], images: Array<{item: object, areas: object[]}>}}
  */
 export function redactLayout(page, rects) {
-  const boxes = rects.map(({ x0, y0, x1, y1 }) => ({ x0: x0 * page.width, y0: y0 * page.height, x1: x1 * page.width, y1: y1 * page.height }));
+  const boxes = rects.map(({ x0, y0, x1, y1, ...extra }) => ({ ...extra, x0: x0 * page.width, y0: y0 * page.height, x1: x1 * page.width, y1: y1 * page.height }));
   const items = [];
   const images = [];
   for (const item of page.items) {
@@ -83,6 +90,7 @@ export function redactLayout(page, rects) {
         images.push({
           item: copy,
           areas: hits.map((box) => ({
+            ...(box.color ? { color: box.color } : {}),
             x0: Math.max(0, (box.x0 - item.x) / item.w), y0: Math.max(0, (box.y0 - item.y) / item.h),
             x1: Math.min(1, (box.x1 - item.x) / item.w), y1: Math.min(1, (box.y1 - item.y) / item.h),
           })),
@@ -95,7 +103,7 @@ export function redactLayout(page, rects) {
       items.push(item); // linhas e fundos de tabela: não carregam texto, e a caixa vai por cima
     }
   }
-  for (const box of boxes) items.push({ type: 'redaction', x: box.x0, y: box.y0, w: box.x1 - box.x0, h: box.y1 - box.y0 });
+  for (const { x0, y0, x1, y1, ...extra } of boxes) items.push({ ...extra, type: 'redaction', x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
   return { items, images };
 }
 
@@ -163,16 +171,28 @@ const span = (a, b) => ({ x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1
 /**
  * Conferência: texto que o PDF.js leu no PDF novo e que fica sob alguma tarja. Lista vazia = tudo certo.
  * Conta como "sob a tarja" o trecho que entra nela com pelo menos 30% da altura (encostar na borda não conta).
+ * A exceção é o texto escrito por cima de uma tarja (rect.text): o trecho sob ela que é parte desse texto não conta,
+ * porque é o que a pessoa escreveu e não revela nada do que estava embaixo.
  * @param {Array<{str: string, x0: number, y0: number, x1: number, y1: number, quad?: number[][]}>} boxes texto da
  *   página, de 0 a 1; quad: os quatro cantos do trecho inclinado (pdf-render.js), medido ao longo da linha
  */
 export function textUnderRedactions(boxes, rects) {
-  return boxes.filter((box) => rects.some((rect) => {
-    if (box.quad) return tiltedUnder(box.quad, rect);
-    const width = Math.min(box.x1, rect.x1) - Math.max(box.x0, rect.x0);
-    const height = Math.min(box.y1, rect.y1) - Math.max(box.y0, rect.y0);
-    return width > 0.001 && height > 0.3 * (box.y1 - box.y0);
-  }));
+  return boxes.filter((box) => {
+    const hits = rects.filter((rect) => under(box, rect));
+    if (!hits.length) return false;
+    const str = flat(box.str);
+    return !hits.some((rect) => rect.text && flat(rect.text).includes(str));
+  });
+}
+
+// Espaços e quebras de linha viram um espaço só: o PDF.js lê cada linha do texto novo como um trecho.
+const flat = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
+
+function under(box, rect) {
+  if (box.quad) return tiltedUnder(box.quad, rect);
+  const width = Math.min(box.x1, rect.x1) - Math.max(box.x0, rect.x0);
+  const height = Math.min(box.y1, rect.y1) - Math.max(box.y0, rect.y0);
+  return width > 0.001 && height > 0.3 * (box.y1 - box.y0);
 }
 
 // Trecho inclinado: a parte dele dentro da tarja (o quadrilátero cortado pelas quatro bordas dela), medida ao longo

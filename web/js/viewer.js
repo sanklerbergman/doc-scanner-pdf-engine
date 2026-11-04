@@ -4,8 +4,36 @@
 // (form-panel.js) e copiar o texto da página para a área de transferência.
 import { FULL_QUAD, fromRotated, toRotated, isConvex, isFullFrame } from './geometry.js';
 import { normalizeRect } from './redact.js';
+import { replacementLayout, winAnsiText, droppedMessage } from './edit-text.js';
+import { followKeyboard } from './keyboard-panel.js';
 import { wordCount } from './page-text.js';
 import { t, plural } from './i18n.js';
+
+const SVG = 'http://www.w3.org/2000/svg';
+
+// O texto de uma tarja num SVG do tamanho da caixa dela (replacementLayout, em edit-text.js): na tela, como no PDF.
+// page: o tamanho da página em qualquer unidade (a proporção é o que conta). null sem texto.
+export function replacementSvg(rect, page) {
+  const layout = replacementLayout(rect, page);
+  if (!layout) return null;
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', layout.viewBox);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const line of layout.lines) {
+    const text = document.createElementNS(SVG, 'text');
+    text.setAttribute('x', String(line.x));
+    text.setAttribute('y', String(line.y));
+    text.setAttribute('font-size', String(layout.size));
+    text.setAttribute('font-family', layout.font);
+    text.setAttribute('fill', layout.color);
+    text.setAttribute('textLength', String(line.width));
+    text.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+    text.textContent = line.text;
+    svg.append(text);
+  }
+  return svg;
+}
 
 const $ = (selector) => document.querySelector(selector);
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
@@ -71,6 +99,11 @@ export function setupViewer({
   const redactAdd = $('#redact-add');
   const redactUndo = $('#redact-undo');
   const redactApply = $('#redact-apply');
+  const redactColors = [$('#redact-black'), $('#redact-white')];
+  const redactWrite = $('#redact-write');
+  const textPanel = $('#redact-text-panel');
+  const textInput = $('#redact-text');
+  const textNote = $('#redact-text-note');
   const copyButton = $('#viewer-copy');
   const editButton = $('#viewer-edit');
   const fillButton = $('#viewer-fill');
@@ -80,6 +113,9 @@ export function setupViewer({
   let label = '';
   let points = FULL_QUAD; // cantos sobre a foto girada, de 0 a 1
   let marks = []; // tarjas em edição, de 0 a 1 na página como aparece
+  let current = -1; // a tarja selecionada (a última criada ou tocada): a cor e o texto mudam nela
+  let markColor = 'black'; // a cor das próximas tarjas
+  let stopKeyboard = null; // para de acompanhar o teclado (painel do texto da tarja)
   let token = 0; // invalida renderizações que terminam depois de a pessoa já ter mudado de tela
   let copying = null; // AbortController da cópia do texto em andamento (o OCR pode levar segundos)
   let loupeOwner = null; // ponteiro que arrasta o canto mostrado na lupa
@@ -121,6 +157,7 @@ export function setupViewer({
     cropActions.hidden = true;
     redact.hidden = true;
     redactActions.hidden = true;
+    closeTextPanel(false);
     editor?.close();
     filler?.close();
     viewActions.hidden = false;
@@ -335,6 +372,7 @@ export function setupViewer({
     }
     if (mine !== token) return;
     marks = (page.redactions ?? []).map((rect) => ({ ...rect }));
+    current = marks.length - 1;
     setUrl('redact', redactImage, blob);
     await redactImage.decode().catch(() => {});
     if (mine !== token) return;
@@ -362,16 +400,32 @@ export function setupViewer({
     element.style.height = `${(y1 - y0) * 100}%`;
   };
 
+  // A página das tarjas na unidade da imagem: o texto por cima delas guarda a proporção da página.
+  const redactPage = () => ({ width: redactImage.naturalWidth || 1, height: redactImage.naturalHeight || 1 });
+
+  // O nome da tarja para o leitor de tela: a cor e o texto escrito nela.
+  function markLabel(mark, n) {
+    const color = mark.color === 'white' ? t('branca') : t('preta');
+    const text = mark.text?.trim();
+    return text
+      ? t('Tarja {n}, {color}, com o texto "{text}": as setas movem, Shift e setas mudam o tamanho, Delete remove', { n, color, text })
+      : t('Tarja {n}, {color}: as setas movem, Shift e setas mudam o tamanho, Delete remove', { n, color });
+  }
+
   // Recria as caixas. focus: posição da tarja que recebe o foco (a recém-criada ou a que mexeu pelo teclado).
   function drawMarks(focus = -1) {
+    if (focus >= 0) current = focus;
+    if (current >= marks.length) current = marks.length - 1;
     redactBoxes.replaceChildren(...marks.map((mark, i) => {
       const box = document.createElement('div');
-      box.className = 'redact-box';
+      box.className = `redact-box${mark.color === 'white' ? ' white' : ''}${mark.text?.trim() ? ' has-text' : ''}${i === current ? ' selected' : ''}`;
       box.tabIndex = 0;
       box.dataset.index = i;
       box.setAttribute('role', 'group');
-      box.setAttribute('aria-label', t('Tarja {n}: as setas movem, Shift e setas mudam o tamanho, Delete remove', { n: i + 1 }));
+      box.setAttribute('aria-label', markLabel(mark, i + 1));
       place(box, mark);
+      const svg = replacementSvg(mark, redactPage());
+      if (svg) box.append(svg);
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'redact-remove';
@@ -382,11 +436,27 @@ export function setupViewer({
       return box;
     }));
     redactUndo.disabled = !marks.length;
+    showOptions();
     if (focus >= 0) redactBoxes.children[focus]?.focus();
+  }
+
+  // Os botões da cor mostram a da tarja selecionada (ou a das próximas, sem seleção); "Escrever por cima" pede uma.
+  function showOptions() {
+    const color = marks[current]?.color === 'white' || (current < 0 && markColor === 'white') ? 'white' : 'black';
+    for (const button of redactColors) button.setAttribute('aria-pressed', String(button.dataset.color === color));
+    redactWrite.disabled = current < 0;
+  }
+
+  function selectMark(index) {
+    current = index;
+    for (const box of redactBoxes.children) box.classList.toggle('selected', Number(box.dataset.index) === index);
+    showOptions();
   }
 
   function removeMark(index) {
     marks.splice(index, 1);
+    if (current >= index) current -= 1;
+    if (current < 0 && marks.length) current = 0;
     drawMarks(Math.min(index, marks.length - 1));
     if (!marks.length) redactAdd.focus();
     hint.textContent = marks.length ? t('Tarja removida. Ficam {n}.', { n: marks.length }) : t('Tarja removida. Nenhuma tarja nesta página.');
@@ -402,8 +472,10 @@ export function setupViewer({
     event.preventDefault();
     redact.setPointerCapture(event.pointerId);
     const { x, y } = pointIn(event);
-    drawing = { id: event.pointerId, x, y };
+    const box = event.target.closest('.redact-box:not(.redact-preview)');
+    drawing = { id: event.pointerId, x, y, box: box ? Number(box.dataset.index) : -1 };
     place(redactPreview, { x0: x, y0: y, x1: x, y1: y });
+    redactPreview.classList.toggle('white', markColor === 'white');
     redactPreview.hidden = false;
   });
   redact.addEventListener('pointermove', (event) => {
@@ -414,11 +486,20 @@ export function setupViewer({
   redact.addEventListener('pointerup', (event) => {
     if (drawing?.id !== event.pointerId) return;
     const { x, y } = pointIn(event);
-    const rect = normalizeRect({ x0: drawing.x, y0: drawing.y, x1: x, y1: y });
+    const rect = normalizeRect({ x0: drawing.x, y0: drawing.y, x1: x, y1: y, ...newColor() });
+    const tapped = drawing.box;
     drawing = null;
     redactPreview.hidden = true;
-    if (!rect) return; // toque sem arrastar
+    if (!rect) {
+      // Toque sem arrastar: numa tarja, seleciona (para mudar a cor ou escrever nela).
+      if (tapped >= 0) {
+        selectMark(tapped);
+        hint.textContent = t('Tarja {n} selecionada: escolha a cor ou toque em "Escrever por cima".', { n: tapped + 1 });
+      }
+      return;
+    }
     marks.push(rect);
+    current = marks.length - 1;
     drawMarks();
     hint.textContent = plural(marks.length, '{n} tarja marcada. Toque em "Aplicar tarjas" quando terminar.', '{n} tarjas marcadas. Toque em "Aplicar tarjas" quando terminar.');
   });
@@ -452,23 +533,94 @@ export function setupViewer({
       // Move sem sair da página e sem mudar o tamanho.
       const dx = Math.min(1 - mark.x1, Math.max(-mark.x0, move[0]));
       const dy = Math.min(1 - mark.y1, Math.max(-mark.y0, move[1]));
-      next = { x0: mark.x0 + dx, y0: mark.y0 + dy, x1: mark.x1 + dx, y1: mark.y1 + dy };
+      next = { ...mark, x0: mark.x0 + dx, y0: mark.y0 + dy, x1: mark.x1 + dx, y1: mark.y1 + dy };
     }
     if (next) marks[index] = next;
     drawMarks(index);
   });
 
+  redactBoxes.addEventListener('focusin', (event) => {
+    const box = event.target.closest('.redact-box');
+    if (box) selectMark(Number(box.dataset.index));
+  });
+
+  // A tarja nova leva a cor escolhida (sem nada: preta).
+  const newColor = () => (markColor === 'white' ? { color: 'white' } : {});
+
   redactAdd.addEventListener('click', () => {
-    marks.push({ x0: 0.3, y0: 0.45, x1: 0.7, y1: 0.55 });
+    marks.push({ x0: 0.3, y0: 0.45, x1: 0.7, y1: 0.55, ...newColor() });
     drawMarks(marks.length - 1);
     hint.textContent = t('Tarja criada no meio da página: use as setas para mover e Shift e setas para mudar o tamanho.');
   });
   redactUndo.addEventListener('click', () => {
     if (!marks.length) return;
     marks.pop();
+    current = marks.length - 1;
     drawMarks();
     hint.textContent = marks.length ? t('Última tarja desfeita.') : t('Última tarja desfeita. Nenhuma tarja nesta página.');
   });
+  // Cor: muda a tarja selecionada e fica para as próximas.
+  for (const button of redactColors) {
+    button.addEventListener('click', () => {
+      markColor = button.dataset.color;
+      const mark = marks[current];
+      if (mark) {
+        if (markColor === 'white') mark.color = 'white';
+        else delete mark.color;
+        drawMarks();
+      } else {
+        showOptions();
+      }
+      hint.textContent = markColor === 'white'
+        ? t('Tarja branca: o que fica embaixo é apagado do mesmo jeito, mas quem recebe o PDF não vê que algo foi tirado.')
+        : t('Tarja preta.');
+    });
+  }
+
+  // Escrever por cima: o painel abre com o texto da tarja selecionada.
+  function openTextPanel() {
+    const mark = marks[current];
+    if (!mark) return;
+    textInput.value = mark.text ?? '';
+    textNote.textContent = t('O que está embaixo da tarja é apagado do PDF, e este texto vai no lugar, do maior tamanho que cabe nela. Para a letra ficar menor, deixe a tarja mais baixa.');
+    textPanel.hidden = false;
+    stopKeyboard?.();
+    stopKeyboard = followKeyboard(textPanel);
+    textInput.focus();
+  }
+
+  // focus: devolve o foco à tarja (fechar pelo Cancelar ou pelo "Pôr na tarja").
+  function closeTextPanel(focus = true) {
+    if (textPanel.hidden) return;
+    textPanel.hidden = true;
+    stopKeyboard?.();
+    stopKeyboard = null;
+    if (focus) (redactBoxes.children[current] ?? redactWrite).focus();
+  }
+
+  function setMarkText(value) {
+    const mark = marks[current];
+    if (!mark) return;
+    const { text, dropped } = winAnsiText(value);
+    const clean = text.replace(/\s+$/, '');
+    if (clean.trim()) mark.text = clean;
+    else delete mark.text;
+    closeTextPanel(false);
+    drawMarks(current);
+    const note = droppedMessage(dropped);
+    hint.textContent = (mark.text ? t('Texto posto na tarja {n}.', { n: current + 1 }) : t('Texto tirado da tarja {n}.', { n: current + 1 }))
+      + (note ? ` ${note}` : '');
+  }
+
+  redactWrite.addEventListener('click', openTextPanel);
+  $('#redact-text-put').addEventListener('click', () => setMarkText(textInput.value));
+  $('#redact-text-clear').addEventListener('click', () => setMarkText(''));
+  $('#redact-text-cancel').addEventListener('click', () => closeTextPanel());
+  textInput.addEventListener('input', () => {
+    textNote.textContent = droppedMessage(winAnsiText(textInput.value).dropped)
+      || t('O que está embaixo da tarja é apagado do PDF, e este texto vai no lugar, do maior tamanho que cabe nela. Para a letra ficar menor, deixe a tarja mais baixa.');
+  });
+
   const redactDirty = () => !redact.hidden && JSON.stringify(marks) !== JSON.stringify(page?.redactions ?? []);
   $('#redact-cancel').addEventListener('click', () => leaveIfSure(showView));
   redactApply.addEventListener('click', async () => {
@@ -610,6 +762,11 @@ export function setupViewer({
   // cancelado não chega a fechar a tela; o cancel é a reserva, para o navegador que fechar mesmo assim.
   dialog.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || !dialog.open) return;
+    if (!textPanel.hidden) { // o painel do texto da tarja fecha antes
+      event.preventDefault();
+      closeTextPanel();
+      return;
+    }
     if ((editor?.active() && editor.escape()) || (filler?.active() && filler.escape())) {
       event.preventDefault();
       return;
@@ -792,6 +949,7 @@ export function setupViewer({
     redactImage.removeAttribute('src');
     redact.hidden = true;
     redactActions.hidden = true;
+    closeTextPanel(false);
     marks = [];
     editor?.close();
     filler?.close();
