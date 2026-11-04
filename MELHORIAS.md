@@ -1270,4 +1270,4 @@ Pedido do dono em 2026-11-04 (#24): a tarja saía sempre preta, e a maioria dos 
 
 - [x] `test/redact-replace.test.js`: cor e texto passando pelo corte, giro e layout do Word; pixels na cor de cada tarja; tamanho e posição do texto; Word e foto com a caixa na cor certa e o texto depois dela; conferência aceitando só o texto escrito; letras no PDF/A
 - [x] No Chromium (Playwright, `scripts/serve.js`), com o PDF.js de verdade: o texto escrito sai num trecho separado do resto da linha (não se junta a "CPF:"), e a conferência passa; foto e Word com tarja branca e texto, do "Tarjar" ao PDF baixado, sem o CPF no arquivo
-- [ ] No iPhone 16e, no site publicado
+- [x] No iPhone 16e, no site publicado. Conferido pelo dono na v5.0.1 (2026-11-04)
