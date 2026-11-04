@@ -185,7 +185,7 @@ export default {
     'With the file and the password, anyone can sign in your name: keep it somewhere safe or delete it after signing.',
   'ou': 'or',
   ') e digite a senha dele. O arquivo e a senha ficam só aqui no aparelho e não são guardados: na próxima vez, o app pede de novo.':
-    'file) and enter its password. The file and the password stay only here on the device and are not kept: next time, the app asks again.',
+    ' file) and enter its password. The file and the password stay only here on the device and are not kept: next time, the app asks again.',
   'Escolher o certificado': 'Choose the certificate',
   'Nenhum arquivo escolhido': 'No file chosen',
   'Senha do certificado': 'Certificate password',
