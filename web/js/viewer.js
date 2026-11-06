@@ -414,7 +414,7 @@ export function setupViewer({
   }
 
   // ---------- Tarjas ----------
-  // Arrastar sobre a página marca um retângulo. Pelo teclado: "Nova tarja" cria uma no meio da página, as setas
+  // Arrastar sobre a página marca um retângulo; arrastar uma tarja move ela, e a alça do canto muda o tamanho. Pelo teclado: "Nova tarja" cria uma no meio da página, as setas
   // movem, Shift e setas mudam o tamanho, e Delete remove. Sem arrastar nem teclado: "Nova tarja" e as setas das
   // opções da tarja selecionada (edit-nudge.js), que fazem o mesmo. Nada muda na página até "Aplicar tarjas".
 
@@ -516,6 +516,11 @@ export function setupViewer({
       remove.textContent = '×';
       remove.setAttribute('aria-label', t('Remover a tarja {n}', { n: i + 1 }));
       box.append(remove);
+      // Alça de tamanho (canto de baixo à direita): só aparece na tarja selecionada; arrastar muda o tamanho.
+      const grip = document.createElement('span');
+      grip.className = 'redact-grip';
+      grip.setAttribute('aria-hidden', 'true');
+      box.append(grip);
       return box;
     }));
     redactUndo.disabled = !marks.length;
@@ -551,37 +556,65 @@ export function setupViewer({
     const box = redact.getBoundingClientRect();
     return { x: (event.clientX - box.left) / box.width, y: (event.clientY - box.top) / box.height };
   };
+  // Arrastar uma tarja que já existe move ela (com o texto escrito por cima); a alça do canto muda o tamanho. Um toque
+  // sem arrastar seleciona. Fora das tarjas, arrastar marca uma nova.
+  const DRAG_MIN = 6; // px: abaixo disso é toque, não arrasto
+  let dragging = null; // {id, index, kind: 'move'|'grow', x, y, cx, cy, start, moved}
   redact.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('.redact-remove') || drawing) return;
+    if (event.target.closest('.redact-remove') || drawing || dragging) return;
     event.preventDefault();
     redact.setPointerCapture(event.pointerId);
     const { x, y } = pointIn(event);
     const box = event.target.closest('.redact-box:not(.redact-preview)');
-    drawing = { id: event.pointerId, x, y, box: box ? Number(box.dataset.index) : -1 };
+    if (box) {
+      const index = Number(box.dataset.index);
+      const kind = event.target.closest('.redact-grip') && index === current ? 'grow' : 'move';
+      dragging = { id: event.pointerId, index, kind, x, y, cx: event.clientX, cy: event.clientY, start: { ...marks[index] }, moved: false };
+      return;
+    }
+    drawing = { id: event.pointerId, x, y };
     place(redactPreview, { x0: x, y0: y, x1: x, y1: y });
     redactPreview.classList.toggle('white', markColor === 'white');
     redactPreview.hidden = false;
   });
   redact.addEventListener('pointermove', (event) => {
+    if (dragging?.id === event.pointerId) {
+      if (!dragging.moved && Math.hypot(event.clientX - dragging.cx, event.clientY - dragging.cy) < DRAG_MIN) return;
+      if (!dragging.moved) {
+        dragging.moved = true;
+        selectMark(dragging.index);
+      }
+      const { x, y } = pointIn(event);
+      const { start } = dragging;
+      marks[dragging.index] = start;
+      nudgeMark(dragging.index, dragging.kind, x - dragging.x, y - dragging.y);
+      place(redactBoxes.children[dragging.index], marks[dragging.index]);
+      return;
+    }
     if (drawing?.id !== event.pointerId) return;
     const { x, y } = pointIn(event);
     place(redactPreview, { x0: Math.min(x, drawing.x), y0: Math.min(y, drawing.y), x1: Math.max(x, drawing.x), y1: Math.max(y, drawing.y) });
   });
   redact.addEventListener('pointerup', (event) => {
+    if (dragging?.id === event.pointerId) {
+      const { index, kind, moved } = dragging;
+      dragging = null;
+      if (!moved) {
+        // Toque sem arrastar: seleciona (para mudar a cor, escrever nela ou ajustar).
+        selectMark(index);
+        hint.textContent = t('Tarja {n} selecionada: arraste para mover, ou pela alça do canto para mudar o tamanho.', { n: index + 1 });
+        return;
+      }
+      drawMarks(index);
+      hint.textContent = kind === 'move' ? t('Tarja {n} movida.', { n: index + 1 }) : t('Tarja {n}: tamanho mudado.', { n: index + 1 });
+      return;
+    }
     if (drawing?.id !== event.pointerId) return;
     const { x, y } = pointIn(event);
     const rect = normalizeRect({ x0: drawing.x, y0: drawing.y, x1: x, y1: y, ...newColor() });
-    const tapped = drawing.box;
     drawing = null;
     redactPreview.hidden = true;
-    if (!rect) {
-      // Toque sem arrastar: numa tarja, seleciona (para mudar a cor ou escrever nela).
-      if (tapped >= 0) {
-        selectMark(tapped);
-        hint.textContent = t('Tarja {n} selecionada: escolha a cor ou toque em "Escrever por cima".', { n: tapped + 1 });
-      }
-      return;
-    }
+    if (!rect) return; // toque fora das tarjas, sem arrastar: nada
     marks.push(rect);
     current = marks.length - 1;
     drawMarks();
@@ -591,6 +624,12 @@ export function setupViewer({
   function cancelDrawing() {
     drawing = null;
     redactPreview.hidden = true;
+    if (dragging) {
+      // O arrasto da tarja também é desfeito: ela volta para onde estava.
+      marks[dragging.index] = dragging.start;
+      dragging = null;
+      drawMarks();
+    }
   }
   redact.addEventListener('pointercancel', cancelDrawing);
 

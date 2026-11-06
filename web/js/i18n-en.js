@@ -474,7 +474,6 @@ export default {
     'Redaction {n}, {color}, with the text "{text}": arrow keys move it, Shift and arrow keys resize it, Delete removes it',
   'Tarja {n}, {color}: as setas movem, Shift e setas mudam o tamanho, Delete remove':
     'Redaction {n}, {color}: arrow keys move it, Shift and arrow keys resize it, Delete removes it',
-  'Tarja {n} selecionada: escolha a cor ou toque em "Escrever por cima".': 'Redaction {n} selected: pick the color or tap "Write on top".',
   'Tarja branca: o que fica embaixo é apagado do mesmo jeito, mas quem recebe o PDF não vê que algo foi tirado.':
     'White redaction: what is underneath is erased all the same, but whoever gets the PDF cannot see that something was removed.',
   'Tarja preta.': 'Black redaction.',
@@ -851,4 +850,5 @@ export default {
   'PDF/A: ligado': 'PDF/A: on',
   'PDF/A: desligado': 'PDF/A: off',
   'sem senha': 'no password',
+  'Tarja {n} selecionada: arraste para mover, ou pela alça do canto para mudar o tamanho.': 'Redaction {n} selected: drag to move it, or drag the corner handle to resize it.',
 };
