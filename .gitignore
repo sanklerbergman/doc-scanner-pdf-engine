@@ -2,3 +2,10 @@ node_modules/
 .DS_Store
 Thumbs.db
 .wrangler/
+
+# Impeccable: só o durável (config.json, surfaces/, design.json) vai para o git
+.impeccable/mocks/
+.impeccable/review/
+.impeccable/critique/
+.impeccable/questions/
+.impeccable/hook.cache.json

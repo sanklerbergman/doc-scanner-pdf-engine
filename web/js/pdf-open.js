@@ -304,7 +304,7 @@ export function drawPdfCard(page, { maxSide, rotation = 0, number }) {
   const x = (canvas.width - boxW) / 2;
   const y = (canvas.height - boxH) / 2;
   ctx.fillStyle = '#fff';
-  ctx.strokeStyle = '#0f766e';
+  ctx.strokeStyle = '#2b4fe0';
   ctx.lineWidth = Math.max(2, unit * 0.012);
   ctx.beginPath();
   ctx.roundRect(x, y, boxW, boxH, unit * 0.04);
@@ -312,10 +312,10 @@ export function drawPdfCard(page, { maxSide, rotation = 0, number }) {
   ctx.stroke();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#0f766e';
+  ctx.fillStyle = '#2b4fe0';
   ctx.font = `bold ${unit * 0.09}px system-ui, sans-serif`;
   ctx.fillText('PDF', canvas.width / 2, y + boxH * 0.24);
-  ctx.fillStyle = '#16191d';
+  ctx.fillStyle = '#0b0c10';
   ctx.font = `bold ${unit * 0.12}px system-ui, sans-serif`;
   ctx.fillText(t('pág. {n}', { n: number }), canvas.width / 2, y + boxH * 0.55);
   ctx.fillStyle = '#5b6470';

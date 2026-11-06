@@ -45,7 +45,6 @@ const MARGINS = { none: 0, small: 18, normal: 36 };
 const PREVIEW_SIDE = 1280; // cópia reduzida guardada em memória (miniaturas, detecção do papel, tela de recorte)
 const THUMB_SIDE = 960; // no celular a miniatura ocupa a largura da tela, em tela de alta densidade
 const VIEW_SIDE = 2000; // página em tela cheia
-const UNDO_MS = 10000; // tempo para desfazer a remoção de uma página
 // OCR: a imagem do PDF serve quando o lado maior está entre 2000 e 3500 px; abaixo disso (qualidade Leve), a foto é
 // desenhada de novo com 2400 px, só para o OCR. Medido em 10 fotos de documento (2026-10-17): o tempo de leitura
 // cresce bem menos que os pixels (1600 → 2400 px: +19%; 2400 → 3500: +30%), e o texto certo, pouco (99,2%, 99,3% e
@@ -82,6 +81,10 @@ const loadAppend = lazy('./pdf-append.js'); // assinar um PDF que já existe sem
 const loadCrypt = lazy('./pdf-crypt.js'); // proteger o PDF gerado com senha
 const loadPdfaFonts = lazy('./pdfa-fonts.js'); // PDF/A com Word ou carimbo: as fontes embutidas (vendor/liberation)
 
+// No Mac, os atalhos usam ⌘ no lugar do Ctrl.
+const IS_MAC = /mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || '');
+const UNDO_KEY = IS_MAC ? '⌘Z' : 'Ctrl+Z';
+
 const $ = (selector) => document.querySelector(selector);
 const els = {
   dropzone: $('#dropzone'),
@@ -92,6 +95,7 @@ const els = {
   workspace: $('#workspace'),
   pages: $('#pages'),
   count: $('#page-count'),
+  pagesTotal: $('#pages-total'),
   clear: $('#clear'),
   filterAll: $('#filter-all'),
   pageSize: $('#page-size'),
@@ -111,6 +115,7 @@ const els = {
   documentNote: $('#document-note'),
   outputMode: $('#output-mode'),
   ranges: $('#ranges'),
+  rangesError: $('#ranges-error'),
   rangesField: $('#ranges-field'),
   resultTitle: $('#result-title'),
   resultFiles: $('#result-files'),
@@ -152,6 +157,8 @@ const els = {
   protectInputs: $('#protect-inputs'),
   protectPassword: $('#protect-password'),
   protectConfirm: $('#protect-confirm'),
+  protectPasswordError: $('#protect-password-error'),
+  protectConfirmError: $('#protect-confirm-error'),
   pdfPasswordDialog: $('#pdf-password'),
   pdfPasswordName: $('#pdf-password-name'),
   pdfPasswordInput: $('#pdf-password-input'),
@@ -170,6 +177,21 @@ const els = {
   allPages: $('#all-pages'),
   allPagesOptions: $('#all-pages-options'),
   allPagesPreview: $('#all-pages-preview'),
+  resultChecks: $('#result-checks'),
+  resultNotes: $('#result-notes'),
+  dock: $('#dock'),
+  dockBar: $('#dock-bar'),
+  dockSummary: $('#dock-summary'),
+  dockChange: $('#dock-change'),
+  statusDismiss: $('#status-dismiss'),
+  settingsTitle: $('#settings-title'),
+  moreLook: $('#more-look'),
+  moreLookState: $('#more-look-state'),
+  moreAll: $('#more-all'),
+  moreAllState: $('#more-all-state'),
+  moreOcr: $('#more-ocr'),
+  moreOcrState: $('#more-ocr-state'),
+  moreSecureState: $('#more-secure-state'),
 };
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
@@ -192,19 +214,74 @@ const allPages = setupAllPages({
   changed() {
     discardPdf();
     drawAllPagesPreview();
+    updateSummaries();
   },
 });
+
+// Texto do aviso de PDF pesado que acabou de aparecer e ainda não foi lido pelo #status (updateCompressTip, addFiles).
+let compressTipNews = '';
 
 function announce(message, kind = 'info') {
   els.status.textContent = message;
   els.status.dataset.kind = kind;
 }
 
+// ---------- Erro ligado ao campo ----------
+// O erro aparece junto do campo e fica ligado a ele (aria-describedby), com aria-invalid: quem usa leitor de tela
+// ouve a mensagem quando o foco chega ao campo, mesmo sem a região de aviso. As descrições que o campo já tinha
+// continuam. Some quando a pessoa digita de novo no campo.
+
+const fieldErrors = new Map(); // campo → { note, message, wasHidden }
+// A mesma função para todos: o navegador não registra duas vezes o mesmo ouvinte no mesmo campo.
+const onFieldInput = (event) => clearFieldError(event.currentTarget);
+
+/**
+ * Mostra o erro na mensagem `note` e liga ao `control`. Em botão (que não tem aria-invalid), só a ligação.
+ * @param {HTMLElement} control o campo com o problema
+ * @param {HTMLElement} note a mensagem: um <p> logo abaixo do campo, ou o aviso da janela (#sign-status)
+ * @param {string} message
+ */
+function fieldError(control, note, message) {
+  reveal(control);
+  clearFieldError(control);
+  fieldErrors.set(control, { note, message, wasHidden: note.hidden });
+  note.textContent = message;
+  note.dataset.kind = 'error';
+  note.hidden = false;
+  if (control.matches('input, select, textarea')) control.setAttribute('aria-invalid', 'true');
+  const ids = (control.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+  control.setAttribute('aria-describedby', [...ids.filter((id) => id !== note.id), note.id].join(' '));
+  control.addEventListener('input', onFieldInput);
+}
+
+/** Tira o erro do campo: aria-invalid, a ligação com a mensagem e o texto dela. */
+function clearFieldError(control) {
+  const error = fieldErrors.get(control);
+  if (!error) return;
+  fieldErrors.delete(control);
+  const { note, message, wasHidden } = error;
+  control.removeAttribute('aria-invalid');
+  const ids = (control.getAttribute('aria-describedby') ?? '').split(/\s+/).filter((id) => id && id !== note.id);
+  if (ids.length) control.setAttribute('aria-describedby', ids.join(' '));
+  else control.removeAttribute('aria-describedby');
+  // A mensagem pode ter sido trocada por outro aviso nesse meio-tempo (#sign-status): aí o aviso novo fica.
+  if (note.textContent === message) {
+    note.textContent = '';
+    note.dataset.kind = 'info';
+  }
+  note.hidden = wasHidden;
+}
+
+// Ajuste dentro de uma seção recolhida (<details>): a seção abre antes de o foco ir para ele.
+function reveal(control) {
+  for (let section = control.closest('details'); section; section = section.parentElement?.closest('details')) section.open = true;
+}
+
 // Cria um elemento. Chaves "aria-*" e "data-*" viram atributos; o resto, propriedades.
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
-    if (/^(aria|data)-/.test(key)) node.setAttribute(key, value);
+    if (/^(aria|data)-|^role$/.test(key)) node.setAttribute(key, value);
     else node[key] = value;
   }
   node.append(...children);
@@ -239,6 +316,8 @@ async function addFiles(fileList) {
     return;
   }
   discardPdf();
+  finishUndo(); // a lista vai mudar: a última remoção não volta mais
+  compressTipNews = '';
   const failed = [];
   const documentMessages = [];
   const documentErrors = [];
@@ -272,6 +351,9 @@ async function addFiles(fileList) {
   if (failed.length) messages.push(t('Não consegui abrir: {names}. Tente exportar como JPG ou PNG.', { names: failed.join(', ') }));
   else if (images) messages.push(imagesMessage(images, cropped));
   messages.push(...documentErrors, ...documentMessages);
+  // O aviso de PDF pesado acabou de aparecer e nenhuma mensagem acima falou dele: vai junto, uma vez só.
+  if (compressTipNews) messages.push(compressTipNews);
+  compressTipNews = '';
   announce(messages.join(' '), failed.length || documentErrors.length ? 'error' : 'info');
 }
 
@@ -362,6 +444,7 @@ async function addPdfFile(file) {
       els.pdfCompress.value = 'light';
       compress = t('É um PDF pesado ({size}): deixei a compressão das imagens ligada, para o arquivo ficar bem menor.', { size: formatBytes(file.size) });
       updateCompressTip();
+      compressTipNews = ''; // a mensagem acima já diz
     }
     return { message: [`${file.name}: ${count}.`, compress, ...notes].filter(Boolean).join(' ') };
   } catch (err) {
@@ -622,11 +705,15 @@ els.qualityTipApply.addEventListener('click', () => {
   els.quality.focus();
 });
 
+// Menu "Mais ações" aberto: o id da página (a lista é recriada a cada mudança, e o menu continua aberto nela).
+let openMenu = null;
+
 function renderPages() {
   updateQualityTip();
   const total = state.pages.length;
   els.workspace.hidden = total === 0;
-  els.count.textContent = total ? `(${total})` : '';
+  els.dockBar.hidden = total === 0;
+  els.count.textContent = total ? plural(total, '{n} página', '{n} páginas') : '';
 
   // Filtro, tamanho, margem e qualidade só valem para fotos: documento do Word e PDF seguem o próprio arquivo.
   const hasPhotos = state.pages.some(isPhoto);
@@ -639,53 +726,106 @@ function renderPages() {
   updateCompressTip();
   els.rangesField.hidden = els.outputMode.value !== 'ranges';
   renderOutputPreview();
+  updateSummaries();
 
-  // Cartão: miniatura; alça de arrastar, número e remover (longe dos outros botões); mover ← → e girar; filtro.
-  // Página de documento ou de PDF: no lugar do recorte e do filtro, de qual arquivo ela veio.
-  // A alça fica fora do Tab e do leitor de tela: os botões ← e → fazem o mesmo pelo teclado.
+  // Linha do total no pé do recibo: só o que o app sabe de verdade (o tamanho do PDF só existe depois de gerar).
+  els.pagesTotal.replaceChildren(...(total ? [el('span', { textContent: t('Total') }), el('b', { textContent: plural(total, '{n} página', '{n} páginas') })] : []));
+
+  // Item do recibo: número (01, 02…), miniatura (abre a tela cheia), nome e meta em mono, Tarjar e Editar à mão; a
+  // alça de arrastar e o botão "Mais ações", que abre o menu do item (recorte, mover ← →, girar, filtro e remover).
+  // Mover por botão fica no menu: é a alternativa ao arrasto (WCAG 2.5.7). A alça fica fora do Tab e do leitor de
+  // tela. O número desenhado não é lido: o leitor ouve "Página 2 de 3" no começo do nome.
+  if (!state.pages.some((page) => page.id === openMenu)) openMenu = null;
+  const dialogOpen = !!document.querySelector('dialog[open]');
   els.pages.replaceChildren(...state.pages.map((page, i) => {
-    const button = (action, label, disabled = false) => el('button', {
-      type: 'button', className: `icon-btn icon-btn-${action}`, title: label, disabled: disabled || state.busy,
-      'aria-label': t('{label} (página {n})', { label, n: i + 1 }), 'data-action': action,
-    }, [icon(action)]);
     const doc = !isPhoto(page);
+    // Botão do menu: texto visível, e o nome começa por ele e diz de que página é.
+    const button = (action, iconName, label, disabled = false) => el('button', {
+      type: 'button', className: `btn page-menu-btn page-menu-${action}`, disabled: disabled || state.busy,
+      'aria-label': t('{label} (página {n})', { label, n: i + 1 }), 'data-action': action,
+    }, [icon(iconName), ` ${label}`]);
+    // Tarjar e Editar à mão no item: abrem a tela cheia já no modo. O nome começa pelo texto visível.
+    const mode = (action, iconName, label) => el('button', {
+      type: 'button', className: `btn page-mode page-mode-${action}`, 'data-action': action, disabled: state.busy,
+      'aria-label': t('{label}, página {n}', { label, n: i + 1 }),
+    }, [icon(iconName), ` ${label}`]);
+    const menuId = `page-menu-${page.id}`;
+    const open = openMenu === page.id;
 
-    return el('li', { className: 'page-card', 'data-id': page.id }, [
+    // Carimbo "Tarjado": batido uma vez só, quando aparece com a tela cheia já fechada (a página tarjada lá dentro
+    // ganha o carimbo ao voltar para a lista, em viewer onClose).
+    let stamp = [];
+    if (!page.redactions?.length) page.stamped = false;
+    else {
+      const strike = !page.stamped && !dialogOpen;
+      if (strike) page.stamped = true;
+      stamp = [el('span', { className: `stamp stamp-sm page-stamp${strike ? ' stamp-in' : ''}`, textContent: t('Tarjado') })];
+    }
+
+    const meta = doc
+      ? [
+        // "PDF · pág. 2 de 5" na tela; o leitor de tela lê "PDF, página 2 de 5".
+        el('span', { textContent: `${page.kind === 'pdf' ? 'PDF' : 'Word'} · ${t('pág. {n} de {total}', { n: page.number, total: page.total })}`, 'aria-hidden': 'true' }),
+        el('span', { className: 'sr-only', textContent: `${page.kind === 'pdf' ? 'PDF' : 'Word'}${t(', página {n} de {total}', { n: page.number, total: page.total })}` }),
+      ]
+      : [el('span', { textContent: [t('Foto'), fileType(page.file), page.file?.size ? formatBytes(page.file.size) : ''].filter(Boolean).join(' · ') })];
+
+    return el('li', { className: `page-card${open ? ' menu-open' : ''}`, 'data-id': page.id }, [
+      el('span', { className: 'page-num', textContent: String(i + 1).padStart(2, '0'), 'aria-hidden': 'true' }),
       el('button', {
         type: 'button', className: 'thumb', 'data-action': 'view', disabled: state.busy,
         'aria-label': doc ? t('Ver a página {n} em tela cheia', { n: i + 1 }) : t('Ver a página {n} em tela cheia e ajustar o recorte', { n: i + 1 }),
-      }, [el('img', { src: page.thumbUrl, alt: '' }), el('span', { className: 'thumb-zoom' }, [icon('expand')])]),
-      doc
-        ? el('p', { className: 'page-source', title: page.name }, [
-          icon('file'), el('span', { className: 'page-source-name', textContent: page.name }),
-          el('span', { textContent: ` · ${page.number}/${page.total}`, 'aria-label': t(', página {n} de {total}', { n: page.number, total: page.total }) }),
-        ])
-        // Botão com texto: o recorte é o ajuste que mais muda o resultado e não pode ficar escondido atrás da miniatura.
-        : el('button', {
-          type: 'button', className: 'btn btn-crop', 'data-action': 'crop', disabled: state.busy,
-          'aria-label': t('Ajustar o recorte da página {n}', { n: i + 1 }),
-        }, [icon('crop'), ` ${page.quad ? t('Ajustar recorte') : t('Recortar')}`]),
-      el('div', { className: 'page-tools' }, [
-        el('span', { className: 'page-label' }, [
-          el('span', { className: 'drag-handle', title: t('Arraste para mudar a página de lugar'), 'aria-hidden': 'true' }, [icon('grip')]),
-          el('span', { className: 'page-num', textContent: i + 1 }),
+      }, [el('img', { src: page.thumbUrl, alt: '' })]),
+      el('div', { className: 'page-info' }, [
+        el('p', { className: 'page-name', title: page.name ?? page.file?.name ?? '' }, [
+          el('span', { className: 'sr-only', textContent: `${t('Página {n} de {total}', { n: i + 1, total })}: ` }),
+          page.name ?? page.file?.name ?? t('Foto'),
         ]),
-        button('remove', t('Remover')),
-        button('left', t('Mover para antes'), i === 0),
-        button('right', t('Mover para depois'), i === total - 1),
-        button('rotate', t('Girar')),
+        el('p', { className: 'page-meta' }, meta),
+        ...stamp,
       ]),
-      ...(doc ? [] : [el('select', {
-        className: 'page-filter', 'aria-label': t('Filtro da página {n}', { n: i + 1 }), disabled: state.busy,
-      }, filterOptions(page.filter))]),
+      el('div', { className: 'page-modes' }, [mode('redact', 'redact', t('Tarjar')), mode('edit', 'edit', t('Editar'))]),
+      el('span', { className: 'drag-handle', title: t('Arraste para mudar a página de lugar'), 'aria-hidden': 'true' }, [icon('grip')]),
+      el('button', {
+        type: 'button', className: 'icon-btn page-more', disabled: state.busy, title: t('Mais ações, página {n}', { n: i + 1 }),
+        'aria-label': t('Mais ações, página {n}', { n: i + 1 }), 'aria-expanded': String(open), 'aria-controls': menuId,
+      }, [icon('more')]),
+      el('div', { className: 'page-menu', id: menuId, role: 'group', 'aria-label': t('Mais ações, página {n}', { n: i + 1 }), hidden: !open }, [
+        // O recorte é o ajuste que mais muda o resultado da foto: primeiro do menu (e também na miniatura).
+        ...(doc ? [] : [cropButton(page.quad ? t('Ajustar recorte') : t('Recortar'), i + 1)]),
+        button('left', 'left', t('Mover para antes'), i === 0),
+        button('right', 'right', t('Mover para depois'), i === total - 1),
+        button('rotate', 'rotate', t('Girar')),
+        ...(doc ? [] : [el('label', { className: 'page-filter-field' }, [
+          el('span', { textContent: t('Filtro') }),
+          el('select', {
+            className: 'page-filter', 'aria-label': t('Filtro da página {n}', { n: i + 1 }), disabled: state.busy,
+          }, filterOptions(page.filter)),
+        ])]),
+        button('remove', 'remove', t('Remover')),
+      ]),
     ]);
   }));
 }
 
+// Tipo da foto para a meta do item (JPG, PNG, HEIC…): pelo tipo do arquivo ou, sem ele, pela extensão.
+function fileType(file) {
+  const type = /^image\/(\w+)/.exec(file?.type ?? '')?.[1] ?? /\.(\w+)$/.exec(file?.name ?? '')?.[1] ?? '';
+  return type.toUpperCase().replace('JPEG', 'JPG');
+}
+
+function cropButton(label, n) {
+  return el('button', {
+    type: 'button', className: 'btn page-menu-btn btn-crop', 'data-action': 'crop', disabled: state.busy,
+    'aria-label': t('{label}, página {n}', { label, n }),
+  }, [icon('crop'), ` ${label}`]);
+}
+
 // A lista é recriada a cada mudança: devolve o foco a um controle do cartão na posição `index`.
-function focusCard(index, selector) {
+function focusCard(index, selector, fallback = '.page-more') {
   const card = els.pages.children[Math.min(index, els.pages.children.length - 1)];
-  const target = card?.querySelector(`${selector}:not(:disabled)`) ?? card?.querySelector('button:not(:disabled)');
+  const visible = (sel) => [...(card?.querySelectorAll(sel) ?? [])].find((node) => !node.disabled && node.offsetParent);
+  const target = visible(selector) ?? visible(fallback) ?? visible('button');
   if (target) target.focus();
   else focusAddButton();
 }
@@ -701,12 +841,24 @@ function findPage(target) {
 }
 
 els.pages.addEventListener('click', async (event) => {
+  const more = event.target.closest('.page-more');
+  if (more && !state.busy) {
+    toggleMenu(more.closest('.page-card'), more.getAttribute('aria-expanded') !== 'true');
+    return;
+  }
   const button = event.target.closest('button[data-action]');
   if (!button || state.busy) return;
   const index = findPage(button);
   const page = state.pages[index];
   if (button.dataset.action === 'view' || button.dataset.action === 'crop') {
+    toggleMenu(button.closest('.page-card'), false);
     viewer.open(page, t('Página {n} de {total}', { n: index + 1, total: state.pages.length }), button.dataset.action === 'crop');
+    return;
+  }
+  // Tarjar e Editar: a tela cheia abre e entra no modo pelo próprio botão dela (o mesmo caminho do toque lá dentro).
+  if (button.dataset.action === 'redact' || button.dataset.action === 'edit') {
+    viewer.open(page, t('Página {n} de {total}', { n: index + 1, total: state.pages.length }));
+    document.getElementById(`viewer-${button.dataset.action}`).click();
     return;
   }
   discardPdf();
@@ -715,9 +867,11 @@ els.pages.addEventListener('click', async (event) => {
     case 'left':
     case 'right': {
       const to = index + (button.dataset.action === 'left' ? -1 : 1);
+      finishUndo();
       [state.pages[index], state.pages[to]] = [state.pages[to], state.pages[index]];
       renderPages();
-      els.pages.children[to]?.querySelector(`[data-action="${button.dataset.action}"]:not(:disabled)`)?.focus();
+      // Na ponta da lista o mesmo botão fica desabilitado: o foco vai para o do outro lado.
+      focusCard(to, `[data-action="${button.dataset.action}"]`, '[data-action="left"], [data-action="right"]');
       break;
     }
     case 'rotate':
@@ -749,9 +903,54 @@ els.pages.addEventListener('change', async (event) => {
 });
 
 // Arrastar pela alça (reorder.js): a ordem só muda ao soltar, e soltar no mesmo lugar não muda nada.
+// Menu "Mais ações" do item: abre embaixo da linha, no lugar dela (sem cobrir nada). Esc fecha e devolve o foco ao
+// botão; as setas andam entre os itens (o Tab também); tocar fora ou o foco sair do item fecham.
+function toggleMenu(card, open, { focus = false } = {}) {
+  if (!card) return;
+  const more = card.querySelector('.page-more');
+  const menu = card.querySelector('.page-menu');
+  if (open) for (const other of els.pages.querySelectorAll('.page-card.menu-open')) if (other !== card) toggleMenu(other, false);
+  openMenu = open ? Number(card.dataset.id) : openMenu === Number(card.dataset.id) ? null : openMenu;
+  card.classList.toggle('menu-open', open);
+  more.setAttribute('aria-expanded', String(open));
+  menu.hidden = !open;
+  if (open) menu.querySelector('button:not(:disabled), select:not(:disabled)')?.focus();
+  else if (focus) more.focus();
+}
+
+els.pages.addEventListener('keydown', (event) => {
+  const menu = event.target.closest('.page-menu');
+  if (!menu) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    toggleMenu(menu.closest('.page-card'), false, { focus: true });
+    return;
+  }
+  // Setas: entre os itens do menu. No seletor do filtro, as setas são dele.
+  const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1, Home: -Infinity, End: Infinity }[event.key];
+  if (!step || event.target.matches('select')) return;
+  const items = [...menu.querySelectorAll('button:not(:disabled), select:not(:disabled)')];
+  const at = items.indexOf(event.target);
+  const next = step === -Infinity ? 0 : step === Infinity ? items.length - 1 : (at + step + items.length) % items.length;
+  event.preventDefault();
+  items[next]?.focus();
+});
+
+els.pages.addEventListener('focusout', (event) => {
+  const card = event.target.closest('.page-card.menu-open');
+  // relatedTarget nulo: a lista foi recriada ou a janela perdeu o foco; aí o menu fica como está.
+  if (card && event.relatedTarget && !card.contains(event.relatedTarget)) toggleMenu(card, false);
+});
+
+document.addEventListener('pointerdown', (event) => {
+  const card = els.pages.querySelector('.page-card.menu-open');
+  if (card && !event.target.closest?.('.page-menu, .page-more')) toggleMenu(card, false);
+});
+
 setupReorder(els.pages, {
   enabled: () => !state.busy,
   move(from, to) {
+    finishUndo();
     state.pages = moveItem(state.pages, from, to);
     discardPdf();
     renderPages();
@@ -914,6 +1113,12 @@ const viewer = setupViewer({
   // A lista pode ter sido recriada enquanto a tela cheia estava aberta: devolve o foco ao cartão da página.
   onClose(page) {
     const index = state.pages.indexOf(page);
+    // Tarjada lá dentro: o carimbo "Tarjado" é batido agora, à vista.
+    for (const each of state.pages) {
+      if (!each.redactions?.length || each.stamped) continue;
+      each.stamped = true;
+      els.pages.children[state.pages.indexOf(each)]?.querySelector('.page-stamp')?.classList.add('stamp-in');
+    }
     if (index >= 0) focusCard(index, '.thumb');
   },
 });
@@ -924,36 +1129,32 @@ function focusLost() {
 }
 
 // ---------- Remover com "Desfazer" ----------
-// A miniatura da página removida só é descartada quando o prazo para desfazer acaba.
+// Sem prazo: o "Desfazer" fica até a próxima mudança na lista (adicionar, mover, limpar ou remover outra página, que
+// toma o lugar desta). A miniatura da página removida só é descartada aí. Pelo teclado, Ctrl+Z (⌘Z no Mac) desfaz
+// de qualquer lugar da página, fora dos campos de texto e das janelas.
 
-let removed = null; // { page, index, timer }
+let removed = null; // { page, index, message }
 
 function removePage(index) {
   finishUndo();
   const [page] = state.pages.splice(index, 1);
   renderPages();
-  if (state.pages.length) focusCard(index, '[data-action="remove"]');
+  if (state.pages.length) focusCard(index, '.page-more');
   else focusAddButton();
 
-  removed = { page, index, timer: 0, message: t('Página {n} removida. Dá para desfazer por alguns segundos.', { n: index + 1 }) };
+  // O atalho só não aparece no toque (lá não há teclado para ele).
+  const message = !matchMedia('(pointer: coarse)').matches
+    ? t('Página {n} removida. Para trazer de volta, use "Desfazer" ({key}).', { n: index + 1, key: UNDO_KEY })
+    : t('Página {n} removida. Para trazer de volta, use "Desfazer".', { n: index + 1 });
+  removed = { page, index, message };
   announce(removed.message);
   els.undo.setAttribute('aria-label', t('Desfazer: trazer de volta a página {n}', { n: index + 1 }));
   els.undo.hidden = false;
-  scheduleUndoExpiry();
 }
 
-// Não some enquanto o botão está com foco ou sob o ponteiro: espera a pessoa terminar.
-function scheduleUndoExpiry() {
-  clearTimeout(removed.timer);
-  removed.timer = setTimeout(() => {
-    if (els.undo.matches(':focus, :hover')) scheduleUndoExpiry();
-    else finishUndo();
-  }, UNDO_MS);
-}
-
+// A lista mudou: a remoção não dá mais para desfazer.
 function finishUndo() {
   if (!removed) return;
-  clearTimeout(removed.timer);
   URL.revokeObjectURL(removed.page.thumbUrl);
   // O aviso não promete mais o que já não dá para fazer.
   if (els.status.textContent === removed.message) announce(t('Página {n} removida.', { n: removed.index + 1 }));
@@ -961,9 +1162,8 @@ function finishUndo() {
   els.undo.hidden = true;
 }
 
-els.undo.addEventListener('click', () => {
+function undoRemoval() {
   if (!removed || state.busy) return;
-  clearTimeout(removed.timer);
   const { page, index } = removed;
   removed = null;
   els.undo.hidden = true;
@@ -971,8 +1171,25 @@ els.undo.addEventListener('click', () => {
   state.pages.splice(at, 0, page);
   discardPdf();
   renderPages();
-  focusCard(at, '[data-action="remove"]');
+  focusCard(at, '.page-more');
   announce(t('Página {n} de volta.', { n: at + 1 }));
+}
+
+els.undo.addEventListener('click', undoRemoval);
+
+// Campo onde Ctrl+Z desfaz a digitação: aí o atalho é dele.
+function editsText(target) {
+  if (!(target instanceof Element)) return false;
+  if (target.isContentEditable || target.matches('textarea, select')) return true;
+  return target.matches('input') && !/^(checkbox|radio|button|submit|reset|range|color|file|image)$/.test(target.type);
+}
+
+document.addEventListener('keydown', (event) => {
+  if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey || event.key.toLowerCase() !== 'z') return;
+  if (!removed || state.busy || event.defaultPrevented || editsText(event.target)) return;
+  if (document.querySelector('dialog[open]')) return; // tela cheia, câmera, assinatura…: o atalho não mexe na lista atrás
+  event.preventDefault();
+  undoRemoval();
 });
 
 els.filterAll.append(...filterOptions('document'));
@@ -1020,6 +1237,7 @@ function updatePdfaOption() {
   els.pdfaBlocked.textContent = reason;
   if (!state.busy) els.protect.disabled = els.pdfa.checked;
   els.protectBlocked.hidden = !els.pdfa.checked;
+  updateSummaries();
 }
 
 els.pdfa.addEventListener('change', () => {
@@ -1034,6 +1252,7 @@ els.protect.addEventListener('change', () => {
   els.protectInputs.hidden = !els.protect.checked;
   if (els.protect.checked) els.protectPassword.focus();
   else els.protectPassword.value = els.protectConfirm.value = '';
+  for (const input of [els.protectPassword, els.protectConfirm]) clearFieldError(input);
 });
 for (const input of [els.protectPassword, els.protectConfirm]) input.addEventListener('input', discardPdf);
 
@@ -1042,12 +1261,14 @@ function protectionPassword() {
   if (!els.protect.checked) return null;
   const password = els.protectPassword.value;
   if (!password) {
-    announce(t('Digite a senha para proteger o PDF.'), 'error');
+    fieldError(els.protectPassword, els.protectPasswordError, t('Digite a senha para proteger o PDF.'));
+    announce('');
     els.protectPassword.focus();
     return undefined;
   }
   if (password !== els.protectConfirm.value) {
-    announce(t('As duas senhas não são iguais. Digite de novo.'), 'error');
+    fieldError(els.protectConfirm, els.protectConfirmError, t('As duas senhas não são iguais. Digite de novo.'));
+    announce('');
     els.protectConfirm.value = '';
     els.protectConfirm.focus();
     return undefined;
@@ -1122,6 +1343,13 @@ function setBusy(busy, label = t('Gerando…')) {
   else renderPages(); // recria os cartões liberados (mover nas pontas da lista continua desabilitado)
 }
 
+// Intervalos que não dá para usar: o motivo fica junto do campo, e o foco vai para ele.
+function rangesError(err) {
+  fieldError(els.ranges, els.rangesError, err.message);
+  announce('');
+  els.ranges.focus();
+}
+
 function discardPdf() {
   if (!state.output) return;
   for (const { url } of state.output) URL.revokeObjectURL(url);
@@ -1129,6 +1357,14 @@ function discardPdf() {
   els.result.hidden = true;
   els.resultFiles.replaceChildren();
 }
+
+// Sair da página (fechar, recarregar, outro endereço) apaga as páginas: nada fica guardado. Com páginas na lista e
+// sem o PDF da versão atual (discardPdf apaga o gerado a cada mudança), o navegador pergunta antes, com o texto dele.
+window.addEventListener('beforeunload', (event) => {
+  if (!state.pages.length || state.output) return;
+  event.preventDefault();
+  event.returnValue = true; // navegadores antigos, que ainda não atendem o preventDefault
+});
 
 const nextFrame = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -1157,8 +1393,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     groups = outputGroups(state.pages.length);
   } catch (err) {
     signer?.discard();
-    announce(err.message, 'error');
-    els.ranges.focus();
+    rangesError(err);
     return;
   }
   const password = protectionPassword(); // proteger com senha: conferida antes de começar
@@ -1256,7 +1491,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       const bytes = await signer.signExisting(append, new Date(), { stamp });
       const file = new File([bytes], `${baseFileName()}.pdf`, { type: 'application/pdf' });
       state.output = [{ file, before: null, url: URL.createObjectURL(file) }];
-      showResult(groups, signer, false, false);
+      showResult(groups, signer, { checks: [t('Assinado por {name}', { name: signer.name })] });
       announce(append.isSigned()
         ? t('PDF assinado. Ele só existe aqui no seu aparelho até você baixar. As assinaturas que ele já tinha continuam valendo.')
         : t('PDF assinado. Ele só existe aqui no seu aparelho até você baixar.'), 'success');
@@ -1481,7 +1716,6 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       files.push({ file: new File([bytes], name, { type: 'application/pdf' }), before });
     }
     state.output = files.map(({ file, before }) => ({ file, before, url: URL.createObjectURL(file) }));
-    showResult(groups, signer, !!password, pdfa);
     if (password) els.protectPassword.value = els.protectConfirm.value = ''; // a senha não fica nos campos
     const ready = signer
       ? plural(files.length, 'PDF assinado. Ele só existe aqui no seu aparelho até você baixar.', '{n} PDFs assinados. Eles só existem aqui no seu aparelho até você baixar.')
@@ -1521,6 +1755,16 @@ async function generate({ signer, stamp = null, append = null } = {}) {
       : (useOcr ? t('As páginas {pages}, de PDF, saíram como imagem: o texto vem do OCR, sem o que estava sob as tarjas.', { pages: pagesText })
         : t('As páginas {pages}, de PDF, saíram como imagem: o texto delas não fica selecionável.', { pages: pagesText }));
     const covered = !redacted.length ? '' : t('Tarjas conferidas: não sobrou texto embaixo delas.');
+    // O cartão mostra o que foi conferido de verdade, como carimbo, e os avisos; o leitor de tela ouve tudo uma vez só,
+    // pela região de aviso (que fica escondida na tela com o sucesso: o cartão já diz).
+    const checks = [
+      redacted.length && t('Tarjas conferidas: nada sob elas'),
+      password && t('Protegido com senha (AES-256)'),
+      signer && t('Assinado por {name}', { name: signer.name }),
+      pdfa && 'PDF/A-2b',
+      useOcr && scanned.some((page) => page.ocr?.words.length) && t('Texto pesquisável'),
+    ].filter(Boolean);
+    showResult(groups, signer, { checks, notes: [asImage, kept, read, unsure, hadText] });
     announce([ready, locked, covered, asImage, kept, read, unsure, hadText].filter(Boolean).join(' '), 'success');
     ok = true;
   } catch (err) {
@@ -1541,6 +1785,7 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     els.cancel.disabled = false;
     setBusy(false);
     // Foco só depois de liberar os controles (controle desabilitado não recebe foco).
+    if (!ok && signer) reveal(els.sign);
     if (!ok) (signer ? els.sign : els.generate).focus();
     else (state.output.length === 1 ? els.download : els.downloadAll).focus();
   }
@@ -1695,7 +1940,10 @@ function sizeText(size, before) {
   return t('{size} (antes {before}, −{percent}%)', { size: formatBytes(size), before: formatBytes(before), percent: Math.round((1 - size / before) * 100) });
 }
 
-function showResult(groups, signer, locked, pdfa) {
+/**
+ * @param {{checks?: string[], notes?: string[]}} [result] checks: o que foi conferido (carimbos); notes: os avisos
+ */
+function showResult(groups, signer, { checks = [], notes = [] } = {}) {
   const files = state.output;
   const total = files.reduce((sum, { file }) => sum + file.size, 0);
   const totalBefore = files.some(({ before }) => before) ? files.reduce((sum, { file, before }) => sum + (before ?? file.size), 0) : null;
@@ -1704,12 +1952,16 @@ function showResult(groups, signer, locked, pdfa) {
   els.resultTitle.textContent = signer
     ? plural(files.length, 'PDF assinado', '{n} PDFs assinados')
     : plural(files.length, 'PDF pronto', '{n} PDFs prontos');
-  const signed = signer ? ` · ${plural(files.length, 'assinado por {name}', 'assinados por {name}', { name: signer.name })}` : '';
-  const withPassword = locked ? ` · ${t('com senha')}` : '';
-  const archive = pdfa ? ' · PDF/A-2b' : '';
   els.resultInfo.textContent = single
-    ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}${signed}${withPassword}${archive}`
-    : `${t('{size} no total', { size: sizeText(total, totalBefore) })}${signed}${withPassword}${archive}`;
+    ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}`
+    : t('{size} no total', { size: sizeText(total, totalBefore) });
+  els.resultChecks.replaceChildren(...checks.map((text) => el('li', {}, [el('span', { className: 'stamp stamp-sm stamp-in', textContent: text })])));
+  els.resultChecks.hidden = !checks.length;
+  const shownNotes = [single
+    ? t('Ele só existe aqui no seu aparelho até você baixar.')
+    : t('Eles só existem aqui no seu aparelho até você baixar.'), ...notes].filter(Boolean);
+  els.resultNotes.textContent = shownNotes.join(' ');
+  els.resultNotes.hidden = !shownNotes.length;
   els.download.hidden = !single;
   els.download.href = files[0].url;
   els.download.download = files[0].file.name;
@@ -1733,7 +1985,8 @@ const PREVIEW_THUMBS = 10; // miniaturas por arquivo; o resto vira "+N"
 
 function renderOutputPreview() {
   const total = state.pages.length;
-  els.outputPreview.hidden = total === 0;
+  // Com um PDF só, a lista de páginas já é a prévia.
+  els.outputPreview.hidden = total === 0 || els.outputMode.value === 'single';
   if (!total) return;
   els.outputSummary.classList.remove('error');
   let groups;
@@ -1788,6 +2041,7 @@ els.downloadAll.addEventListener('click', async () => {
 
 els.outputMode.addEventListener('change', () => {
   discardPdf();
+  clearFieldError(els.ranges);
   els.rangesField.hidden = els.outputMode.value !== 'ranges';
   renderOutputPreview();
   if (!els.rangesField.hidden) els.ranges.focus();
@@ -1800,10 +2054,13 @@ els.pdfCompress.addEventListener('change', () => {
 
 // ---------- Aviso de PDF pesado ----------
 // Aparece sozinho quando a lista tem um PDF pesado por causa de imagens. Diz o que está acontecendo
-// (comprimindo ou não) e troca com um toque, sem precisar achar a opção.
+// (comprimindo ou não) e troca com um toque, sem precisar achar a opção. Não é região de aviso: quando ele aparece,
+// o texto vai uma vez pelo #status, junto da mensagem de "adicionado" (addFiles), a não ser que ela já fale dele.
+
 
 function updateCompressTip() {
   const heavy = [...new Set(state.pages.filter((page) => page.kind === 'pdf' && page.doc.heavy).map((page) => page.doc))];
+  const appeared = els.compressTip.hidden && heavy.length > 0;
   els.compressTip.hidden = !heavy.length;
   if (!heavy.length) return;
   const size = formatBytes(heavy.reduce((sum, doc) => sum + doc.size, 0));
@@ -1814,6 +2071,8 @@ function updateCompressTip() {
     : t('Comprimir as imagens deixa o arquivo bem menor, bom para WhatsApp e e-mail.')}`);
   els.compressTipToggle.textContent = on ? t('Manter o original') : t('Comprimir');
   els.compressTip.classList.toggle('tip-on', on);
+  if (appeared) compressTipNews = els.compressTipText.textContent;
+  updateSummaries();
 }
 
 els.compressTipToggle.addEventListener('click', () => {
@@ -1831,6 +2090,112 @@ els.ranges.addEventListener('input', () => {
 els.fileName.addEventListener('input', renderOutputPreview);
 
 els.generate.addEventListener('click', generate);
+
+// ---------- Resumo dos ajustes ----------
+// Cada seção recolhida mostra no <summary> o que está ligado; a barra do polegar, o resumo curto do PDF que vai sair.
+
+// Declaradas como função (e não const): renderPages pode chamar updateSummaries antes desta parte do módulo rodar.
+function chosen(select) {
+  return select.selectedOptions[0]?.textContent.trim() ?? '';
+}
+function fieldShown(control) {
+  return !control.closest('.field').hidden;
+}
+
+function updateSummaries() {
+  const look = [
+    fieldShown(els.filterAll) && t('Filtro: {value}', { value: chosen(els.filterAll) }),
+    fieldShown(els.margin) && t('Margem: {value}', { value: chosen(els.margin) }),
+    fieldShown(els.pdfCompress) && t('Imagens dos PDFs: {value}', { value: chosen(els.pdfCompress) }),
+  ].filter(Boolean);
+  els.moreLook.hidden = !look.length && els.documentNote.hidden;
+  els.moreLookState.textContent = look.join(' · ');
+
+  // Em todas as páginas: o nome de cada opção ligada (as caixas de ligar marcadas; os rádios são escolhas de dentro).
+  const on = [...els.allPagesOptions.querySelectorAll('label.check:has(> input[type="checkbox"]:checked)')]
+    .map((label) => label.textContent.trim());
+  els.moreAll.hidden = els.allPages.hidden;
+  els.moreAllState.textContent = on.length ? on.join(', ') : t('Nada ligado');
+
+  els.moreOcr.hidden = els.ocrField.hidden;
+  els.moreOcrState.textContent = els.ocr.checked ? t('Ligado') : t('Desligado');
+
+  els.moreSecureState.textContent = [
+    els.protect.checked ? t('Senha: ligada') : t('Senha: desligada'),
+    els.pdfa.checked ? t('PDF/A: ligado') : t('PDF/A: desligado'),
+  ].join(' · ');
+
+  const total = state.pages.length;
+  const photos = state.pages.some(isPhoto);
+  els.dockSummary.textContent = [
+    plural(total, '{n} página', '{n} páginas'),
+    photos && chosen(els.pageSize),
+    photos && chosen(els.filterAll),
+    els.outputMode.value !== 'single' && chosen(els.outputMode),
+    els.protect.checked ? t('com senha') : t('sem senha'),
+    els.pdfa.checked && 'PDF/A',
+    els.ocr.checked && !els.ocrField.hidden && 'OCR',
+  ].filter(Boolean).join(' · ');
+}
+
+for (const type of ['change', 'input']) els.workspace.addEventListener(type, updateSummaries);
+
+// "Mudar": leva aos ajustes (o título recebe o foco; dali, o Tab segue pelos campos).
+els.dockChange.addEventListener('click', () => {
+  const smooth = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  els.settingsTitle.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' });
+  els.settingsTitle.focus({ preventScroll: true });
+});
+
+// Fechar o aviso: só tira o texto da tela (a região de aviso fica vazia, sem anúncio). Com o "Desfazer" à mostra, o
+// botão some: o aviso é o caminho de volta da página removida.
+// Aviso informativo sai na próxima ação da pessoa (toque, clique ou tecla), para não ficar cobrindo o que está acima
+// da barra. Fica: erro, o "Desfazer" (é o caminho de volta da página removida), o progresso com o app ocupado e o
+// próprio aviso que a pessoa está tocando. A região de aviso é a mesma: o leitor de tela já ouviu.
+// No teclado, só a tecla que age (Enter, Espaço, Delete, letras…) apaga: andar com Tab, setas, Home/End e as teclas de
+// página não, senão quem usa teclado (e o leitor de tela) perdia o aviso no primeiro Tab, antes de chegar a ele.
+const NAVIGATION_KEYS = new Set([
+  'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown',
+  'Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'Escape',
+]);
+function settleNotice(event) {
+  if (state.busy || !els.undo.hidden || els.status.dataset.kind !== 'info' || !els.status.textContent) return;
+  if (event.type === 'keydown' && (NAVIGATION_KEYS.has(event.key) || /^F\d+$/.test(event.key))) return;
+  if (event.target instanceof Element && event.target.closest('.dock-notice')) return;
+  announce('');
+}
+document.addEventListener('pointerdown', settleNotice, true);
+document.addEventListener('keydown', settleNotice, true);
+
+// Altura da barra do polegar no --dock-h, que o scroll-padding-bottom do <html> usa (style.css): o foco do Tab não
+// para embaixo dela. O ResizeObserver avisa quando ela muda (aviso que aparece, resumo que quebra linha, barra que some
+// sem páginas); nada é medido ao rolar. A folga do pé (bottom: 12px no computador) entra na conta.
+new ResizeObserver(([entry]) => {
+  const height = entry.borderBoxSize?.[0]?.blockSize ?? els.dock.offsetHeight;
+  const lift = height ? parseFloat(getComputedStyle(els.dock).bottom) || 0 : 0;
+  document.documentElement.style.setProperty('--dock-h', `${Math.ceil(height + lift)}px`);
+}).observe(els.dock);
+// O navegador só rola até o foco quando ele está fora da tela, e a barra muda de altura no mesmo instante (ela volta
+// quando o foco sai de um campo de texto no celular), antes do --dock-h: um botão ficava metade embaixo dela. No foco
+// (não na rolagem), se a barra presa cobre parte dele, rola só o que falta para ele ficar 12px acima dela.
+document.addEventListener('focusin', (event) => {
+  const target = event.target;
+  if (!(target instanceof Element) || els.dock.contains(target) || target.closest('dialog')) return;
+  requestAnimationFrame(() => {
+    if (getComputedStyle(els.dock).position !== 'sticky') return;
+    const dock = els.dock.getBoundingClientRect();
+    const box = target.getBoundingClientRect();
+    if (dock.height && box.bottom > dock.top && box.top < dock.bottom) {
+      window.scrollBy({ top: Math.min(box.bottom - dock.top + 12, box.top - 12), behavior: 'instant' });
+    }
+  });
+});
+
+els.statusDismiss.addEventListener('click', () => {
+  announce('');
+  if (!els.dockBar.hidden) els.generate.focus();
+  else focusAddButton();
+});
 
 els.share.addEventListener('click', async () => {
   if (!state.output) return;
@@ -2203,6 +2568,7 @@ function resetSigning() {
   els.signNext.hidden = false;
   els.stamp.checked = false;
   els.stampOptions.hidden = true;
+  for (const control of [els.signPick, els.signPassword]) clearFieldError(control);
   signStatus('');
 }
 
@@ -2411,8 +2777,7 @@ els.sign.addEventListener('click', () => {
   try {
     outputGroups(state.pages.length); // intervalos inválidos: avisa antes de pedir o certificado
   } catch (err) {
-    announce(err.message, 'error');
-    els.ranges.focus();
+    rangesError(err);
     return;
   }
   if (protectionPassword() === undefined) return; // senha de proteção faltando ou diferente: idem
@@ -2425,6 +2790,7 @@ els.signPick.addEventListener('click', () => els.signFile.click());
 els.signFile.addEventListener('change', () => {
   signing.file = els.signFile.files[0] ?? null;
   els.signFileName.textContent = signing.file ? signing.file.name : t('Nenhum arquivo escolhido');
+  for (const control of [els.signPick, els.signPassword]) clearFieldError(control);
   signStatus('');
   if (signing.file) els.signPassword.focus();
 });
@@ -2452,13 +2818,14 @@ els.signNext.addEventListener('click', async () => {
     return;
   }
   if (!signing.file) {
-    signStatus(t('Escolha o arquivo do certificado (.pfx ou .p12).'), 'error');
+    fieldError(els.signPick, els.signStatus, t('Escolha o arquivo do certificado (.pfx ou .p12).'));
     els.signPick.focus();
     return;
   }
   const password = els.signPassword.value;
   els.signPassword.value = ''; // a senha não fica no campo depois de usada
   els.signNext.disabled = true;
+  for (const control of [els.signPick, els.signPassword]) clearFieldError(control);
   signStatus(t('Abrindo o certificado…'));
   let module;
   let bytes;
@@ -2485,8 +2852,11 @@ els.signNext.addEventListener('click', async () => {
     (signing.locked ? els.signCancel : els.signNext).focus();
   } catch (err) {
     // Sem console: a mensagem não leva nada do certificado, e o erro técnico também não precisa ir para lá.
-    signStatus(module && err instanceof module.SignError ? err.message : t('Não deu para abrir o certificado.'), 'error');
-    els.signPassword.focus();
+    // Senha errada: o erro fica ligado ao campo da senha. Os outros são do arquivo: ligados ao botão de escolher.
+    const message = module && err instanceof module.SignError ? err.message : t('Não deu para abrir o certificado.');
+    const control = err?.wrongPassword ? els.signPassword : els.signPick;
+    fieldError(control, els.signStatus, message);
+    control.focus();
   } finally {
     bytes?.fill(0);
     els.signNext.disabled = !!signing.locked; // PDF certificado sem permitir alterações: não dá para assinar
@@ -2496,7 +2866,7 @@ els.signNext.addEventListener('click', async () => {
 // ---------- Entrada: botões, arrastar e colar ----------
 
 // No Mac, colar é ⌘V.
-if (/mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || '')) els.pasteKey.textContent = '⌘V';
+if (IS_MAC) els.pasteKey.textContent = '⌘V';
 
 els.pickFiles.addEventListener('click', () => els.fileInput.click());
 // "Tirar foto" abre a câmera da página (com botão de luz); sem suporte, cai na câmera do sistema.

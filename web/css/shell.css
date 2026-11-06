@@ -1,0 +1,162 @@
+/* Estrutura da tela principal: carimbo do topo, recibo das páginas, ajustes recolhidos, barra do polegar e resultado.
+   Só os tokens do style.css; o carimbo (.stamp, .stamp-sm) é de lá e não é redefinido aqui. */
+
+/* ---------- Carimbo do topo ---------- */
+/* O carimbo é girado: margem dos dois lados para o canto não encostar no título nem no texto. */
+.proof { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 20px 0 24px; padding-left: 4px; }
+.proof-stamp { margin: 0; }
+.proof-link {
+  display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-ink);
+  font-size: 0.92rem; font-weight: 600; text-underline-offset: 3px;
+}
+
+/* ---------- Recibo das páginas ---------- */
+/* O contador do título: o único lugar com o estilo dele. */
+.page-count {
+  margin-left: 4px; font-family: var(--font-mono); font-size: 0.875rem; font-weight: 500;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Primeira tela com páginas ---------- */
+/* Com o recibo à mostra, o texto de abertura sai e a área de adicionar vira uma linha só, "Adicionar mais", com os
+   dois botões: o recibo começa dentro da primeira tela do celular. Sem páginas, fica tudo como está. */
+.dropzone-more { display: none; }
+main:has(#workspace:not([hidden])) .hero { padding-bottom: 10px; }
+main:has(#workspace:not([hidden])) .hero .lead { display: none; }
+main:has(#workspace:not([hidden])) .proof { margin-bottom: 0; }
+main:has(#workspace:not([hidden])) .dropzone {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 12px; text-align: left;
+}
+main:has(#workspace:not([hidden])) .dropzone-more { display: block; flex: 1 1 auto; margin: 0; font-weight: 700; }
+main:has(#workspace:not([hidden])) .dropzone .hint { display: none; }
+main:has(#workspace:not([hidden])) .dropzone-actions { flex: 1 1 260px; justify-content: flex-end; gap: 8px; }
+main:has(#workspace:not([hidden])) .dropzone-actions .btn { flex: 1 1 0; max-width: 240px; min-height: 44px; padding: 6px 12px; font-size: 0.9375rem; }
+main:has(#workspace:not([hidden])) .workspace { margin-top: 18px; }
+@media (max-width: 420px) {
+  main:has(#workspace:not([hidden])) .dropzone-actions .icon { display: none; }
+  main:has(#workspace:not([hidden])) .dropzone-actions .btn { padding-inline: 6px; font-size: 0.875rem; }
+}
+
+/* ---------- Ajustes ---------- */
+.settings-panel { margin-top: 24px; }
+.settings-title { margin: 0 0 8px; font-size: 1.15rem; scroll-margin-top: 16px; }
+.settings-title:focus { outline: none; }
+.settings-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.settings-panel > .settings { margin-top: 0; }
+
+/* Seção recolhida: o <summary> é o botão (alvo de 44 px), com o resumo do que está ligado embaixo do título. */
+.more { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.more > summary {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 12px;
+  min-height: 56px; padding: 8px 14px; cursor: pointer; list-style: none; border-radius: var(--radius);
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::after {
+  content: ""; grid-column: 2; grid-row: 1 / span 2; width: 9px; height: 9px; margin-right: 4px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg) translateY(-3px);
+}
+.more[open] > summary::after { transform: rotate(-135deg) translateY(-3px); }
+.more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: hover) { .more > summary:hover { background: var(--surface-2); } }
+.more-title { font-weight: 700; }
+.more-state {
+  grid-column: 1; font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.more-state:empty { display: none; }
+.more[open] > summary { border-bottom: 1px dashed var(--border); border-radius: var(--radius) var(--radius) 0 0; }
+/* O corpo usa a grade dos ajustes (.settings), sem o cartão dela: nada de cartão dentro de cartão. */
+.more > .more-body { margin: 0; padding: 12px 14px 14px; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.more .all-pages { border: 0; margin: 0; padding: 0; min-width: 0; }
+.sign-field { padding-top: 4px; }
+.sign-field .btn { width: 100%; max-width: 420px; }
+
+/* Momento de risco: senha sem recuperação e endereço antes de assinar. Borda e ícone de aviso, não nota discreta. */
+.risk-note {
+  display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--danger);
+  border-radius: 10px; background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--text);
+}
+.risk-note > .icon { flex: none; width: 20px; height: 20px; margin-top: 1px; color: var(--danger); }
+.field-note.risk-note { font-size: 0.9rem; }
+
+/* ---------- Barra do polegar ---------- */
+/* Presa no pé da tela enquanto a área de trabalho passa; no fim, fica no lugar dela, antes do resultado (não cobre nada
+   para sempre). Some com o teclado virtual aberto num campo de texto dos ajustes. */
+.dock {
+  position: sticky; bottom: 0; z-index: 5; margin: 16px -16px 0;
+  display: flex; flex-direction: column; gap: 8px; padding: 0 12px env(safe-area-inset-bottom);
+}
+.dock-notice {
+  display: flex; align-items: center; gap: 4px 8px; padding: 4px 4px 4px 14px;
+  width: fit-content; max-width: 100%; /* o Desfazer e o × colados no fim do texto, também na tela larga */
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-notice);
+}
+/* O aviso só aparece com texto. Vazio ou com o sucesso (o cartão do resultado já diz), o cartão sai da tela mas não da
+   árvore de acessibilidade (padrão .sr-only, nunca display: none): a região de aviso existe desde o carregamento e o
+   leitor de tela ouve "PDF pronto". O × sai junto, para o Tab não parar num botão invisível. */
+.dock-notice:not(:has(.status:not(:empty):not([data-kind="success"]))):not(:has(#undo:not([hidden]))) {
+  position: absolute; width: 1px; height: 1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.dock-notice:not(:has(.status:not(:empty):not([data-kind="success"]))):not(:has(#undo:not([hidden]))) .dock-dismiss { display: none; }
+.dock .status { flex: 0 1 auto; min-height: 0; margin: 0; text-align: left; font-size: 0.875rem; line-height: 1.45; }
+.dock .status[data-kind="success"] {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.dock .status[data-kind="error"] { color: var(--danger); }
+.dock .btn-undo { flex: none; min-height: 44px; }
+.dock-dismiss { flex: none; width: 44px; min-height: 44px; padding: 0; justify-content: center; color: var(--muted); }
+.dock-dismiss .icon { width: 18px; height: 18px; }
+.dock-notice:has(#undo:not([hidden])) .dock-dismiss, .dock-notice:has(.status:empty) .dock-dismiss { display: none; }
+
+.dock-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;
+  margin: 0 -12px; padding: 8px 16px max(12px, env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--border); box-shadow: var(--shadow-dock);
+}
+.dock-bar[hidden] { display: none; }
+.dock-summary { flex: 1 1 260px; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; min-width: 0; }
+.dock-summary-text {
+  font-family: var(--font-mono); font-size: 0.8rem; color: var(--text);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.dock-change { flex: none; min-height: 44px; padding: 0 12px; color: var(--accent-ink); font-weight: 600; }
+.dock-actions { flex: 1 1 260px; display: flex; gap: 8px; }
+.dock-actions .btn { flex: 1 1 auto; min-height: 52px; }
+.dock-actions #cancel { flex: 0 1 auto; }
+
+@media (min-width: 720px) {
+  /* No computador, a barra flutua um pouco acima do pé da tela, com a borda inteira (também no fim, no lugar dela). */
+  .dock { bottom: 12px; margin-inline: 0; padding-inline: 0; }
+  .dock-bar { margin: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 8px 8px 20px; }
+  .dock-actions { flex: 0 1 320px; }
+}
+
+/* Tela baixa (celular deitado, zoom de 400%): presa no pé, a barra tomaria até 62% da altura e cobriria o foco. Ela
+   volta para o lugar dela, depois dos ajustes, e o aviso fica no fluxo, logo acima. */
+@media (max-height: 480px) {
+  html { scroll-padding-bottom: 12px; }
+  .dock { position: static; }
+}
+
+/* Teclado virtual aberto num campo de texto: a barra sai da frente (o aviso fica, com a região de aviso). */
+@media (pointer: coarse) {
+  main:has(.settings input:is([type="text"], [type="password"]):focus) .dock-bar { display: none; }
+}
+
+/* ---------- Resultado ---------- */
+.result { margin-top: 20px; }
+.result-title { font-size: 1.25rem; }
+.result-info { margin: 4px 0 0; text-align: center; color: var(--muted); font-family: var(--font-mono); font-size: 0.85rem; overflow-wrap: anywhere; }
+.result-checks { list-style: none; margin: 16px 0 4px; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 12px; }
+.result-checks li { display: flex; }
+.result-notes { margin: 14px auto 0; max-width: 60ch; text-align: center; color: var(--muted); font-size: 0.92rem; }
+
+/* Celular em pé: os botões de adicionar sobem para a primeira tela (o título, o carimbo e o texto de abertura ficam
+   mais compactos, sem perder nada). */
+@media (max-width: 520px) {
+  .hero { padding: 18px 0 14px; }
+  .hero h1 { font-size: 1.5rem; }
+  .proof { margin: 10px 0 14px; gap: 6px 12px; }
+  .lead { font-size: 0.9375rem; line-height: 1.5; }
+}

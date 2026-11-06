@@ -1,0 +1,544 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-06T15:35:38.301Z",
+  "title": "Design System: Scanner Doc",
+  "extensions": {
+    "colorMeta": {
+      "ink-blue": {
+        "role": "primary",
+        "displayName": "Azul Caneta Sankler",
+        "canonical": "oklch(57.0% 0.235 266.9)",
+        "tonalRamp": [
+          "#020035",
+          "#080076",
+          "#1412b9",
+          "#2544df",
+          "#426dff",
+          "#6f9cff",
+          "#abc9ff",
+          "#ddeeff"
+        ]
+      },
+      "ink-blue-text": {
+        "role": "primary",
+        "displayName": "Azul Caneta de Escrever",
+        "canonical": "oklch(50.2% 0.223 266.7)",
+        "tonalRamp": [
+          "#010132",
+          "#070772",
+          "#121cb2",
+          "#2648d8",
+          "#4470ff",
+          "#719dff",
+          "#acc9ff",
+          "#ddeeff"
+        ]
+      },
+      "ink-blue-text-dark": {
+        "role": "primary",
+        "displayName": "Azul Caneta de Escrever, noite",
+        "canonical": "oklch(73.3% 0.138 271.7)",
+        "tonalRamp": [
+          "#050723",
+          "#141c54",
+          "#283487",
+          "#4355aa",
+          "#6479d2",
+          "#8ca0ea",
+          "#bcc9f5",
+          "#e6eeff"
+        ]
+      },
+      "ink-blue-wash": {
+        "role": "primary",
+        "displayName": "Lavado de Tinta",
+        "canonical": "oklch(94.4% 0.026 271.9)",
+        "tonalRamp": [
+          "#090b10",
+          "#21242e",
+          "#3b3f4e",
+          "#585d6d",
+          "#7a8091",
+          "#a0a4b2",
+          "#c7cad3",
+          "#edeef3"
+        ]
+      },
+      "ink-blue-wash-dark": {
+        "role": "primary",
+        "displayName": "Lavado de Tinta, noite",
+        "canonical": "oklch(27.6% 0.083 271.5)",
+        "tonalRamp": [
+          "#060a1a",
+          "#192142",
+          "#303c6b",
+          "#4d5a8d",
+          "#6e7db2",
+          "#95a3cf",
+          "#c1cae4",
+          "#e9eefd"
+        ]
+      },
+      "error-red": {
+        "role": "secondary",
+        "displayName": "Vermelho de Erro",
+        "canonical": "oklch(50.0% 0.182 29.5)",
+        "tonalRamp": [
+          "#230000",
+          "#540000",
+          "#870000",
+          "#ad1a10",
+          "#d74839",
+          "#f27e6d",
+          "#fcb7ab",
+          "#ffe4dd"
+        ]
+      },
+      "error-red-dark": {
+        "role": "secondary",
+        "displayName": "Vermelho de Erro, noite",
+        "canonical": "oklch(73.3% 0.164 26.2)",
+        "tonalRamp": [
+          "#210000",
+          "#500000",
+          "#810002",
+          "#a62726",
+          "#d05049",
+          "#eb8278",
+          "#f8b8b1",
+          "#ffe5e0"
+        ]
+      },
+      "cold-paper": {
+        "role": "neutral",
+        "displayName": "Papel Frio",
+        "canonical": "oklch(97.3% 0.004 271.4)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#232426",
+          "#3f4042",
+          "#5d5d60",
+          "#7f8083",
+          "#a4a4a7",
+          "#cacacc",
+          "#eeeeef"
+        ]
+      },
+      "card-white": {
+        "role": "neutral",
+        "displayName": "Cartão Branco",
+        "canonical": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a4a4a4",
+          "#cacaca",
+          "#eeeeee"
+        ]
+      },
+      "paper-recess": {
+        "role": "neutral",
+        "displayName": "Papel Rebaixado",
+        "canonical": "oklch(95.5% 0.007 268.5)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#232427",
+          "#3e4044",
+          "#5c5d62",
+          "#7e8085",
+          "#a3a4a8",
+          "#c9cacd",
+          "#eeeef0"
+        ]
+      },
+      "sankler-black": {
+        "role": "neutral",
+        "displayName": "Preto Sankler",
+        "canonical": "oklch(15.5% 0.009 274.3)",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#232427",
+          "#3e3f44",
+          "#5c5d63",
+          "#7e8086",
+          "#a3a4a9",
+          "#c9cacd",
+          "#eeeef0"
+        ]
+      },
+      "graphite": {
+        "role": "neutral",
+        "displayName": "Grafite",
+        "canonical": "oklch(47.4% 0.022 265.8)",
+        "tonalRamp": [
+          "#090b0f",
+          "#20242c",
+          "#3a404c",
+          "#585e6b",
+          "#7a808e",
+          "#9fa5b0",
+          "#c7cad1",
+          "#edeef2"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Fio",
+        "canonical": "oklch(90.3% 0.010 267.4)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222428",
+          "#3d4045",
+          "#5b5e63",
+          "#7d8086",
+          "#a2a4aa",
+          "#c9cace",
+          "#eeeef0"
+        ]
+      },
+      "field-edge": {
+        "role": "neutral",
+        "displayName": "Borda de Campo",
+        "canonical": "oklch(63.9% 0.024 265.7)",
+        "tonalRamp": [
+          "#090b10",
+          "#20242d",
+          "#3a404d",
+          "#575e6c",
+          "#79808f",
+          "#9fa5b1",
+          "#c7cad2",
+          "#eceef3"
+        ]
+      },
+      "night-card": {
+        "role": "neutral",
+        "displayName": "Cartão da Noite",
+        "canonical": "oklch(21.0% 0.012 270.8)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222429",
+          "#3d4046",
+          "#5b5d65",
+          "#7d8088",
+          "#a2a4ab",
+          "#c9cace",
+          "#eeeef0"
+        ]
+      },
+      "night-recess": {
+        "role": "neutral",
+        "displayName": "Rebaixo da Noite",
+        "canonical": "oklch(24.8% 0.016 269.0)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#22242a",
+          "#3c4048",
+          "#5a5d67",
+          "#7c808a",
+          "#a1a4ad",
+          "#c8cacf",
+          "#edeef1"
+        ]
+      },
+      "night-ink": {
+        "role": "neutral",
+        "displayName": "Tinta da Noite",
+        "canonical": "oklch(95.5% 0.007 268.5)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#232427",
+          "#3e4044",
+          "#5c5d62",
+          "#7e8085",
+          "#a3a4a8",
+          "#c9cacd",
+          "#eeeef0"
+        ]
+      },
+      "night-graphite": {
+        "role": "neutral",
+        "displayName": "Grafite da Noite",
+        "canonical": "oklch(73.4% 0.020 265.9)",
+        "tonalRamp": [
+          "#090b0f",
+          "#21242b",
+          "#3b404b",
+          "#585e69",
+          "#7b808d",
+          "#a0a5af",
+          "#c8cad1",
+          "#edeef2"
+        ]
+      },
+      "night-hairline": {
+        "role": "neutral",
+        "displayName": "Fio da Noite",
+        "canonical": "oklch(30.1% 0.019 268.1)",
+        "tonalRamp": [
+          "#0a0b0f",
+          "#21242b",
+          "#3b404a",
+          "#595d69",
+          "#7b808c",
+          "#a0a4ae",
+          "#c8cad0",
+          "#edeef2"
+        ]
+      },
+      "night-field-edge": {
+        "role": "neutral",
+        "displayName": "Borda de Campo da Noite",
+        "canonical": "oklch(55.6% 0.029 268.6)",
+        "tonalRamp": [
+          "#090b11",
+          "#20242f",
+          "#393f50",
+          "#575d6f",
+          "#798092",
+          "#9ea4b4",
+          "#c7cad4",
+          "#eceef4"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Só o título da primeira tela."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Títulos de seção, janela e resultado."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Nome do arquivo no recibo e título de seção recolhida."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Texto corrido e campos (sempre 16px)."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Rótulo de campo."
+      },
+      "stamp": {
+        "displayName": "Carimbo",
+        "purpose": "Texto do carimbo de conferência, em caixa alta."
+      },
+      "data": {
+        "displayName": "Dado",
+        "purpose": "Números conferíveis: meta, resumos, total, versão."
+      }
+    },
+    "shadows": [
+      {
+        "name": "assentado",
+        "value": "0 1px 2px rgb(11 12 16 / 5%), 0 4px 14px rgb(11 12 16 / 5%)",
+        "purpose": "Cartão do resultado e página na tela cheia, só no claro (none no escuro)."
+      },
+      {
+        "name": "janela",
+        "value": "0 12px 40px rgb(11 12 16 / 22%)",
+        "purpose": "Janelas modais; no escuro 0 12px 40px rgb(0 0 0 / 55%)."
+      },
+      {
+        "name": "barra-do-polegar",
+        "value": "0 -8px 24px rgb(0 0 0 / 8%)",
+        "purpose": "Sombra para cima da barra fixa."
+      },
+      {
+        "name": "item-erguido",
+        "value": "0 10px 30px rgb(11 12 16 / 25%)",
+        "purpose": "Item do recibo enquanto é arrastado."
+      }
+    ],
+    "motion": [
+      {
+        "name": "stamp-in",
+        "value": "0.22s cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "A batida do carimbo ao aparecer pela primeira vez (escala 1,15 para 1, opacidade 0 para 1)."
+      },
+      {
+        "name": "reorder-slide",
+        "value": "transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)",
+        "purpose": "Itens do recibo deslizando para abrir espaço ao arrastar."
+      },
+      {
+        "name": "dropzone",
+        "value": "border-color 0.15s, background-color 0.15s",
+        "purpose": "Área de soltar ao receber arquivo arrastado."
+      },
+      {
+        "name": "camera-shot",
+        "value": "0.25s ease-out",
+        "purpose": "Clarão da foto na câmera."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-touch",
+        "value": "420px"
+      },
+      {
+        "name": "phone",
+        "value": "520px"
+      },
+      {
+        "name": "hero-lines",
+        "value": "600px"
+      },
+      {
+        "name": "receipt-row",
+        "value": "640px"
+      },
+      {
+        "name": "desktop-dock",
+        "value": "720px"
+      },
+      {
+        "name": "landscape-height",
+        "value": "max-height: 480px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botão principal",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Cheio de azul caneta; um por contexto (\"Tirar foto\", \"Gerar PDF\").",
+      "html": "<button class=\"ds-btn-primary\">Gerar PDF</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 16px; border-radius: 8px; font: 600 16px/1.3 var(--font-sans, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif); cursor: pointer; background: var(--accent, #3a63ff); border: 1px solid var(--accent, #3a63ff); color: var(--accent-text, #ffffff); } .ds-btn-primary:hover { background: color-mix(in srgb, var(--accent, #3a63ff) 86%, #000); border-color: color-mix(in srgb, var(--accent, #3a63ff) 86%, #000); } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: 3px solid var(--accent, #3a63ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Botão de contorno",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "O botão padrão: cartão branco, borda de campo, texto preto; azul no hover.",
+      "html": "<button class=\"ds-btn-outline\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\"/></svg><span>Adicionar arquivos</span></button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 16px; border-radius: 8px; font: 600 16px/1.3 var(--font-sans, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif); cursor: pointer; background: var(--surface, #ffffff); border: 1px solid var(--field-border, #858c9b); color: var(--text, #0b0c10); } .ds-btn-outline:hover { border-color: var(--accent, #3a63ff); color: var(--accent-ink, #2b4fe0); } .ds-btn-outline:active { transform: translateY(1px); } .ds-btn-outline:focus-visible { outline: 3px solid var(--accent, #3a63ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Botão sem borda",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Texto azul de escrever, fundo lavado no hover (\"Mudar\").",
+      "html": "<button class=\"ds-btn-ghost\">Mudar</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 16px; border-radius: 8px; font: 600 16px/1.3 var(--font-sans, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif); cursor: pointer; padding: 0 12px; background: transparent; border: 1px solid transparent; color: var(--accent-ink, #2b4fe0); } .ds-btn-ghost:hover { background: var(--accent-soft, #e6ecff); } .ds-btn-ghost:focus-visible { outline: 3px solid var(--accent, #3a63ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Campo",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Rótulo 600 de 14px, campo de 44px com letra de 16px e borda de 3:1.",
+      "html": "<label class=\"ds-field\">Senha para abrir<input class=\"ds-input\" type=\"text\" value=\"\" placeholder=\"Opcional\"></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; font: 600 0.875rem/1.5 var(--font-sans, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif); color: var(--text, #0b0c10); max-width: 320px; } .ds-input { min-height: 44px; padding: 6px 10px; font: 400 16px/1.55 var(--font-sans, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif); color: var(--text, #0b0c10); background: var(--surface, #ffffff); border: 1px solid var(--field-border, #858c9b); border-radius: 8px; } .ds-input::placeholder { color: var(--muted, #565c69); } .ds-input:hover { border-color: var(--accent, #3a63ff); } .ds-input:focus-visible { outline: 3px solid var(--accent, #3a63ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Carimbo de conferência",
+      "kind": "custom",
+      "refersTo": "stamp",
+      "description": "A assinatura visual: borda dupla azul, caixa alta mono, girado -2°; última linha é a regra, separada por fio.",
+      "html": "<p class=\"ds-stamp\"><span>Processado no aparelho</span><span>· 0 bytes enviados ·</span><code>connect-src 'none'</code></p>",
+      "css": ".ds-stamp { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; margin: 12px 8px; padding: 6px 12px 5px; border: 4px double var(--accent, #3a63ff); border-radius: 4px; color: var(--accent-ink, #2b4fe0); background: transparent; font: 600 0.8125rem/1.3 var(--font-mono, ui-monospace, \"SF Mono\", \"Cascadia Mono\", \"Roboto Mono\", Menlo, Consolas, monospace); font-variant-numeric: tabular-nums; letter-spacing: 0.06em; text-transform: uppercase; transform: rotate(-2deg); transform-origin: left center; opacity: 0.94; animation: ds-stamp-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); } .ds-stamp > span { display: block; } .ds-stamp > code { display: block; align-self: stretch; margin-top: 4px; padding-top: 3px; border-top: 1px solid var(--accent, #3a63ff); font: inherit; font-weight: 500; font-size: 0.92em; letter-spacing: 0.03em; text-transform: none; } @keyframes ds-stamp-in { from { opacity: 0; scale: 1.15; } } @media (prefers-reduced-motion: reduce) { .ds-stamp { animation: none; } }"
+    },
+    {
+      "name": "Carimbo pequeno",
+      "kind": "chip",
+      "refersTo": "stamp-sm",
+      "description": "Selo de um item ou de uma conferência do resultado (\"Tarjado\", \"Protegido com senha\").",
+      "html": "<span class=\"ds-stamp-sm\">Tarjado</span> <span class=\"ds-stamp-sm\">Protegido com senha</span>",
+      "css": ".ds-stamp-sm { display: inline-flex; align-items: center; gap: 4px; margin: 6px; padding: 1px 6px; border: 3px double var(--accent, #3a63ff); border-radius: 3px; color: var(--accent-ink, #2b4fe0); font: 600 0.75rem/1.4 var(--font-mono, ui-monospace, \"SF Mono\", \"Cascadia Mono\", \"Roboto Mono\", Menlo, Consolas, monospace); letter-spacing: 0.07em; text-transform: uppercase; transform: rotate(3deg); opacity: 0.94; }"
+    },
+    {
+      "name": "Recibo de páginas",
+      "kind": "card",
+      "refersTo": "receipt",
+      "description": "Itens numerados em mono, fio tracejado entre eles, total no pé e borda picotada.",
+      "html": "<div class=\"ds-receipt\"><div class=\"ds-receipt-item\"><span class=\"ds-receipt-num\">01</span><span><b>rg-frente.jpg</b><small>A4 · 212 KB</small></span><span class=\"ds-stamp-mini\">Tarjado</span></div><div class=\"ds-receipt-item\"><span class=\"ds-receipt-num\">02</span><span><b>rg-verso.jpg</b><small>A4 · 198 KB</small></span></div><p class=\"ds-receipt-total\"><span>Total</span><b>2 páginas · 410 KB</b></p></div>",
+      "css": ".ds-receipt { position: relative; max-width: 420px; margin-bottom: 16px; background: var(--surface, #ffffff); border: 1px solid var(--border, #dcdfe6); border-bottom: 0; border-radius: 10px 10px 0 0; font: 400 16px/1.55 var(--font-sans, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif); color: var(--text, #0b0c10); } .ds-receipt::after { content: \"\"; position: absolute; left: -1px; right: -1px; bottom: -8px; height: 8px; background: linear-gradient(-45deg, transparent 5px, var(--surface, #ffffff) 0) 0 0 / 10px 8px, linear-gradient(45deg, transparent 5px, var(--surface, #ffffff) 0) 0 0 / 10px 8px; } .ds-receipt-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; } .ds-receipt-item + .ds-receipt-item { border-top: 1px dashed color-mix(in srgb, var(--field-border, #858c9b) 60%, transparent); } .ds-receipt-num { font: 600 0.875rem var(--font-mono, ui-monospace, \"SF Mono\", \"Cascadia Mono\", \"Roboto Mono\", Menlo, Consolas, monospace); color: var(--muted, #565c69); } .ds-receipt-item b { display: block; font-weight: 600; font-size: 0.9375rem; } .ds-receipt-item small { font: 0.78rem var(--font-mono, ui-monospace, \"SF Mono\", \"Cascadia Mono\", \"Roboto Mono\", Menlo, Consolas, monospace); color: var(--muted, #565c69); } .ds-stamp-mini { margin-left: auto; padding: 1px 6px; border: 3px double var(--accent, #3a63ff); border-radius: 3px; color: var(--accent-ink, #2b4fe0); font: 600 0.75rem var(--font-mono, ui-monospace, \"SF Mono\", \"Cascadia Mono\", \"Roboto Mono\", Menlo, Consolas, monospace); letter-spacing: 0.07em; text-transform: uppercase; transform: rotate(3deg); } .ds-receipt-total { display: flex; justify-content: space-between; margin: 0; padding: 10px 14px 12px; border-top: 1px dashed color-mix(in srgb, var(--field-border, #858c9b) 60%, transparent); font: 0.8rem var(--font-mono, ui-monospace, \"SF Mono\", \"Cascadia Mono\", \"Roboto Mono\", Menlo, Consolas, monospace); color: var(--muted, #565c69); } .ds-receipt-total span { text-transform: uppercase; letter-spacing: 0.06em; } .ds-receipt-total b { color: var(--text, #0b0c10); font-weight: 600; }"
+    },
+    {
+      "name": "Seção recolhida",
+      "kind": "card",
+      "refersTo": "collapsible-section",
+      "description": "Ajuste avançado recolhido, com o estado ligado em mono embaixo do título.",
+      "html": "<details class=\"ds-more\"><summary><span class=\"ds-more-title\">Senha, PDF/A e assinatura</span><span class=\"ds-more-state\">sem senha · PDF comum</span></summary><div class=\"ds-more-body\">Corpo dos ajustes.</div></details>",
+      "css": ".ds-more { max-width: 480px; border: 1px solid var(--border, #dcdfe6); border-radius: 10px; background: var(--surface, #ffffff); font: 400 16px/1.55 var(--font-sans, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif); color: var(--text, #0b0c10); } .ds-more > summary { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 12px; min-height: 56px; padding: 8px 14px; cursor: pointer; list-style: none; border-radius: 10px; } .ds-more > summary::-webkit-details-marker { display: none; } .ds-more > summary::after { content: \"\"; grid-column: 2; grid-row: 1 / span 2; width: 9px; height: 9px; margin-right: 4px; border-right: 2px solid var(--muted, #565c69); border-bottom: 2px solid var(--muted, #565c69); transform: rotate(45deg) translateY(-3px); } .ds-more[open] > summary::after { transform: rotate(-135deg) translateY(-3px); } .ds-more[open] > summary { border-bottom: 1px dashed var(--border, #dcdfe6); border-radius: 10px 10px 0 0; } .ds-more > summary:hover { background: var(--surface-2, #eef0f5); } .ds-more > summary:focus-visible { outline: 2px solid var(--accent, #3a63ff); outline-offset: 2px; } .ds-more-title { font-weight: 700; } .ds-more-state { grid-column: 1; font: 0.8rem var(--font-mono, ui-monospace, \"SF Mono\", \"Cascadia Mono\", \"Roboto Mono\", Menlo, Consolas, monospace); color: var(--muted, #565c69); } .ds-more-body { padding: 12px 14px 14px; }"
+    },
+    {
+      "name": "Barra do polegar",
+      "kind": "nav",
+      "refersTo": "dock-bar",
+      "description": "Resumo dos ajustes em mono, \"Mudar\" e \"Gerar PDF\" a 52px.",
+      "html": "<div class=\"ds-dock\"><p class=\"ds-dock-summary\"><span>A4 · Documento · sem senha</span><button class=\"ds-dock-change\">Mudar</button></p><button class=\"ds-dock-go\">Gerar PDF</button></div>",
+      "css": ".ds-dock { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; max-width: 640px; padding: 8px 8px 8px 20px; background: var(--surface, #ffffff); border: 1px solid var(--border, #dcdfe6); border-radius: 10px; box-shadow: 0 -8px 24px rgb(0 0 0 / 8%); font: 400 16px/1.55 var(--font-sans, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif); } .ds-dock-summary { flex: 1 1 260px; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; font: 0.8rem var(--font-mono, ui-monospace, \"SF Mono\", \"Cascadia Mono\", \"Roboto Mono\", Menlo, Consolas, monospace); color: var(--text, #0b0c10); } .ds-dock-change { min-height: 44px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--accent-ink, #2b4fe0); font: 600 16px var(--font-sans, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif); cursor: pointer; } .ds-dock-change:hover { background: var(--accent-soft, #e6ecff); } .ds-dock-go { flex: 0 1 320px; min-height: 52px; padding: 12px 22px; border: 1px solid var(--accent, #3a63ff); border-radius: 8px; background: var(--accent, #3a63ff); color: var(--accent-text, #ffffff); font: 600 16px var(--font-sans, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif); cursor: pointer; } .ds-dock-go:hover { background: color-mix(in srgb, var(--accent, #3a63ff) 86%, #000); } .ds-dock button:focus-visible { outline: 3px solid var(--accent, #3a63ff); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Carimbo de conferência",
+    "overview": "O Scanner Doc é uma mesa de repartição honesta: papel frio, cartões brancos, tinta preta e uma única tinta de cor, o azul caneta da Sankler, usada para carimbar o que foi conferido e para marcar a ação. Cada garantia do app (processado no aparelho, tarjado, protegido com senha, assinado) aparece como carimbo de borda dupla, caixa alta monoespaçada, levemente girado, e não como parágrafo de promessa. A prova vem antes do enfeite.\n\nA densidade é de ferramenta, não de vitrine: o caminho simples (adicionar, Gerar PDF) fica sempre à vista, a lista de páginas lê como recibo numerado com fios tracejados, e o avançado mora em seções recolhidas que mostram, em monoespaçada, o resumo do que está ligado. A barra do polegar fixa no pé da tela leva o resumo e o botão cheio de azul. O tema claro e o escuro seguem `prefers-color-scheme`; no escuro o papel vira o preto Sankler e a tinta continua a mesma.\n\nSó há fontes do sistema (a CSP tem `font-src 'none'`): a sans do aparelho para o texto e a mono do aparelho para tudo que é número, código ou carimbo. A personalidade vem do carimbo, do recibo e da disciplina de uma tinta só, não de uma face tipográfica.",
+    "keyCharacteristics": [
+      "Uma tinta de cor, azul caneta, para carimbo, ação e foco; sem verde de sucesso.",
+      "Carimbo de borda dupla em caixa alta mono como assinatura visual de toda garantia.",
+      "Números, tamanhos, protocolos e resumos em mono com algarismos de mesma largura.",
+      "Lista de páginas como recibo: itens separados por fio tracejado, total no pé, borda picotada.",
+      "Plano, quase sem sombra; profundidade só no que flutua (barra, janela, item arrastado).",
+      "Alvo de toque de 44px em todo controle; 52px nas ações principais."
+    ],
+    "rules": [
+      {
+        "name": "A Regra da Tinta Única",
+        "body": "Só o azul caneta tem cor de marca. Sucesso, conferido e ação usam a mesma tinta; não existe verde de sucesso nem segunda cor de destaque na interface.",
+        "section": "colors"
+      },
+      {
+        "name": "A Regra do Azul que Escreve",
+        "body": "O azul pinta (preenchimento, borda, contorno, foco) no valor de ink-blue; quando vira letra ou ícone, usa ink-blue-text no claro e ink-blue-text-dark no escuro, que passam de 4,5:1.",
+        "section": "colors"
+      },
+      {
+        "name": "A Regra do Vermelho Raro",
+        "body": "Vermelho só para erro, remoção e momento de risco; nunca como destaque decorativo.",
+        "section": "colors"
+      },
+      {
+        "name": "A Regra do Número em Mono",
+        "body": "Todo número que a pessoa confere (páginas, KB, versão, protocolo, zoom) sai na mono do sistema com `tabular-nums`.",
+        "section": "typography"
+      },
+      {
+        "name": "A Regra da Fonte da Casa",
+        "body": "Nenhuma fonte baixada: só a sans e a mono do sistema, por exigência da CSP.",
+        "section": "typography"
+      },
+      {
+        "name": "A Regra do Plano por Padrão",
+        "body": "Superfície parada não tem sombra; sombra é sinal de que a peça flutua sobre a página.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use o carimbo (borda dupla azul, caixa alta mono, girado) para toda garantia conferida: privacidade, tarja, senha, PDF/A, assinatura.",
+      "Do escreva texto, link e ícone azuis com ink-blue-text (claro) ou ink-blue-text-dark (escuro), nunca com ink-blue.",
+      "Do ponha todo número conferível na mono do sistema com `tabular-nums`.",
+      "Do separe itens de lista por fio tracejado e cartões por fio de 1px, sem sombra.",
+      "Do dê 44px de alvo a todo controle e 52px às ações principais.",
+      "Do troque o logo da Sankler pela versão de fundo escuro no tema escuro, com `<picture>`, e mantenha a assinatura só no rodapé.",
+      "Do desligue a batida do carimbo e o deslizar do recibo com `prefers-reduced-motion`."
+    ],
+    "donts": [
+      "Don't introduza uma segunda cor de destaque nem verde de sucesso: \"deu certo\" é o carimbo azul.",
+      "Don't use vermelho fora de erro, remoção e momento de risco.",
+      "Don't carregue fonte nenhuma, nem do próprio site: a CSP tem `font-src 'none'`.",
+      "Don't recolora o logo da Sankler nem ponha a assinatura dentro do PDF gerado.",
+      "Don't ponha cartão dentro de cartão nas seções recolhidas.",
+      "Don't dê sombra a superfície parada; sombra é só do que flutua."
+    ]
+  }
+}

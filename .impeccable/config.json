@@ -1,0 +1,53 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/challenger-consumer.html"
+        ],
+        "createdAt": "2026-11-06T14:38:21.766Z",
+        "reason": "agent decided: esboço da alternativa 'warm consumer app surface' do catálogo, cujo fundo morno é a própria gramática do mundo; não vai para o app"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "files": [
+          ".impeccable/mocks/decision/canon.html"
+        ],
+        "createdAt": "2026-11-06T14:38:37.353Z",
+        "reason": "agent decided: esboço do padrão da categoria, onde Inter é a escolha típica de propósito; não vai para o app"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/challenger-consumer.html"
+        ],
+        "createdAt": "2026-11-06T15:36:24.593Z",
+        "reason": "agent decided: esboço da rodada de escolha, anterior ao DESIGN.md e fora do app (CSP font-src 'none'); não é código entregue"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/model-pick.html"
+        ],
+        "createdAt": "2026-11-06T15:36:24.607Z",
+        "reason": "agent decided: esboço da rodada de escolha, anterior ao DESIGN.md e fora do app (CSP font-src 'none'); não é código entregue"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/canon.html"
+        ],
+        "createdAt": "2026-11-06T15:36:24.621Z",
+        "reason": "agent decided: esboço da rodada de escolha, anterior ao DESIGN.md e fora do app (CSP font-src 'none'); não é código entregue"
+      }
+    ]
+  }
+}

@@ -12,14 +12,15 @@
   <meta name="referrer" content="no-referrer">
   <title>Scanner Doc → PDF</title>
   <meta name="description" content="Turn photos and Word documents into PDF, merge, split and compress PDFs, make the text in photos searchable and sign with an A1 digital certificate, right in your browser. No upload, no sign-up, no tracking. Open source.">
-  <meta name="theme-color" content="#0f766e" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#181c21" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16181e" media="(prefers-color-scheme: dark)">
   <link rel="alternate" hreflang="pt-BR" href="https://scanner.sankler.com.br/">
   <link rel="alternate" hreflang="en" href="https://scanner.sankler.com.br/en/">
   <link rel="alternate" hreflang="x-default" href="https://scanner.sankler.com.br/">
   <link rel="icon" href="../icon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/shell.css">
   <script type="module" src="../js/app.js"></script>
 </head>
 <body>
@@ -37,6 +38,7 @@
     <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><path d="M6 1v3M10 1v3M14 1v3"/></symbol>
     <symbol id="i-left" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></symbol>
     <symbol id="i-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
     <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></symbol>
     <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></symbol>
     <symbol id="i-remove" viewBox="0 0 24 24"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></symbol>
@@ -60,6 +62,7 @@
     <symbol id="i-check-mark" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
     <symbol id="i-form" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M7 8.5h3M12 8.5h5M7 12h3M12 12h5M7 15.5h3M12 15.5h5"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
   </svg>
 
   <a class="skip" href="#main">Skip to content</a>
@@ -68,17 +71,28 @@
     <div class="wrap header-inner">
       <a class="brand" href="./"><img src="../icon.svg" alt="" width="28" height="28"> Scanner Doc</a>
       <a class="lang-switch" href="../" hreflang="pt-BR" lang="pt-BR">Português</a>
-      <span class="badge"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg> Nothing leaves your device</span>
     </div>
   </header>
 
   <main id="main" class="wrap">
     <section class="hero">
       <h1><span class="hero-line">Photo, Word or PDF: everything becomes a PDF.</span> <span class="hero-line">Without sending anything to anyone.</span></h1>
+      <!-- Carimbo de conferência: é a regra da CSP acima (connect-src 'none'), não uma promessa. O link leva ao jeito de
+           conferir, no cartão de privacidade. -->
+      <div class="proof">
+        <p class="stamp proof-stamp">
+          <span class="proof-line">Processed on your device</span>
+          <span class="proof-line"><span aria-hidden="true">· </span>0 bytes sent<span aria-hidden="true"> ·</span></span>
+          <code class="proof-rule">connect-src 'none'</code>
+        </p>
+        <a class="proof-link" href="#privacy">How to check</a>
+      </div>
       <p class="lead">Take a photo, pick images, open a Word document, or merge, split and compress PDFs. Make the text in photos searchable, redact data and sign with your A1 digital certificate. Everything happens right here in your browser: no sign-up, no upload, no tracking.</p>
     </section>
 
     <section id="dropzone" class="dropzone" aria-label="Add images or documents">
+      <!-- Com páginas na lista, a área vira uma linha só, "Adicionar mais" (css/shell.css), e o recibo sobe. -->
+      <p class="dropzone-more">Add more</p>
       <div class="dropzone-actions">
         <!-- "Tirar foto" só aparece com tela de toque (o atributo capture é ignorado no computador);
              sem ele, "Escolher arquivos" vira o botão principal. Ver .touch-only e .btn-pick no CSS. -->
@@ -93,17 +107,23 @@
 
     <section id="workspace" class="workspace" hidden aria-labelledby="pages-title">
       <div class="workspace-head">
-        <h2 id="pages-title">Pages <span id="page-count" class="muted"></span></h2>
+        <h2 id="pages-title">Pages <span id="page-count" class="page-count" aria-hidden="true"></span></h2>
         <button id="clear" type="button" class="btn btn-ghost">Clear all</button>
       </div>
 
-      <!-- Aviso de PDF pesado (js/app.js, updateCompressTip): no topo da lista, para ser visto logo, mesmo no celular. -->
-      <p id="compress-tip" class="tip compress-tip" role="status" hidden>
+      <!-- Aviso de PDF pesado (js/app.js, updateCompressTip): no topo da lista, para ser visto logo, mesmo no celular.
+           Não é região de aviso: quando aparece, o texto é lido uma vez pelo #status. -->
+      <p id="compress-tip" class="tip compress-tip" hidden>
         <span id="compress-tip-text"></span>
         <button id="compress-tip-toggle" type="button" class="btn"></button>
       </p>
 
-      <ol id="pages" class="pages"></ol>
+      <!-- A lista lida como recibo: número em monoespaçada, Tarjar e Editar à mão em cada página, o resto no menu
+           "Mais ações" do item, e a linha do total no pé (js/app.js). -->
+      <div class="receipt">
+        <ol id="pages" class="pages"></ol>
+        <p id="pages-total" class="pages-total"></p>
+      </div>
 
       <!-- Busca de dados para tarjar (js/find-data.js): só sugere; a pessoa confirma na janela #find-dialog. -->
       <div class="find-row">
@@ -111,132 +131,181 @@
         <p class="field-note">Email, phone, card number and Brazilian IDs (CPF, CNPJ, CEP) in the text of the pages. In photos, the text is recognized on the spot (OCR, about 7 MB the first time).</p>
       </div>
 
-      <div class="settings">
-        <label class="field">
-          <span>Filter on all pages</span>
-          <select id="filter-all"></select>
-        </label>
-        <label class="field">
-          <span>Page size</span>
-          <select id="page-size">
-            <option value="a4" selected>A4</option>
-            <option value="letter">Letter</option>
-            <option value="fit">Same as the image</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Margin</span>
-          <select id="margin">
-            <option value="none">No margin</option>
-            <option value="small" selected>Small</option>
-            <option value="normal">Normal</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Quality</span>
-          <select id="quality">
-            <option value="light">Light (good for email)</option>
-            <option value="balanced" selected>Balanced</option>
-            <option value="high">High (larger file)</option>
-          </select>
-        </label>
-        <p id="quality-tip" class="tip field-wide" hidden>
-          <span><strong>Long page or small print:</strong> with High quality, small text comes out sharper (the file gets larger).</span>
-          <button id="quality-tip-apply" type="button" class="btn">Use High quality</button>
-        </p>
-        <!-- OCR (js/ocr.js): desligado por padrão; o motor e o modelo só são baixados quando a pessoa liga. -->
-        <div id="ocr-field" class="field field-wide check-field" hidden>
-          <label class="check"><input id="ocr" type="checkbox" aria-describedby="ocr-note"> Searchable text (OCR)</label>
-          <p id="ocr-note" class="field-note">Recognizes the printed text in photos and scanned PDFs: in the PDF you can search, select and copy it. PDF pages that already have text stay as they are. The first time, the app downloads about 7 MB, and each page takes a few seconds. The text goes into the PDF, hidden under the image, including ID numbers, addresses and amounts. Redacting later in another program does not remove this text: if you need to redact, do it here in the app or leave this option off.</p>
+      <!-- Ajustes: à vista só o essencial; o resto em seções recolhidas, cada uma com o resumo do que está ligado no
+           <summary> (js/app.js, updateSummaries). Erro num campo de seção fechada abre a seção antes do foco. -->
+      <div id="settings" class="settings-panel">
+        <h2 id="settings-title" class="settings-title" tabindex="-1">Settings</h2>
+        <div class="settings">
+          <label class="field">
+            <span>Create</span>
+            <select id="output-mode">
+              <option value="single" selected>Everything in one PDF</option>
+              <option value="each">One PDF per page</option>
+              <option value="ranges">One PDF per range</option>
+            </select>
+          </label>
+          <!-- Erro do campo (js/app.js, fieldError): fora do <label>, para não entrar no nome do campo. -->
+          <div id="ranges-field" class="field" hidden>
+            <label for="ranges">Ranges (numbers in the list)</label>
+            <input id="ranges" type="text" aria-describedby="output-summary" placeholder="E.g. 1-3, 4-10" maxlength="200" autocomplete="off" spellcheck="false">
+            <p id="ranges-error" class="field-note text-warning" hidden></p>
+          </div>
+          <label class="field">
+            <span>Page size</span>
+            <select id="page-size">
+              <option value="a4" selected>A4</option>
+              <option value="letter">Letter</option>
+              <option value="fit">Same as the image</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Quality</span>
+            <select id="quality">
+              <option value="light">Light (good for email)</option>
+              <option value="balanced" selected>Balanced</option>
+              <option value="high">High (larger file)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>File name</span>
+            <input id="file-name" type="text" value="document" maxlength="80" autocomplete="off" spellcheck="false">
+          </label>
+          <p id="quality-tip" class="tip field-wide" hidden>
+            <span><strong>Long page or small print:</strong> with High quality, small text comes out sharper (the file gets larger).</span>
+            <button id="quality-tip-apply" type="button" class="btn">Use High quality</button>
+          </p>
+          <!-- Prévia do resultado: que arquivos vão sair e que páginas entram em cada um (js/app.js). Só com mais de um
+               arquivo: com um PDF só, a lista de páginas já é a prévia. -->
+          <div id="output-preview" class="output-preview field-wide" hidden>
+            <p class="output-title">Result preview</p>
+            <p id="output-summary" class="output-summary"></p>
+            <ol id="output-files" class="output-files"></ol>
+          </div>
         </div>
-        <label class="field">
-          <span>Create</span>
-          <select id="output-mode">
-            <option value="single" selected>Everything in one PDF</option>
-            <option value="each">One PDF per page</option>
-            <option value="ranges">One PDF per range</option>
-          </select>
-        </label>
-        <label class="field" hidden>
-          <span>Images in the PDFs</span>
-          <select id="pdf-compress">
-            <option value="none" selected>Keep as they are</option>
-            <option value="light">Compress (smaller file)</option>
-            <option value="balanced">Compress a little</option>
-          </select>
-        </label>
-        <label id="ranges-field" class="field" hidden>
-          <span>Ranges (numbers in the list)</span>
-          <input id="ranges" type="text" placeholder="E.g. 1-3, 4-10" maxlength="200" autocomplete="off" spellcheck="false">
-        </label>
-        <!-- Prévia do resultado: que arquivos vão sair e que páginas entram em cada um (js/app.js). -->
-        <div id="output-preview" class="output-preview field-wide" hidden>
-          <p class="output-title">Result preview</p>
-          <p id="output-summary" class="output-summary" role="status"></p>
-          <ol id="output-files" class="output-files"></ol>
-        </div>
+
+        <details id="more-look" class="more" hidden>
+          <summary><span class="more-title">Appearance</span> <span id="more-look-state" class="more-state"></span></summary>
+          <div class="settings more-body">
+            <label class="field">
+              <span>Filter on all pages</span>
+              <select id="filter-all"></select>
+            </label>
+            <label class="field">
+              <span>Margin</span>
+              <select id="margin">
+                <option value="none">No margin</option>
+                <option value="small" selected>Small</option>
+                <option value="normal">Normal</option>
+              </select>
+            </label>
+            <label class="field" hidden>
+              <span>Images in the PDFs</span>
+              <select id="pdf-compress">
+                <option value="none" selected>Keep as they are</option>
+                <option value="light">Compress (smaller file)</option>
+                <option value="balanced">Compress a little</option>
+              </select>
+            </label>
+            <p id="document-note" class="tip field-wide" hidden><span>Pages from Word documents and PDFs keep the size and margins of their own file. The text stays real text: you can select and search it.</span></p>
+          </div>
+        </details>
+
         <!-- Em todas as páginas (js/all-pages.js): numeração, cabeçalho, rodapé, marca d'água e rubrica entram aqui, cada
-             arquivo contando do 1. Fica escondida enquanto não tiver nenhuma opção. -->
-        <fieldset id="all-pages" class="field field-wide all-pages" hidden>
-          <legend>On all pages</legend>
-          <div class="all-pages-body">
-            <div id="all-pages-options" class="all-pages-options"></div>
-            <canvas id="all-pages-preview" class="stamp-preview" role="img" aria-label="Preview of the first page"></canvas>
+             arquivo contando do 1. A seção fica escondida enquanto o fieldset não tiver nenhuma opção. -->
+        <details id="more-all" class="more" hidden>
+          <summary><span class="more-title">On all pages</span> <span id="more-all-state" class="more-state"></span></summary>
+          <div class="settings more-body">
+            <fieldset id="all-pages" class="field field-wide all-pages" hidden>
+              <legend class="sr-only">On all pages</legend>
+              <div class="all-pages-body">
+                <div id="all-pages-options" class="all-pages-options"></div>
+                <canvas id="all-pages-preview" class="stamp-preview" role="img" aria-label="Preview of the first page"></canvas>
+              </div>
+            </fieldset>
           </div>
-        </fieldset>
-        <p id="document-note" class="tip field-wide" hidden><span>Pages from Word documents and PDFs keep the size and margins of their own file. The text stays real text: you can select and search it.</span></p>
-        <!-- Proteger com senha (js/pdf-crypt.js, AES-256): a senha só fica nos campos até o PDF ser gerado. -->
-        <div class="field field-wide check-field">
-          <label class="check"><input id="protect" type="checkbox" aria-describedby="protect-note"> Protect the PDF with a password</label>
-          <p id="protect-note" class="field-note">Whoever receives the PDF will need the password to open it. The app does not keep the password and cannot recover it: write it down somewhere safe.</p>
-          <p id="protect-blocked" class="field-note field-blocked" hidden>Not available with PDF/A, which does not allow passwords.</p>
-          <div id="protect-inputs" class="protect-inputs" hidden>
-            <label class="field">
-              <span>Password</span>
-              <input id="protect-password" type="password" autocomplete="off" spellcheck="false" maxlength="100">
-            </label>
-            <label class="field">
-              <span>Repeat the password</span>
-              <input id="protect-confirm" type="password" autocomplete="off" spellcheck="false" maxlength="100">
-            </label>
+        </details>
+
+        <!-- OCR (js/ocr.js): desligado por padrão; o motor e o modelo só são baixados quando a pessoa liga. -->
+        <details id="more-ocr" class="more" hidden>
+          <summary><span class="more-title">Searchable text (OCR)</span> <span id="more-ocr-state" class="more-state"></span></summary>
+          <div class="settings more-body">
+            <div id="ocr-field" class="field field-wide check-field" hidden>
+              <label class="check"><input id="ocr" type="checkbox" aria-describedby="ocr-note"> Searchable text (OCR)</label>
+              <p id="ocr-note" class="field-note">Recognizes the printed text in photos and scanned PDFs: in the PDF you can search, select and copy it. PDF pages that already have text stay as they are. The first time, the app downloads about 7 MB, and each page takes a few seconds. The text goes into the PDF, hidden under the image, including ID numbers, addresses and amounts. Redacting later in another program does not remove this text: if you need to redact, do it here in the app or leave this option off.</p>
+            </div>
           </div>
-        </div>
-        <!-- PDF/A-2b (js/pdf.js, js/icc.js e, nas páginas de Word e no carimbo, js/pdfa-fonts.js): sem página de outro PDF e sem senha. -->
-        <div class="field field-wide check-field">
-          <label class="check"><input id="pdfa" type="checkbox" aria-describedby="pdfa-note pdfa-blocked"> PDF/A (courts and archiving)</label>
-          <p id="pdfa-note" class="field-note">Archiving format (PDF/A-2b) that some courts require for electronic filings. On screen the PDF looks the same; inside the file go the standard identification, the color profile and, for Word pages and the signature stamp, the fonts, with only the letters used (the first time, the app downloads each font, about 0.5 MB).</p>
-          <p id="pdfa-blocked" class="field-note field-blocked" hidden></p>
-        </div>
-        <label class="field field-wide">
-          <span>File name</span>
-          <input id="file-name" type="text" value="document" maxlength="80" autocomplete="off" spellcheck="false">
-        </label>
-      </div>
+        </details>
 
-      <div class="actions">
-        <button id="generate" type="button" class="btn btn-primary btn-lg">Create PDF</button>
-        <button id="sign" type="button" class="btn btn-lg"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-pen"/></svg> Sign with a digital certificate (A1)</button>
-        <button id="cancel" type="button" class="btn btn-lg" hidden>Cancel</button>
-      </div>
-
-      <div id="result" class="result" hidden>
-        <p class="result-title"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg> <span id="result-title">PDF ready</span></p>
-        <p id="result-info" class="muted"></p>
-        <ul id="result-files" class="result-files" hidden></ul>
-        <div class="result-actions">
-          <button id="download-all" type="button" class="btn btn-primary btn-lg" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg> Download all</button>
-          <a id="download" class="btn btn-primary btn-lg" href="#"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg> Download PDF</a>
-          <button id="share" type="button" class="btn btn-lg" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-share"/></svg> Share</button>
-        </div>
+        <details id="more-secure" class="more">
+          <summary><span class="more-title">Password, PDF/A and signature</span> <span id="more-secure-state" class="more-state"></span></summary>
+          <div class="settings more-body">
+            <!-- Proteger com senha (js/pdf-crypt.js, AES-256): a senha só fica nos campos até o PDF ser gerado. -->
+            <div class="field field-wide check-field">
+              <label class="check"><input id="protect" type="checkbox" aria-describedby="protect-note"> Protect the PDF with a password</label>
+              <p id="protect-note" class="field-note risk-note"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-alert"/></svg> <span>Whoever receives the PDF will need the password to open it. The app does not keep the password and cannot recover it: write it down somewhere safe.</span></p>
+              <p id="protect-blocked" class="field-note field-blocked" hidden>Not available with PDF/A, which does not allow passwords.</p>
+              <div id="protect-inputs" class="protect-inputs" hidden>
+                <div class="field">
+                  <label for="protect-password">Password</label>
+                  <input id="protect-password" type="password" autocomplete="off" spellcheck="false" maxlength="100">
+                  <p id="protect-password-error" class="field-note text-warning" hidden></p>
+                </div>
+                <div class="field">
+                  <label for="protect-confirm">Repeat the password</label>
+                  <input id="protect-confirm" type="password" autocomplete="off" spellcheck="false" maxlength="100">
+                  <p id="protect-confirm-error" class="field-note text-warning" hidden></p>
+                </div>
+              </div>
+            </div>
+            <!-- PDF/A-2b (js/pdf.js, js/icc.js e, nas páginas de Word e no carimbo, js/pdfa-fonts.js): sem página de outro PDF e sem senha. -->
+            <div class="field field-wide check-field">
+              <label class="check"><input id="pdfa" type="checkbox" aria-describedby="pdfa-note pdfa-blocked"> PDF/A (courts and archiving)</label>
+              <p id="pdfa-note" class="field-note">Archiving format (PDF/A-2b) that some courts require for electronic filings. On screen the PDF looks the same; inside the file go the standard identification, the color profile and, for Word pages and the signature stamp, the fonts, with only the letters used (the first time, the app downloads each font, about 0.5 MB).</p>
+              <p id="pdfa-blocked" class="field-note field-blocked" hidden></p>
+            </div>
+            <!-- Assinar gera o PDF e assina no fim (js/sign.js): a janela pede o certificado A1. -->
+            <div class="field field-wide sign-field">
+              <button id="sign" type="button" class="btn btn-lg"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-pen"/></svg> Sign with a digital certificate (A1)</button>
+            </div>
+          </div>
+        </details>
       </div>
     </section>
 
-    <div class="status-bar">
-      <p id="status" class="status" role="status" aria-live="polite"></p>
-      <button id="undo" type="button" class="btn btn-ghost btn-undo" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-undo"/></svg> Undo</button>
+    <!-- Barra do polegar (js/app.js): fica presa no pé da tela enquanto a lista passa, e no fim da lista, no lugar dela.
+         Em cima, o aviso das ações (#status, a única região de aviso da tela principal, e o "Desfazer"); embaixo, com
+         páginas, o resumo do que está ligado e o "Gerar PDF". As janelas e a tela cheia têm a região de aviso delas. O
+         #status nunca sai da árvore de acessibilidade: sem texto à mostra, o cartão só some da tela (css/shell.css). -->
+    <div id="dock" class="dock">
+      <div class="dock-notice">
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+        <button id="undo" type="button" class="btn btn-ghost btn-undo" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-undo"/></svg> Undo</button>
+        <button id="status-dismiss" type="button" class="btn btn-ghost dock-dismiss" aria-label="Close the notice" title="Close the notice"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-remove"/></svg></button>
+      </div>
+      <div id="dock-bar" class="dock-bar" hidden>
+        <p class="dock-summary"><span id="dock-summary" class="dock-summary-text"></span> <button id="dock-change" type="button" class="btn btn-ghost dock-change" aria-label="Change the settings">Change</button></p>
+        <div class="dock-actions">
+          <button id="cancel" type="button" class="btn btn-lg" hidden>Cancel</button>
+          <button id="generate" type="button" class="btn btn-primary btn-lg">Create PDF</button>
+        </div>
+      </div>
     </div>
 
-    <section class="card privacy" aria-labelledby="privacy-title">
+    <!-- Resultado: o que foi conferido de verdade vira carimbo (js/app.js, showResult). -->
+    <section id="result" class="result" hidden aria-labelledby="result-title">
+      <h2 class="result-title"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"/></svg> <span id="result-title">PDF ready</span></h2>
+      <p id="result-info" class="result-info"></p>
+      <ul id="result-checks" class="result-checks" aria-label="Checked" hidden></ul>
+      <ul id="result-files" class="result-files" hidden></ul>
+      <div class="result-actions">
+        <button id="download-all" type="button" class="btn btn-primary btn-lg" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg> Download all</button>
+        <a id="download" class="btn btn-primary btn-lg" href="#"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg> Download PDF</a>
+        <button id="share" type="button" class="btn btn-lg" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-share"/></svg> Share</button>
+      </div>
+      <p id="result-notes" class="result-notes" hidden></p>
+    </section>
+
+    <section id="privacy" class="card privacy" aria-labelledby="privacy-title">
       <h2 id="privacy-title">What happens to your documents? Nothing.</h2>
       <ul class="checklist">
         <li><strong>There is no upload.</strong> Images are processed by your own browser. We have no server that receives files — this is just a static page.</li>
@@ -249,7 +318,7 @@
     </section>
 
     <section class="card feedback" aria-labelledby="feedback-title">
-      <h2 id="feedback-title">Found a bug? Have an idea? 💬</h2>
+      <h2 id="feedback-title">Found a bug? Have an idea?</h2>
       <p>Praise, complaints, suggestions or "it didn't work on my phone": it all helps. Since the app collects nothing, we only learn about problems if you tell us.</p>
       <div class="donate-actions">
         <a id="feedback-email" class="btn btn-primary" href="#" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mail"/></svg> Send an email</a>
@@ -259,7 +328,7 @@
     </section>
 
     <section class="card donate" aria-labelledby="donate-title">
-      <h2 id="donate-title">Coffee doesn't pay for itself ☕</h2>
+      <h2 id="donate-title">Coffee doesn't pay for itself</h2>
       <p>This app has no ads, no premium plan and doesn't sell your data — it doesn't even keep it. It's made by the community, in spare time, fueled by coffee and stubbornness.</p>
       <p>If it saved you a trip to the print shop, a contribution of any amount helps keep everything running (and the maintainer awake). If you can't right now, that's fine: the PDF comes out exactly the same. No hard feelings.</p>
       <div id="pix" class="pix" hidden>
@@ -304,7 +373,7 @@
            no computador e as teclas +, − e 0. -->
       <div id="page-zoom" class="page-zoom" role="group" aria-label="Page zoom" hidden>
         <button id="page-zoom-out" type="button" class="btn" aria-label="Zoom out" title="Zoom out (− key)">−</button>
-        <button id="page-zoom-fit" type="button" class="btn" aria-label="Whole page" title="Whole page (0 key)">100%</button>
+        <button id="page-zoom-fit" type="button" class="btn" aria-label="100%, whole page" title="Whole page (0 key)">100%</button>
         <button id="page-zoom-in" type="button" class="btn" aria-label="Zoom in" title="Zoom in (+ key)">+</button>
       </div>
       <button id="viewer-close" type="button" class="btn">Close</button>
@@ -460,7 +529,7 @@
        O arquivo e a senha só existem na memória até a assinatura terminar. -->
   <dialog id="sign-dialog" class="sheet" aria-labelledby="sign-title">
     <h2 id="sign-title">Sign with a digital certificate</h2>
-    <p class="sheet-alert"><strong>Check the address first:</strong> the browser bar must show <strong>scanner.sankler.com.br</strong>. A fake copy of this site could steal the certificate and the password.</p>
+    <p class="sheet-alert risk-note"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-alert"/></svg> <span><strong>Check the address first:</strong> the browser bar must show <strong>scanner.sankler.com.br</strong>. A fake copy of this site could steal the certificate and the password.</span></p>
     <div id="sign-step-open">
       <p>Choose the A1 certificate (a <strong>.pfx</strong> or <strong>.p12</strong> file) and enter its password. The file and the password stay only here on the device and are not kept: next time, the app asks again.</p>
       <div class="sign-file">

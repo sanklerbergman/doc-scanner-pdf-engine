@@ -1,74 +1,153 @@
+/* Scanner Doc: "Carimbo de conferência" (.impeccable/surfaces/web-index-html.md). Papel frio, tinta preta, uma tinta só,
+   o azul caneta Sankler, para carimbo e ação; vermelho só para erro. Fontes só do sistema (a CSP tem font-src 'none').
+   Regra do azul: --accent pinta (botão cheio, borda do carimbo, contorno); texto, link e ícone azul usam --accent-ink,
+   que passa de 4,5:1 nos dois temas (o --accent dá 4,41:1 sobre o --bg claro). As peças novas da estrutura (barra do
+   Gerar PDF, ajustes recolhíveis, aviso com Desfazer, carimbos do resultado e da lista) ficam em css/shell.css e usam
+   estes tokens e a classe .stamp. */
 :root {
-  --bg: #f6f7f9;
+  --bg: #f5f6f9;
   --surface: #ffffff;
-  --surface-2: #eef1f4;
-  --text: #16191d;
-  --muted: #5b6470;
-  --border: #d9dee4;
-  --accent: #0f766e;
-  --accent-text: #ffffff;
-  --accent-soft: #e0f2ef;
+  --surface-2: #eef0f5;
+  --text: #0b0c10;
+  --muted: #565c69;
+  --border: #dcdfe6;          /* decorativa: cartões, divisórias */
+  --field-border: #858c9b;    /* borda de campo e de botão de contorno: 3,38:1 no branco, 3,12:1 no papel */
+  --accent: #3a63ff;          /* azul caneta: preenchimento, borda do carimbo, contorno de ação, foco */
+  --accent-ink: #2b4fe0;      /* azul como texto: 6,37:1 no branco, 5,89:1 no papel, 5,40:1 no --accent-soft */
+  --accent-text: #ffffff;     /* sobre o --accent: 4,76:1 */
+  --accent-soft: #e6ecff;
   --danger: #b42318;
-  --success: #067647;
-  --radius: 14px;
-  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 4px 16px rgb(16 24 40 / 6%);
+  /* Sem verde: "deu certo" é o carimbo de conferido, na mesma tinta azul. */
+  --success: var(--accent-ink);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 2px rgb(11 12 16 / 5%), 0 4px 14px rgb(11 12 16 / 5%);
+  --shadow-pop: 0 12px 40px rgb(11 12 16 / 22%);
+  --shadow-dock: 0 -8px 24px rgb(11 12 16 / 8%);   /* barra do polegar, para cima */
+  --shadow-notice: 0 6px 20px rgb(11 12 16 / 14%); /* aviso acima da barra */
+  --backdrop: rgb(11 12 16 / 55%);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #101317;
-    --surface: #181c21;
-    --surface-2: #222830;
-    --text: #e8ebef;
-    --muted: #9aa4b1;
-    --border: #2e3640;
-    --accent: #2dd4bf;
-    --accent-text: #062a26;
-    --accent-soft: #123a36;
-    --danger: #f97066;
-    --success: #47cd89;
+    --bg: #0b0c10;
+    --surface: #16181e;
+    --surface-2: #1e2129;
+    --text: #eef0f5;
+    --muted: #a3a9b6;
+    --border: #2a2e38;
+    --field-border: #6c7385;  /* 3,74:1 na superfície, 4,12:1 no papel */
+    --accent: #3a63ff;        /* foco: 4,10:1 no papel, 3,73:1 na superfície, 3,38:1 na --surface-2 */
+    --accent-ink: #8aa2ff;    /* 8,09:1 no papel, 7,34:1 na superfície, 6,21:1 no --accent-soft */
+    --accent-text: #ffffff;
+    --accent-soft: #1a2350;
+    --danger: #ff7a70;
     --shadow: none;
+    --shadow-pop: 0 12px 40px rgb(0 0 0 / 55%);
+    --shadow-dock: 0 -8px 24px rgb(0 0 0 / 8%);
+    --shadow-notice: 0 6px 20px rgb(0 0 0 / 14%);
+    --backdrop: rgb(0 0 0 / 65%);
     color-scheme: dark;
   }
 }
 
+/* Base */
 * { box-sizing: border-box; }
-
+html {
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+  accent-color: var(--accent); caret-color: var(--accent-ink);
+  scrollbar-color: var(--field-border) transparent;
+  /* O foco do Tab não para embaixo da barra do polegar: --dock-h é a altura dela (app.js, ResizeObserver). */
+  scroll-padding-bottom: calc(var(--dock-h, 140px) + 12px);
+}
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 16px/1.55 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
-
-a { color: var(--accent); }
-code { font-size: 0.9em; background: var(--surface-2); padding: 0.1em 0.35em; border-radius: 6px; }
-h1, h2 { line-height: 1.2; margin: 0 0 0.5em; }
-h1 { font-size: clamp(1.6rem, 4.5vw, 2.4rem); letter-spacing: -0.02em; }
-h2 { font-size: 1.25rem; }
+p, li, dd { text-wrap: pretty; }
+a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 0.22em; }
+@media (hover: hover) { a:hover { text-decoration-thickness: 2px; } }
+code {
+  font-family: var(--font-mono); font-size: 0.88em; white-space: nowrap;
+  background: var(--surface-2); padding: 0.1em 0.35em; border-radius: 4px;
+}
+h1, h2 { line-height: 1.2; margin: 0 0 0.5em; text-wrap: balance; }
+h1 { font-size: clamp(1.75rem, 1.2rem + 2.4vw, 2.5rem); font-weight: 800; letter-spacing: -0.025em; }
+h2 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
 [hidden] { display: none !important; }
+::selection { background: var(--accent); color: var(--accent-text); }
+::placeholder { color: var(--muted); opacity: 1; }
+/* Foco: 3 px de azul caneta, com folga; 3:1 ou mais sobre o papel e as superfícies nos dois temas. */
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (prefers-color-scheme: dark) { .viewer-stage :focus-visible, .sheet :focus-visible { outline-color: var(--accent-ink); } }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--field-border); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
 
 .wrap { width: 100%; max-width: 960px; margin: 0 auto; padding: 0 16px; }
 .muted { color: var(--muted); font-weight: normal; }
-.small { font-size: 0.9rem; }
+.small { font-size: 0.875rem; }
+/* Números (páginas, KB, versão): monoespaçada do sistema, algarismos de mesma largura. */
+.num, .page-num, .fill-count, .version, .output-thumb span, .pix-code, kbd {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
 
 .skip { position: absolute; left: -999px; }
-.skip:focus { left: 16px; top: 8px; z-index: 10; background: var(--surface); padding: 8px 12px; border-radius: 8px; }
+.skip:focus { left: 16px; top: 8px; z-index: 10; background: var(--surface); color: var(--accent-ink); padding: 10px 14px; border-radius: var(--radius-sm); box-shadow: var(--shadow-pop); }
+
+/* O carimbo de conferência: a assinatura visual do app. Borda dupla em azul caneta, caixa alta monoespaçada, levemente
+   girado, com cara de tinta de almofada (sem máscara nem gradiente: a leitura vem antes). O texto é --accent-ink
+   (≥4,5:1 nos dois temas). Linhas internas: <span class="stamp-line"> separada por fio.
+   .stamp-sm: o selo pequeno de um item ("TARJADO"). */
+.stamp {
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 6px 12px 5px; border: 4px double var(--accent); border-radius: 4px;
+  color: var(--accent-ink); background: transparent;
+  font: 600 0.8125rem/1.3 var(--font-mono); font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em; text-transform: uppercase; text-align: left;
+  transform: rotate(-2deg); transform-origin: left center; opacity: 0.94;
+}
+.stamp > b, .stamp > strong, .stamp > span { display: block; }
+.stamp > b, .stamp > strong { font-weight: 700; }
+.stamp code { font: inherit; background: none; padding: 0; border-radius: 0; color: inherit; white-space: normal; }
+/* A regra (<code>) como última linha do carimbo, separada por fio, como a .stamp-line. */
+.stamp > code:last-child { display: block; align-self: stretch; margin-top: 4px; padding-top: 3px; border-top: 1px solid var(--accent); font-weight: 500; font-size: 0.92em; letter-spacing: 0.03em; text-transform: none; }
+.stamp .icon { width: 1.1em; height: 1.1em; }
+.stamp-line {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 14px; align-self: stretch;
+  margin-top: 4px; padding-top: 3px; border-top: 1px solid var(--accent);
+  font-weight: 500; font-size: 0.92em; letter-spacing: 0.03em;
+}
+.stamp-sm {
+  flex-direction: row; align-items: center; gap: 4px;
+  padding: 1px 6px; border-width: 3px; border-radius: 3px;
+  font-size: 0.75rem; line-height: 1.4; letter-spacing: 0.07em; transform: rotate(3deg); transform-origin: center;
+}
+/* Carimbo deitado (resultado, aviso): fica reto quando quebra em várias linhas largas. */
+.stamp-flat { transform: none; }
+/* O momento de carimbar: só quando o "Tarjado" do item e os carimbos do resultado aparecem. A tinta bate um pouco
+   maior e assenta (escala por cima do giro do carimbo). Sem animação com movimento reduzido. */
+.stamp-in { animation: stamp-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes stamp-in { from { opacity: 0; scale: 1.15; } }
+@media (prefers-reduced-motion: reduce) { .stamp-in { animation: none; } }
 
 /* Cabeçalho */
 .site-header { border-bottom: 1px solid var(--border); background: var(--surface); }
-.header-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; flex-wrap: wrap; }
-.brand { display: flex; align-items: center; gap: 8px; margin-right: auto; font-weight: 700; color: var(--text); text-decoration: none; }
-.badge {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 0.85rem; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--text);
-}
-.badge .icon { width: 1.05em; height: 1.05em; color: var(--accent); }
+.header-inner { display: flex; align-items: center; justify-content: space-between; gap: 4px 12px; min-height: 60px; flex-wrap: wrap; padding-block: 6px; }
+.brand { display: flex; align-items: center; gap: 8px; margin-right: auto; min-height: 44px; font-weight: 800; font-size: 1.125rem; letter-spacing: -0.02em; color: var(--text); text-decoration: none; }
 /* Troca de idioma (#22): o endereço decide (/ e /en/). No português, fica em destaque quando o navegador está em
    outra língua (app.js põe .lang-suggested). */
-.lang-switch { font-size: 0.85rem; color: var(--text); padding: 4px 6px; border-radius: 6px; }
-.lang-switch.lang-suggested { font-weight: 700; color: var(--accent); outline: 2px solid var(--accent); }
+.lang-switch {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; border-radius: var(--radius-sm);
+  font-size: 0.875rem; font-weight: 600; color: var(--text);
+}
+.lang-switch.lang-suggested { color: var(--accent-ink); outline: 2px solid var(--accent); outline-offset: -6px; }
 
 /* Ícones SVG (sprite no index.html): mesmo traço em todo o app, cor herdada do texto. */
 .icon {
@@ -77,193 +156,244 @@ h2 { font-size: 1.25rem; }
 }
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 
-.hero { padding: 40px 0 24px; }
+.hero { padding: 36px 0 22px; }
 /* Título sem palavra sobrando sozinha na última linha: no celular, as linhas se equilibram; na tela larga, uma frase
    por linha (antes, "pra ninguém." caía sozinho na segunda). */
-.hero h1 { text-wrap: balance; }
+.hero h1 { text-wrap: balance; margin-bottom: 0.4em; }
 @media (min-width: 600px) { .hero-line { display: block; } }
-.lead { font-size: 1.1rem; color: var(--muted); max-width: 640px; margin: 0; }
+.lead { font-size: 1.0625rem; color: var(--muted); max-width: 62ch; margin: 0; }
 
-/* Botões */
+/* Botões. Primário: cheio de azul caneta. Os outros: contorno (borda de 3:1), texto na cor do texto.
+   Ícone e texto nunca quebram separados: a linha não quebra, o texto quebra dentro do próprio espaço. */
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  min-height: 44px; padding: 8px 16px; flex-wrap: wrap; text-align: center;
-  border: 1px solid var(--border); border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 8px 16px; flex-wrap: nowrap; text-align: center;
+  border: 1px solid var(--field-border); border-radius: var(--radius-sm);
   background: var(--surface); color: var(--text);
-  font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
+  font: inherit; font-weight: 600; line-height: 1.3; text-decoration: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
-.btn:disabled { opacity: 0.6; cursor: progress; }
+.btn > * { min-width: 0; }
+.btn:disabled { opacity: 0.55; cursor: progress; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.btn-ghost { background: transparent; }
-.btn-lg { min-height: 52px; padding: 12px 22px; font-size: 1.05rem; }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--accent-ink); }
+.btn-ghost .muted { color: var(--muted); }
+.btn-lg { min-height: 52px; padding: 12px 22px; font-size: 1.0625rem; border-radius: var(--radius); }
 /* Hover só onde existe ponteiro que paira: no toque ele "gruda" depois do toque. */
 @media (hover: hover) {
-  .btn:hover:not(:disabled) { border-color: var(--accent); }
-  .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+  .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
+  .btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, #000); border-color: color-mix(in srgb, var(--accent) 86%, #000); color: var(--accent-text); }
+  .btn-ghost:hover:not(:disabled) { border-color: transparent; background: var(--accent-soft); }
 }
 .btn:active:not(:disabled) { transform: translateY(1px); }
-:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-::selection { background: var(--accent-soft); color: var(--text); }
 kbd {
-  font: inherit; font-size: 0.9em; color: var(--text);
-  padding: 0 0.4em; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px;
+  font-size: 0.85em; color: var(--text);
+  padding: 0 0.4em; border: 1px solid var(--field-border); border-bottom-width: 2px; border-radius: 5px;
   background: var(--surface-2);
 }
 
-/* Área de entrada */
+/* Área de entrada: a folha em branco, à espera do papel. */
 .dropzone {
-  border: 2px dashed var(--border); border-radius: var(--radius);
-  background: var(--surface); padding: 32px 16px; text-align: center;
-  transition: border-color 0.15s, background 0.15s;
+  border: 1.5px dashed var(--field-border); border-radius: var(--radius);
+  background: var(--surface); padding: 28px 16px; text-align: center;
+  transition: border-color 0.15s, background-color 0.15s;
 }
-.dropzone.dragging { border-color: var(--accent); background: var(--accent-soft); }
-.dropzone-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-.hint { margin: 16px 0 0; color: var(--muted); }
+.dropzone.dragging { border-color: var(--accent); border-style: solid; background: var(--accent-soft); }
+.dropzone-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.dropzone-actions .btn { flex: 1 1 200px; max-width: 320px; padding-inline: 14px; }
+/* No toque, os dois lado a lado: "Tirar foto" cheio, "Escolher arquivos" em contorno azul. */
+@media (pointer: coarse) {
+  .dropzone-actions .btn { flex: 1 1 140px; }
+  .btn-pick { border-color: var(--accent); color: var(--accent-ink); }
+}
+.hint { margin: 14px auto 0; color: var(--muted); font-size: 0.9375rem; max-width: 60ch; }
 
 /* "Tirar foto" só faz sentido com câmera e toque; arrastar e colar, só com mouse/trackpad.
    Sem toque, "Escolher arquivos" assume o papel de botão principal. */
 @media not all and (pointer: coarse) {
   .touch-only { display: none; }
   .btn-pick { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-  .btn-pick:hover:not(:disabled) { filter: brightness(1.08); }
+}
+@media not all and (pointer: coarse) and (hover: hover) {
+  .btn-pick:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, #000); border-color: color-mix(in srgb, var(--accent) 86%, #000); color: var(--accent-text); }
 }
 @media (pointer: coarse) {
   .pointer-only { display: none; }
 }
 
-/* Páginas */
+/* Páginas: o recibo. Uma coluna só, também no computador (largura de leitura), um item por linha separado por fio
+   tracejado, sem cartão nem sombra por item; no pé, a linha do total e a borda picotada. Cada item: número em mono,
+   miniatura (abre a tela cheia), nome e meta em mono, Tarjar e Editar; a alça de arrastar e o menu "Mais ações". */
 .workspace { margin-top: 24px; }
 .workspace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.pages {
-  list-style: none; margin: 8px 0 0; padding: 0;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px;
+.workspace-head h2 { margin: 0; }
+.receipt {
+  --rule: color-mix(in srgb, var(--field-border) 60%, transparent);
+  position: relative; margin: 8px 0 20px;
+  background: var(--surface); border: 1px solid var(--border); border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0;
 }
+/* Borda picotada: dentes da cor do papel do recibo, sem borda nem sombra. */
+.receipt::after {
+  content: ""; position: absolute; left: -1px; right: -1px; bottom: -8px; height: 8px; pointer-events: none;
+  background:
+    linear-gradient(-45deg, transparent 5px, var(--surface) 0) 0 0 / 10px 8px,
+    linear-gradient(45deg, transparent 5px, var(--surface) 0) 0 0 / 10px 8px;
+}
+.pages { list-style: none; margin: 0; padding: 0; }
 .page-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 8px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow);
+  position: relative; display: grid; align-items: center; gap: 6px 8px; padding: 10px 10px 10px 4px;
+  grid-template-columns: 44px 48px minmax(0, 1fr) 44px;
+  grid-template-areas: "num thumb info more" "grip thumb modes modes" "menu menu menu menu";
+  background: var(--surface);
 }
-/* A miniatura é um botão: abre a página em tela cheia. Mostra a página inteira, já recortada e filtrada. */
+.page-card + .page-card { border-top: 1px dashed var(--rule); }
+.page-num {
+  grid-area: num; align-self: start; padding-top: 2px; text-align: center;
+  font-weight: 600; font-size: 0.875rem; color: var(--muted); letter-spacing: 0.02em;
+}
+/* Miniatura: a folha em miniatura. É um botão: abre a página em tela cheia, já recortada e filtrada. */
 .thumb {
-  position: relative; width: 100%; aspect-ratio: 3 / 4; padding: 0; border: 0;
-  background: var(--surface-2); border-radius: 8px; cursor: zoom-in;
+  grid-area: thumb; align-self: start; width: 48px; height: 64px; padding: 0;
+  border: 1px solid var(--border); border-radius: 3px; background: var(--surface-2); cursor: zoom-in;
   display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .thumb:disabled { cursor: default; }
-.thumb img { max-width: 100%; max-height: 100%; display: block; box-shadow: 0 0 0 1px var(--border); }
-.thumb-zoom {
-  position: absolute; right: 6px; bottom: 6px; width: 32px; height: 32px; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+.thumb img { max-width: 100%; max-height: 100%; display: block; }
+@media (hover: hover) { .thumb:hover:not(:disabled) { border-color: var(--accent); } }
+.page-info { grid-area: info; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.page-name {
+  max-width: 100%; margin: 0; font-weight: 600; font-size: 0.9375rem; line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.thumb-zoom .icon { width: 18px; height: 18px; }
-.btn-crop { width: 100%; padding: 6px 8px; font-size: 0.92rem; }
-/* Página de documento do Word: de qual arquivo veio e qual página dele é. */
-.page-source {
-  margin: 0; min-height: 36px; display: flex; align-items: center; gap: 6px;
-  font-size: 0.88rem; color: var(--muted); white-space: nowrap;
+.page-meta {
+  margin: 2px 0 0; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.4; color: var(--muted);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
 }
-.page-source .icon { width: 18px; height: 18px; flex: none; }
-.page-source-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.hint + .hint { margin-top: 4px; }
-/* Controles do cartão em duas linhas: número + remover em cima, mover/girar embaixo.
-   Remover fica numa linha própria, longe dos outros botões. */
-.page-tools {
-  --tool: 36px;
-  display: grid; grid-template-columns: repeat(3, minmax(var(--tool), 1fr)); gap: 8px 4px; align-items: center;
+/* Carimbo "Tarjado" do item, embaixo da meta. */
+.page-stamp { margin: 6px 0 2px 2px; }
+.page-modes { grid-area: modes; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.page-mode { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 6px 10px; font-size: 0.875rem; gap: 6px; }
+.page-mode .icon { width: 17px; height: 17px; }
+/* Tela bem estreita (zoom de 400%): Tarjar e Editar só com o texto, para caberem lado a lado sem rolar de lado. */
+@media (max-width: 360px) { .page-mode { padding-inline: 6px; } .page-mode .icon { display: none; } }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text); cursor: pointer;
 }
-.page-label { grid-column: 1 / 3; display: flex; align-items: center; min-width: 0; }
-.page-num { font-weight: 700; padding-left: 2px; }
-/* Alça de arrastar (js/reorder.js): só ela arrasta; no resto do cartão, o dedo continua rolando a lista. */
+.icon-btn .icon { width: 20px; height: 20px; }
+.icon-btn:disabled { opacity: 0.35; cursor: default; }
+.page-more { grid-area: more; align-self: start; color: var(--muted); }
+.page-more[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+@media (hover: hover) { .page-more:hover:not(:disabled) { border-color: var(--field-border); color: var(--text); } }
+/* Alça de arrastar (js/reorder.js): só ela arrasta; no resto do item, o dedo continua rolando a lista. */
 .drag-handle {
-  display: inline-flex; align-items: center; justify-content: center; flex: none;
-  width: var(--tool); height: var(--tool); border-radius: 8px; color: var(--muted); cursor: grab;
+  grid-area: grip; justify-self: center; display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border-radius: var(--radius-sm); color: var(--muted); cursor: grab;
   touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 .drag-handle .icon { width: 20px; height: 20px; }
 @media (hover: hover) { .drag-handle:hover { color: var(--text); background: var(--surface-2); } }
 .pages > :only-child .drag-handle, .workspace[aria-busy="true"] .drag-handle { opacity: 0.35; cursor: default; }
-/* Enquanto arrasta, o cartão segue o ponteiro por cima dos outros, que deslizam para abrir espaço. */
-.page-card { transition: transform 0.18s ease; }
-.page-card.lifted { position: relative; z-index: 2; transition: none; border-color: var(--accent); box-shadow: 0 10px 30px rgb(0 0 0 / 25%); }
-.page-card.settling { position: relative; z-index: 2; }
+/* Menu "Mais ações": abre embaixo da linha, no lugar dela, separado por fio; os comandos em linhas de menu (alvo de
+   44 px, texto à esquerda). Remover fica por último, em vermelho, separado por fio. */
+.page-menu {
+  grid-area: menu; display: grid; grid-template-columns: 1fr; gap: 2px;
+  margin-top: 4px; padding: 6px 0 0 4px; border-top: 1px dashed var(--rule);
+}
+.page-menu-btn {
+  justify-content: flex-start; text-align: left; padding: 6px 10px; font-size: 0.9375rem;
+  border-color: transparent; background: transparent;
+}
+.page-menu-btn .icon { width: 18px; height: 18px; color: var(--muted); }
+.page-menu-btn:disabled { opacity: 0.4; cursor: default; }
+@media (hover: hover) { .page-menu-btn:hover:not(:disabled) { border-color: transparent; background: var(--surface-2); } }
+.page-menu-remove { color: var(--danger); margin-top: 4px; position: relative; }
+.page-menu-remove::before { content: ""; position: absolute; left: 0; right: 0; top: -4px; border-top: 1px dashed var(--rule); }
+.page-menu-remove .icon { color: currentColor; }
+@media (hover: hover) { .page-menu-remove:hover:not(:disabled) { color: var(--danger); } }
+.page-filter-field { display: flex; align-items: center; gap: 10px; padding: 2px 0 2px 10px; font-size: 0.9375rem; font-weight: 600; }
+.page-filter { flex: 1 1 auto; min-width: 0; }
+/* Linha do total, no pé do recibo. */
+.pages-total {
+  display: flex; justify-content: space-between; gap: 12px; margin: 0; padding: 10px 14px 12px;
+  border-top: 1px dashed var(--rule); font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pages-total > span { text-transform: uppercase; letter-spacing: 0.06em; }
+.pages-total > b { color: var(--text); font-weight: 600; }
+.pages-total:empty { display: none; }
+/* Enquanto arrasta, o item segue o ponteiro por cima dos outros, que deslizam para abrir espaço. */
+.page-card { transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.page-card.lifted {
+  z-index: 2; transition: none; outline: 1px solid var(--accent); border-radius: var(--radius-sm);
+  box-shadow: 0 10px 30px rgb(11 12 16 / 25%);
+}
+.page-card.settling { z-index: 2; }
 .pages.sorting { user-select: none; -webkit-user-select: none; }
 .pages.sorting, .pages.sorting * { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .page-card { transition: none; } }
-.icon-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 100%; height: var(--tool); padding: 0;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: var(--surface); color: var(--text); cursor: pointer;
-}
-.icon-btn .icon { width: 20px; height: 20px; }
-.icon-btn-remove { grid-column: 3; justify-self: end; width: var(--tool); color: var(--muted); }
-@media (hover: hover) {
-  .icon-btn:hover:not(:disabled) { border-color: var(--accent); }
-  .icon-btn-remove:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
-}
-.icon-btn:disabled { opacity: 0.35; cursor: default; }
-.page-filter { width: 100%; }
 
-/* Toque: alvos de 44 × 44 px. A grade só põe dois cartões lado a lado se os três botões couberem. */
-@media (pointer: coarse) {
-  .pages { grid-template-columns: repeat(auto-fill, minmax(min(100%, 156px), 1fr)); }
-  .page-card { padding: 6px; }
-  .page-tools { --tool: 44px; }
+/* Tela larga: o item numa linha só (Tarjar e Editar à direita da meta). */
+@media (min-width: 640px) {
+  .page-card {
+    grid-template-columns: 44px 52px minmax(0, 1fr) auto 44px 44px;
+    grid-template-areas: "num thumb info modes grip more" "menu menu menu menu menu menu";
+    padding-right: 8px;
+  }
+  .thumb { width: 52px; height: 68px; }
+  .page-num { align-self: center; padding-top: 0; }
+  .page-more { align-self: center; }
+  .page-mode { flex: none; }
+  .page-menu { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; padding-left: 52px; }
+  .page-menu-remove { grid-column: 1 / -1; justify-self: start; }
 }
 
-/* Celular em pé: uma página por linha, grande o bastante para conferir o resultado sem abrir nada.
-   Os controles cabem todos numa linha só. */
-@media (max-width: 520px) {
-  .pages { grid-template-columns: 1fr; gap: 16px; }
-  .page-card { padding: 10px; }
-  .thumb { aspect-ratio: auto; height: min(62vh, 520px); }
-  .page-tools { --tool: 44px; grid-template-columns: auto repeat(3, minmax(var(--tool), 1fr)) var(--tool); gap: 8px; }
-  .page-label { grid-column: 1; }
-  .page-num { padding: 0 8px 0 0; font-size: 1.1rem; }
-  .icon-btn-remove { grid-column: 5; grid-row: 1; }
-}
-
-/* Ajustes */
-select, input[type="text"], input[type="password"] {
+/* Campos: borda de 3:1 (--field-border), letra de 16 px (abaixo disso o iPhone amplia a tela ao tocar). */
+select, textarea,
+input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"], [type="hidden"]) {
   min-height: 44px; padding: 6px 10px; font: inherit; color: var(--text);
-  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--field-border); border-radius: var(--radius-sm);
   max-width: 100%;
 }
 @media (hover: hover) {
-  select:hover:not(:disabled), input[type="text"]:hover:not(:disabled), input[type="password"]:hover:not(:disabled) { border-color: var(--accent); }
+  select:hover:not(:disabled), textarea:hover:not(:disabled),
+  input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"]):hover:not(:disabled) { border-color: var(--accent); }
 }
-select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { opacity: 0.6; cursor: not-allowed; }
+select:disabled, textarea:disabled, input:disabled { opacity: 0.6; cursor: not-allowed; }
 /* Caixa de seleção com texto ao lado (OCR): alvo de 44 px para o dedo. */
-.check { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; font-weight: 600; }
 .check input { width: 22px; height: 22px; margin: 0; flex: none; accent-color: var(--accent); cursor: pointer; }
 .check input:disabled, .check input:disabled + * { cursor: not-allowed; }
-.field-note { margin: 0; font-size: 0.88rem; font-weight: normal; color: var(--muted); }
+.field-note { margin: 0; font-size: 0.875rem; font-weight: normal; line-height: 1.5; color: var(--muted); max-width: 70ch; }
 /* Busca de dados para tarjar: logo abaixo da lista de páginas. */
 .find-row { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
-.find-row .btn { flex: none; }
+.find-row .btn { flex: none; max-width: 100%; }
 .find-row .field-note { flex: 1 1 220px; }
-.find-list { max-height: 50dvh; overflow: auto; margin: 0 0 12px; border: 1px solid var(--border); border-radius: 10px; }
-.find-page { margin: 0; padding: 4px 12px 8px; border: 0; border-top: 1px solid var(--border); }
+.find-list { max-height: 50dvh; overflow: auto; margin: 0 0 12px; border: 1px solid var(--border); border-radius: var(--radius); }
+.find-page { margin: 0; padding: 4px 12px 8px; border: 0; border-top: 1px dashed var(--field-border); }
 .find-page:first-child { border-top: 0; }
-.find-page legend { padding: 8px 0 0; font-weight: 600; font-size: 0.92rem; color: var(--muted); float: left; width: 100%; }
-.find-page .check { clear: both; overflow-wrap: anywhere; }
+.find-page legend { padding: 8px 0 0; font-weight: 600; font-size: 0.875rem; color: var(--muted); float: left; width: 100%; }
+.find-page .check { clear: both; overflow-wrap: anywhere; font-weight: normal; font-family: var(--font-mono); font-size: 0.9375rem; }
 .field-blocked { color: var(--text); font-weight: 600; }
 .check:has(input:disabled) { opacity: 0.7; cursor: not-allowed; }
 /* Em todas as páginas (js/all-pages.js): as opções ao lado da prévia da primeira página. */
-.all-pages { margin: 0; padding: 10px 12px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.all-pages { margin: 0; padding: 10px 12px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
 .all-pages legend { padding: 0 4px; }
 .all-pages-body { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-start; }
 .all-pages-options { flex: 1 1 240px; display: grid; gap: 12px; font-weight: normal; }
 /* Marca d'água (js/watermark.js): os textos lado a lado, quebrando no celular; o texto livre embaixo deles. */
 .watermark-choices { margin: 4px 0 0; padding: 0; border: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 0 18px; }
+.watermark-choices .check { font-weight: normal; }
 .watermark-choices .field, .watermark-choices .field-note { flex: 1 1 100%; }
-/* Rubrica em todas as páginas (js/rubric.js): a amostra do desenho, o lugar e o tamanho; o quadro numa janela. */
+/* Rubrica em todas as páginas (js/rubric.js): a amostra do desenho, o lugar e o tamanho; o quadro numa janela.
+   A amostra e o quadro são papel: brancos nos dois temas. */
 .rubric-options { display: grid; gap: 12px; }
 .rubric-drawn, .rubric-place { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
 .rubric-drawn { align-items: center; }
-.rubric-sample { width: 120px; height: 48px; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.rubric-sample { width: 120px; height: 48px; border: 1px solid var(--field-border); border-radius: 4px; background: #fff; }
 .rubric-pad {
-  display: block; width: 100%; height: 180px; margin: 0 0 12px; border: 1px dashed var(--muted); border-radius: 8px;
+  display: block; width: 100%; height: 180px; margin: 0 0 12px; border: 1px dashed var(--field-border); border-radius: var(--radius-sm);
   background: #fff; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 .rubric-colors { margin: 0 0 4px; }
@@ -271,91 +401,101 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .settings {
   margin-top: 20px; padding: 16px; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--radius);
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;
 }
-.field { display: flex; flex-direction: column; gap: 4px; font-size: 0.92rem; font-weight: 600; }
-.field select, .field input { font-weight: normal; }
+/* Rótulo de campo: 14 px seminegrito; o controle volta ao peso normal. */
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875rem; font-weight: 600; min-width: 0; }
+.field select, .field input, .field textarea { font-weight: normal; font-size: 1rem; }
 .field-wide { grid-column: 1 / -1; }
+.check-field { gap: 2px; }
+.check-field .field-note { padding-left: 32px; }
 .tip {
-  margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft);
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 0.92rem;
+  margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--accent-soft); color: var(--text);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 0.9375rem; font-weight: normal;
 }
-.tip span { flex: 1 1 240px; }
+.tip span { flex: 1 1 240px; max-width: 70ch; }
+.tip .btn { flex: none; max-width: 100%; }
 /* PDF pesado: no topo da lista de páginas, com borda de destaque. */
 .compress-tip { margin: 8px 0 4px; border: 1px solid var(--accent); }
-.compress-tip .btn { flex: none; }
 
-.actions { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-.actions .btn { flex: 1 1 260px; max-width: 360px; }
 
+/* Resultado: a folha que sai, com os carimbos do que foi conferido (shell.css). */
 .result {
   margin-top: 16px; padding: 20px; text-align: center;
-  background: var(--accent-soft); border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow);
 }
-.result-title { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 1.2rem; font-weight: 700; margin: 0; }
-.result-title .icon { color: var(--accent); }
-.result-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 12px; }
+.result-title { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+.result-title .icon { color: var(--accent-ink); }
+.result > .muted { margin: 6px auto 0; max-width: 60ch; font-variant-numeric: tabular-nums; }
+.result-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 14px; }
 /* Prévia do resultado: um bloco por arquivo que vai sair, com as miniaturas das páginas dele. */
-.output-preview { border-top: 1px solid var(--border); padding-top: 12px; }
-.output-title { margin: 0; font-size: 0.92rem; font-weight: 600; }
-.output-summary { margin: 2px 0 8px; font-size: 0.92rem; color: var(--muted); }
+.output-preview { border-top: 1px dashed var(--field-border); padding-top: 12px; }
+.output-title { margin: 0; font-size: 0.875rem; font-weight: 600; }
+.output-summary { margin: 2px 0 8px; font-size: 0.875rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .output-summary.error { color: var(--danger); }
 .output-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 420px; overflow: auto; }
-.output-files li { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--surface-2); }
-.output-name { margin: 0 0 6px; display: flex; align-items: center; gap: 6px; font-size: 0.92rem; overflow-wrap: anywhere; }
-.output-name .icon { width: 18px; height: 18px; flex: none; color: var(--accent); }
+.output-files li { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--surface-2); }
+.output-name { margin: 0 0 6px; display: flex; align-items: center; gap: 6px; font-size: 0.875rem; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.output-name .icon { width: 18px; height: 18px; flex: none; color: var(--accent-ink); }
 .output-thumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; }
 .output-thumb {
-  position: relative; width: 56px; height: 72px; padding: 0; border: 1px solid var(--border); border-radius: 6px;
+  position: relative; width: 56px; height: 72px; padding: 0; border: 1px solid var(--border); border-radius: 4px;
   background: var(--surface); cursor: zoom-in; display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .output-thumb img { max-width: 100%; max-height: 100%; display: block; }
 .output-thumb span {
-  position: absolute; left: 3px; bottom: 3px; min-width: 18px; padding: 0 4px; border-radius: 6px;
-  font-size: 0.72rem; font-weight: 700; line-height: 18px; text-align: center; background: var(--text); color: var(--bg);
+  position: absolute; left: 3px; bottom: 3px; min-width: 18px; padding: 0 4px; border-radius: 4px;
+  font-size: 0.6875rem; font-weight: 700; line-height: 18px; text-align: center; background: var(--text); color: var(--bg);
 }
 .output-thumb:disabled { cursor: default; }
 @media (hover: hover) { .output-thumb:hover:not(:disabled) { border-color: var(--accent); } }
-.output-more { font-size: 0.85rem; color: var(--muted); padding: 0 4px 6px; }
+.output-more { font-size: 0.8125rem; color: var(--muted); padding: 0 4px 6px; }
 
 /* Vários PDFs (dividir): um link por arquivo, rolando se forem muitos. */
 .result-files {
   list-style: none; margin: 12px auto 0; padding: 0; max-width: 520px; max-height: 260px; overflow: auto;
-  text-align: left; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+  text-align: left; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
 }
-.result-files li { padding: 10px 12px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.result-files li { padding: 10px 12px; border-top: 1px dashed var(--field-border); overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 0.9375rem; }
 .result-files li:first-child { border-top: 0; }
 
-.status-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 12px; margin: 16px 0; }
-.status { min-height: 1.5em; text-align: center; color: var(--muted); margin: 0; }
+.status { min-height: 1.5em; text-align: center; color: var(--muted); margin: 0; max-width: 70ch; }
 .btn-undo { padding: 6px 14px; }
-.status[data-kind="error"] { color: var(--danger); }
-.status[data-kind="success"] { color: var(--success); }
+.status[data-kind="error"] { color: var(--danger); font-weight: 600; }
+.status[data-kind="success"] { color: var(--success); font-weight: 600; }
 
-/* Cards informativos */
+/* Cards informativos: medida de leitura de ~70 caracteres, mesmo na tela larga. */
 .card {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 24px; margin-top: 24px;
 }
-.checklist { padding-left: 0; list-style: none; display: grid; gap: 10px; }
-.checklist li { padding-left: 28px; position: relative; }
-.checklist li::before { content: "✓"; position: absolute; left: 4px; color: var(--accent); font-weight: 700; }
+.card h2 { max-width: 34ch; }
+.card p, .card li { max-width: 70ch; }
+.checklist { padding-left: 0; margin: 16px 0; list-style: none; display: grid; gap: 12px; }
+.checklist li { padding-left: 30px; position: relative; }
+/* Visto desenhado (não glifo): o "conferido" na tinta do carimbo. */
+.checklist li::before {
+  content: ""; position: absolute; left: 7px; top: 0.3em; width: 0.42em; height: 0.8em;
+  border: solid var(--accent-ink); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg);
+}
 .pix { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin: 16px 0; padding: 16px; background: var(--surface-2); border-radius: var(--radius); }
-.pix-qr { width: 180px; height: 180px; border-radius: 8px; image-rendering: pixelated; flex: none; }
+.pix-qr { width: 180px; height: 180px; border-radius: 6px; image-rendering: pixelated; flex: none; }
 .pix-info { flex: 1 1 240px; }
 .pix-info p { margin: 0 0 12px; }
 .pix-info p:last-child { margin: 12px 0 0; }
-.pix-code { display: block; word-break: break-all; user-select: all; padding: 8px; }
+.pix-code { display: block; word-break: break-all; white-space: normal; user-select: all; padding: 8px; font-size: 0.8125rem; }
 .donate-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 8px; }
+.donate-actions .btn { max-width: 100%; }
 
-.site-footer { margin-top: 40px; padding: 24px 0 40px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.92rem; }
-.site-footer .version { margin-top: 6px; font-size: 0.85rem; }
+.site-footer { margin-top: 40px; padding: 24px 0 40px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.875rem; }
+.site-footer p { max-width: 70ch; }
+.site-footer .version { margin-top: 6px; font-size: 0.8125rem; }
 /* Assinatura "por Sankler": o logo vem pronto nas cores da marca (claro ou escuro, pelo tema), sem a cor do app. */
-.site-footer .signature { margin-top: 10px; font-size: 0.85rem; }
-.site-footer .signature a { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none; }
+.site-footer .signature { margin-top: 10px; font-size: 0.8125rem; }
+.site-footer .signature a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: inherit; text-decoration: none; }
 .site-footer .signature img { display: block; width: auto; height: 18px; }
 
-/* Câmera da página: tela cheia, sempre escura (independe do tema). */
+/* Câmera da página: tela cheia, sempre escura (independe do tema). O papel encontrado aparece em azul caneta claro. */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .camera {
   width: 100vw; height: 100dvh; max-width: none; max-height: none;
@@ -367,29 +507,29 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .camera-video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
 /* Contorno do papel encontrado, posicionado pelo camera.js sobre a área da imagem. */
 .camera-outline { position: absolute; overflow: visible; pointer-events: none; }
-.camera-outline polygon { fill: rgb(45 212 191 / 14%); stroke: #2dd4bf; stroke-width: 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.camera-outline polygon { fill: rgb(58 99 255 / 16%); stroke: #8aa2ff; stroke-width: 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .camera-chip {
   position: absolute; top: 10px; left: 50%; transform: translateX(-50%); white-space: nowrap;
-  padding: 4px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 600;
-  background: rgb(29 33 41 / 80%); color: #d0d5dd;
+  padding: 4px 12px; border-radius: 4px; font: 600 0.8125rem/1.5 var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase;
+  background: rgb(22 24 30 / 82%); color: #d6d9e0;
 }
-.camera-chip.found { background: #2dd4bf; color: #062a26; }
+.camera-chip.found { background: #3a63ff; color: #fff; }
 .camera-video.shot { animation: camera-shot 0.25s ease-out; }
 @keyframes camera-shot { from { opacity: 0.2; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .camera-video.shot { animation: none; } }
-.camera-warning { margin: 0; padding: 8px 16px; text-align: center; font-size: 0.95rem; font-weight: 600; background: #fde68a; color: #1d2129; }
+.camera-warning { margin: 0; padding: 8px 16px; text-align: center; font-size: 0.9375rem; font-weight: 600; background: #fde68a; color: #0b0c10; }
 .camera-btn.attention { border-color: #fde68a; box-shadow: 0 0 0 3px rgb(253 230 138 / 45%); }
-.camera-message { margin: 0; padding: 8px 16px; min-height: 2.6em; text-align: center; font-size: 0.9rem; color: #d0d5dd; }
+.camera-message { margin: 0; padding: 8px 16px; min-height: 2.6em; text-align: center; font-size: 0.9rem; color: #d6d9e0; }
 .camera-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 4px 16px 12px; }
 .camera-bar > :first-child { justify-self: start; }
 .camera-bar > :last-child { justify-self: end; }
 .camera-shutter { grid-column: 2; }
 .camera-btn {
   display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 8px 14px;
-  border: 1px solid #667085; border-radius: 999px; background: #1d2129; color: #fff;
+  border: 1px solid #6c7385; border-radius: 999px; background: #16181e; color: #fff;
   font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer;
 }
-.camera-btn[aria-pressed="true"] { background: #fde68a; border-color: #fde68a; color: #1d2129; }
+.camera-btn[aria-pressed="true"] { background: #fde68a; border-color: #fde68a; color: #0b0c10; }
 .camera-shutter {
   width: 72px; height: 72px; border-radius: 50%; border: 4px solid #fff;
   background: #fff; box-shadow: inset 0 0 0 3px #000; cursor: pointer;
@@ -398,27 +538,27 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .camera-shutter:disabled { opacity: 0.4; }
 .camera-native {
   min-height: 44px; padding: 8px 16px 16px; border: 0; background: none;
-  color: #d0d5dd; font: inherit; font-size: 0.9rem; text-decoration: underline; cursor: pointer;
+  color: #d6d9e0; font: inherit; font-size: 0.9rem; text-decoration: underline; text-underline-offset: 0.22em; cursor: pointer;
 }
-.camera :focus-visible { outline-color: #fde68a; }
+.camera :focus-visible { outline-color: #8aa2ff; }
 
-/* Assinatura com certificado: janela no meio da tela (no celular, ocupa a largura). */
+/* Janelas (assinatura, senha, busca, descarte): no meio da tela; no celular, ocupam a largura. */
 .sheet {
   width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto;
   padding: 20px; border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--surface); color: var(--text); box-shadow: 0 12px 40px rgb(0 0 0 / 25%);
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow-pop);
 }
-.sheet::backdrop { background: rgb(16 19 23 / 55%); }
-.sheet h2 { margin: 0 0 12px; font-size: 1.2rem; }
-.sheet p { margin: 0 0 12px; }
+.sheet::backdrop { background: var(--backdrop); }
+.sheet h2 { margin: 0 0 12px; font-size: 1.25rem; }
+.sheet p { margin: 0 0 12px; max-width: 70ch; }
 .sheet .field { margin-bottom: 12px; }
 .sheet .tip { margin-bottom: 12px; }
 /* Como exportar o A1 instalado no computador (#25): fechado, uma linha só; aberto, os passos. */
-.sign-help { margin: -4px 0 12px; font-size: 0.92rem; }
-.sign-help summary { cursor: pointer; padding: 10px 0; color: var(--accent); font-weight: 600; }
+.sign-help { margin: -4px 0 12px; font-size: 0.9375rem; }
+.sign-help summary { cursor: pointer; padding: 10px 0; min-height: 44px; color: var(--accent-ink); font-weight: 600; }
 .sign-help ol { margin: 0 0 12px; padding-left: 1.4em; }
 .sign-help li { margin-bottom: 6px; }
-.sheet-alert { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-soft); font-size: 0.92rem; }
+.sheet-alert { padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--accent); background: var(--accent-soft); font-size: 0.9375rem; }
 .sign-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
 .sign-file .muted { overflow-wrap: anywhere; }
 /* Carimbo da assinatura: a página em cima; embaixo, os lugares ao lado da prévia (cabem lado a lado no celular). */
@@ -427,23 +567,23 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
 .stamp-options { margin-top: 8px; }
 .stamp-place { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; }
 .stamp-positions { margin: 0; padding: 0; border: 0; }
-.stamp-positions legend { padding: 0; margin-bottom: 4px; font-size: 0.92rem; font-weight: 600; }
+.stamp-positions legend { padding: 0; margin-bottom: 4px; font-size: 0.875rem; font-weight: 600; }
 /* A folha em miniatura: três lugares em cima e três embaixo, cada um com alvo de 44 px. */
 .stamp-grid {
   display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: 44px 1fr 44px; gap: 0 4px;
   width: max-content; height: 196px; padding: 3px;
-  border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+  border: 1px solid var(--field-border); border-radius: 4px; background: var(--surface);
 }
-.stamp-spot { display: grid; place-items: center; border-radius: 6px; cursor: pointer; }
+.stamp-spot { display: grid; place-items: center; border-radius: 4px; cursor: pointer; }
 .stamp-spot:nth-child(n+4) { grid-row: 3; }
 .stamp-spot:has(input:checked) { background: var(--accent-soft); }
 .stamp-spot input { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); cursor: pointer; }
-.stamp-preview { flex: none; max-width: 100%; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.stamp-preview { flex: none; max-width: 100%; border: 1px solid var(--field-border); border-radius: 4px; background: #fff; }
 .cert-info { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0 0 12px; }
-.cert-info dt { font-weight: 600; color: var(--muted); }
-.cert-info dd { margin: 0; overflow-wrap: anywhere; }
-.sheet-status { min-height: 1.4em; font-size: 0.92rem; color: var(--muted); }
-.sheet-status[data-kind="error"] { color: var(--danger); }
+.cert-info dt { font-weight: 600; color: var(--muted); font-size: 0.875rem; }
+.cert-info dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.sheet-status { min-height: 1.4em; font-size: 0.9375rem; color: var(--muted); }
+.sheet-status[data-kind="error"] { color: var(--danger); font-weight: 600; }
 .sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .sheet-actions .btn { flex: 1 1 160px; }
 
@@ -457,11 +597,11 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
    gesto passava para a página do scanner, que rolava solta por baixo (no iPhone e com a roda do mouse). */
 html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.viewer-head h2 { margin: 0; font-size: 1.05rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-head h2 { margin: 0; font-size: 1.0625rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .viewer-head > :not(h2) { flex: none; }
 /* Zoom do Tarjar e do Editar (js/page-zoom.js): na barra do título, sem cobrir a página. */
 .page-zoom { display: flex; gap: 4px; margin-left: auto; touch-action: manipulation; }
-.page-zoom .btn { min-width: 44px; padding: 6px 8px; justify-content: center; font-variant-numeric: tabular-nums; }
+.page-zoom .btn { min-width: 44px; padding: 6px 8px; justify-content: center; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 #page-zoom-fit { min-width: 64px; }
 /* A página ampliada rola dentro do palco; menor que ele, fica no meio (margin: auto). */
 .viewer-stage.zoomable { overflow: auto; overscroll-behavior: contain; justify-content: flex-start; align-items: flex-start; -webkit-overflow-scrolling: touch; }
@@ -471,13 +611,13 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
   position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
   width: 48px; height: 48px; border-radius: 50%; padding: 0;
   display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  box-shadow: 0 2px 10px rgb(0 0 0 / 25%); cursor: pointer; opacity: 0.92;
+  border: 1px solid var(--field-border); background: var(--surface); color: var(--text);
+  box-shadow: 0 2px 10px rgb(11 12 16 / 25%); cursor: pointer; opacity: 0.94;
 }
 .viewer-step .icon { width: 24px; height: 24px; }
 .viewer-step-prev { left: 12px; } /* o JS encosta a seta na borda da página (viewer.js, placeSteps) */
 .viewer-step-next { right: 12px; }
-@media (hover: hover) { .viewer-step:hover { opacity: 1; border-color: var(--accent); } }
+@media (hover: hover) { .viewer-step:hover { opacity: 1; border-color: var(--accent); color: var(--accent-ink); } }
 .viewer-stage {
   flex: 1 1 0; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center;
   overflow: hidden; background: var(--surface-2); padding: 8px;
@@ -487,9 +627,32 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .viewer-stage.zoomed { display: block; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .viewer-stage.zoomed .viewer-image { max-width: none; max-height: none; width: 220%; cursor: zoom-out; touch-action: auto; }
 /* Altura fixa (duas linhas): trocar o texto não pode mexer no tamanho da foto no meio de um arrasto. */
-.viewer-hint { margin: 0; padding: 8px 16px 0; height: 3.8em; overflow: hidden; text-align: center; font-size: 0.9rem; color: var(--muted); background: var(--surface); }
+.viewer-hint { margin: 0; padding: 8px 16px 0; height: 3.8em; overflow: hidden; text-align: center; font-size: 0.875rem; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); }
 .viewer-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 8px 12px 14px; background: var(--surface); }
 .viewer-actions .btn { flex: 1 1 140px; max-width: 260px; }
+
+/* Celular deitado (640 × 320) e zoom de 400% (320 × 256): a tela cheia rola inteira; a página fica com pelo menos
+   60% da altura, a dica encolhe e as barras de ações viram uma linha só que rola de lado. Aqui a altura da página é
+   fixa (min-height), então a troca de texto da dica não mexe nela durante um arrasto. */
+@media (max-height: 480px) {
+  .viewer[open] { overflow-y: auto; overscroll-behavior: contain; }
+  .viewer-head { padding: 4px 8px; gap: 8px; }
+  .viewer-head h2 { font-size: 0.9375rem; }
+  .viewer-frame { flex: 1 0 auto; height: max(60dvh, 150px); min-height: max(60dvh, 150px); }
+  .viewer-hint { height: auto; max-height: none; padding: 4px 12px; font-size: 0.8125rem; line-height: 1.4; }
+  .viewer-hint:empty { display: none; }
+  .viewer-actions, .redact-options {
+    flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overscroll-behavior-x: contain;
+    scrollbar-width: thin; padding: 6px 8px;
+  }
+  .viewer-actions > :first-child { margin-left: auto; }
+  .viewer-actions > :last-child { margin-right: auto; }
+  .viewer-actions .btn, .redact-options .btn { flex: none; max-width: none; white-space: nowrap; }
+  .redact-options { flex: none; padding: 0; }
+  .edit-tools { padding: 4px 8px; }
+  .edit-tool { min-height: 44px; }
+  .text-panel, .fill-panel { max-height: 70dvh; }
+}
 
 /* Tarjas: a página do tamanho da tela; as caixas ficam por cima, quase opacas, para ainda dar para ver a borda
    do que está sendo coberto. No PDF a tarja é preta ou branca e apaga o que está embaixo; a branca leva a borda
@@ -502,29 +665,30 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
   pointer-events: auto;
 }
 .redact-box.white { background: rgb(255 255 255 / 90%); border-style: dashed; }
-.redact-box.selected { border-color: var(--accent); }
+.redact-box.selected { border-color: #3a63ff; box-shadow: 0 0 0 1px #fff; }
 /* Com texto escrito por cima, a caixa fica quase opaca: o texto novo não se mistura com o que ela cobre. */
 .redact-box.has-text { background: rgb(0 0 0 / 96%); }
 .redact-box.white.has-text { background: rgb(255 255 255 / 97%); }
-.redact-box:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.redact-box:focus-visible { outline: 3px solid #3a63ff; outline-offset: 2px; }
 .redact-box svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .redact-preview { pointer-events: none; background: rgb(0 0 0 / 55%); border-style: dashed; }
 .redact-preview.white { background: rgb(255 255 255 / 60%); }
 /* Cor e texto da tarja: uma linha só acima dos botões. */
 .redact-options { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .redact-options .btn { flex: 0 1 auto; min-width: 0; }
-.redact-color[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
-.redact-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 3px; background: #000; box-shadow: 0 0 0 1px var(--border); vertical-align: -3px; }
+.redact-color[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+.redact-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 3px; background: #000; box-shadow: 0 0 0 1px var(--field-border); vertical-align: -3px; }
 .redact-swatch-white { background: #fff; }
 /* Remover: alvo de 32 px no canto da tarja, sem depender do tamanho dela. */
 .redact-remove {
   position: absolute; top: -14px; right: -14px; width: 28px; height: 28px; padding: 0;
   border: 2px solid #fff; border-radius: 50%; background: #b42318; color: #fff;
-  font: 700 18px/1 system-ui, sans-serif; cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
+  font: 700 18px/1 var(--font-sans); cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
 }
 
 /* Modo Editar (js/editor.js): a página do tamanho da tela; as edições num canvas por cima, as tarjas por cima delas
-   e, por cima de tudo, uma caixa com foco para cada edição. Arrastar desenha, nunca rola nem amplia a tela. */
+   e, por cima de tudo, uma caixa com foco para cada edição. Arrastar desenha, nunca rola nem amplia a tela.
+   Sobre a página (papel branco nos dois temas), o azul é fixo: #3a63ff dá 4,76:1 no branco. */
 .edit {
   position: relative; flex: none; touch-action: none; cursor: crosshair;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
@@ -538,13 +702,13 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .edit[data-tool="create"] .edit-box:not(.selected) { cursor: crosshair; }
 /* Alvo maior que a edição: um ✓ pequeno ainda dá para pegar com o dedo. */
 .edit-box::before { content: ""; position: absolute; inset: -10px; }
-.edit-box.selected { outline: 2px dashed var(--accent); outline-offset: 3px; }
-.edit-box:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.edit-box.selected { outline: 2px dashed #3a63ff; outline-offset: 3px; }
+.edit-box:focus-visible { outline: 3px solid #3a63ff; outline-offset: 3px; }
 /* Alças: alvo de 44 px para o dedo; o que se vê é a bolinha do meio. */
 .edit-handle { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; touch-action: none; }
 .edit-handle::before {
   content: ""; position: absolute; inset: 15px; border-radius: 50%;
-  background: #fff; border: 3px solid #0f766e; box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
+  background: #fff; border: 3px solid #3a63ff; box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
 }
 .edit-handle[data-corner="0"] { left: 0; top: 0; cursor: nwse-resize; }
 .edit-handle[data-corner="1"] { left: 100%; top: 0; cursor: nesw-resize; }
@@ -553,12 +717,23 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 /* Edição pequena na tela: só a alça de baixo à direita, por fora dela, para sobrar onde arrastar. */
 .edit-handle-out { margin: 0; }
 .edit-handle-out::before { inset: 0 30px 30px 0; }
-/* Barra da edição selecionada (Remover e Duplicar): o viewer põe acima dela, ou embaixo, sem sair da página. */
+/* Barra da edição selecionada (Remover e Duplicar; embaixo, as setas de mover e o Tamanho): o viewer põe acima dela, ou
+   embaixo, sem sair da página. */
 .edit-bar {
-  position: absolute; z-index: 1; display: flex; gap: 6px; padding: 4px; pointer-events: auto;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 4px 14px rgb(0 0 0 / 25%);
+  position: absolute; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px;
+  pointer-events: auto; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 4px 14px rgb(11 12 16 / 25%);
 }
+.edit-bar-row { display: flex; gap: 6px; }
 .edit-bar .btn { min-height: 44px; padding: 6px 12px; white-space: nowrap; flex-wrap: nowrap; }
+/* Mover e mudar o tamanho com toques (js/edit-nudge.js), na barra da edição e nas opções da tarja: alvos de 44 px. */
+.nudge { display: flex; gap: 4px; touch-action: manipulation; }
+.nudge .btn { min-height: 44px; padding: 6px 10px; white-space: nowrap; flex-wrap: nowrap; }
+.nudge .nudge-btn { width: 44px; min-width: 44px; padding: 0; }
+.nudge-btn .icon { width: 20px; height: 20px; }
+.nudge-size[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.redact-options .nudge { flex: none; }
+.redact-options .nudge .nudge-btn { flex: none; }
 /* Ferramentas numa linha só, que rola de lado no celular. A margem automática centraliza sem esconder a ponta. */
 .edit-tools {
   display: flex; gap: 4px; padding: 6px 8px; overflow-x: auto; overscroll-behavior-x: contain;
@@ -568,16 +743,18 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .edit-tools > :last-child { margin-right: auto; }
 .edit-tool {
   flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  min-width: 60px; min-height: 52px; padding: 4px 8px; border: 1px solid transparent; border-radius: 10px;
+  min-width: 60px; min-height: 52px; padding: 4px 8px; border: 1px solid transparent; border-radius: var(--radius-sm);
   background: none; color: var(--text); font: inherit; font-size: 0.75rem; font-weight: 600; cursor: pointer;
 }
 .edit-tool .icon { width: 22px; height: 22px; }
+/* Ferramentas com tabindex móvel (js/editor.js): o foco do teclado aparece também no botão escolhido. */
+.edit-tool:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 /* Tocar duas vezes seguidas (Desfazer, ✓ e ✗) não pode ampliar a tela no iPhone. */
 .edit-tools, .edit-actions, .edit-bar, .edit-props { touch-action: manipulation; }
-.edit-tool[aria-pressed="true"], .edit-tool[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.edit-tool[aria-pressed="true"], .edit-tool[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
 .edit-tool:disabled { opacity: 0.4; cursor: default; }
 @media (hover: hover) { .edit-tool:hover:not(:disabled) { border-color: var(--accent); } }
-.edit-tool-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border); }
+.edit-tool-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--field-border); }
 /* Ações do modo Editar numa linha só, também no celular. */
 .edit-actions { flex-wrap: nowrap; }
 .edit-actions .btn { flex: 1 1 auto; min-width: 0; max-width: 200px; padding: 8px 10px; }
@@ -585,16 +762,16 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .edit-props {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; max-height: 75%; overflow: auto;
   display: grid; gap: 8px; padding: 12px 16px 14px; background: var(--surface);
-  border-top: 1px solid var(--border); border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgb(0 0 0 / 22%);
+  border-top: 1px solid var(--border); border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgb(11 12 16 / 22%);
 }
 .edit-props-title { margin: 0; font-weight: 700; }
 .edit-props-fields { display: flex; flex-wrap: wrap; gap: 4px 24px; }
 .edit-prop { margin: 0; padding: 0; border: 0; min-width: 0; }
-.edit-prop legend { padding: 0; margin-bottom: 6px; font-size: 0.92rem; font-weight: 600; }
+.edit-prop legend { padding: 0; margin-bottom: 6px; font-size: 0.875rem; font-weight: 600; }
 .edit-option {
   position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; vertical-align: middle;
   min-width: 44px; min-height: 44px; margin: 0 6px 6px 0; padding: 0 12px;
-  border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 0.92rem;
+  border: 1px solid var(--field-border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.9375rem;
 }
 .edit-option input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
 .edit-option:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -609,12 +786,12 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; max-width: 640px; max-height: 85dvh; margin: 0 auto;
   overflow: auto; overscroll-behavior: contain; display: grid; gap: 8px; padding: 12px 16px 14px;
   background: var(--surface); color: var(--text); border: 1px solid var(--border); border-bottom: 0;
-  border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgb(0 0 0 / 22%); touch-action: manipulation;
+  border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgb(11 12 16 / 22%); touch-action: manipulation;
 }
 .text-input {
   width: 100%; min-height: 88px; padding: 8px 10px; resize: vertical;
   font: inherit; font-size: 16px; color: var(--text); background: var(--surface);
-  border: 1px solid var(--border); border-radius: 8px;
+  border: 1px solid var(--field-border); border-radius: var(--radius-sm);
 }
 .text-warning:empty { display: none; }
 .text-warning { color: var(--danger); font-weight: 600; }
@@ -628,54 +805,63 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .fill { position: relative; flex: none; margin: auto; }
 .fill img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; box-shadow: 0 0 0 1px var(--border); }
 .fill-boxes { position: absolute; inset: 0; }
+/* As caixas ficam sobre o papel (branco nos dois temas): azul caneta fixo, 4,76:1 no branco; o contorno branco por fora
+   separa a borda do fundo escuro do palco (3:1 nos dois). */
 .fill-box {
-  position: absolute; box-sizing: border-box; padding: 0; border: 2px solid rgb(15 118 110 / 55%); border-radius: 3px;
-  background: rgb(45 212 191 / 12%); cursor: pointer; touch-action: manipulation;
+  position: absolute; box-sizing: border-box; padding: 0; border: 2px solid #3a63ff; border-radius: 3px;
+  background: rgb(58 99 255 / 10%); cursor: pointer; touch-action: manipulation;
+  box-shadow: 0 0 0 1px #fff;
 }
 /* Alvo de toque maior que o campo: uma caixa de 10 pt ainda dá para pegar com o dedo. */
 .fill-box::before { content: ""; position: absolute; inset: -6px; }
-.fill-box.filled { background: rgb(45 212 191 / 30%); }
-.fill-box.locked { border-style: dashed; border-color: rgb(91 100 112 / 60%); background: rgb(91 100 112 / 10%); }
+.fill-box.filled { background: rgb(58 99 255 / 26%); }
+.fill-box.locked { border-style: dashed; border-color: #565c69; background: rgb(86 92 105 / 10%); }
 .fill-box.warning { border-color: #b42318; }
-.fill-box.current { z-index: 1; border: 3px solid #0f766e; box-shadow: 0 0 0 2px #fff, 0 0 0 5px rgb(15 118 110 / 45%); }
+.fill-box.current { z-index: 1; border: 3px solid #2b4fe0; box-shadow: 0 0 0 2px #fff, 0 0 0 5px rgb(58 99 255 / 45%); }
 .fill-panel {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; max-width: 640px; max-height: 85dvh; margin: 0 auto;
   overflow: auto; overscroll-behavior: contain; display: grid; gap: 8px; padding: 10px 16px 12px;
   background: var(--surface); color: var(--text); border: 1px solid var(--border); border-bottom: 0;
-  border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgb(0 0 0 / 22%); touch-action: manipulation;
+  border-radius: 14px 14px 0 0; box-shadow: 0 -8px 24px rgb(11 12 16 / 22%); touch-action: manipulation;
 }
 .fill-head { display: flex; align-items: center; gap: 8px; }
 .fill-title { flex: 1 1 auto; min-width: 0; margin: 0; font-weight: 700; }
-.fill-count { font-weight: normal; color: var(--muted); white-space: nowrap; }
+.fill-count { font-weight: normal; font-size: 0.875rem; color: var(--muted); white-space: nowrap; }
 .fill-head .btn, .fill-nav .btn { min-height: 44px; padding: 6px 12px; }
 .fill-nav { display: flex; gap: 8px; }
 .fill-nav .btn { flex: 1 1 0; min-width: 0; padding: 6px 8px; }
 .fill-nav .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 .fill-field { display: grid; gap: 6px; min-width: 0; }
 .fill-field fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 2px; }
-.fill-label, .fill-field legend { padding: 0; font-weight: 600; font-size: 0.95rem; overflow-wrap: anywhere; }
-.fill-required { margin-left: 6px; font-size: 0.8rem; font-weight: 600; color: var(--danger); white-space: nowrap; }
+.fill-label, .fill-field legend { padding: 0; font-weight: 600; font-size: 0.9375rem; overflow-wrap: anywhere; }
+.fill-required { margin-left: 6px; font-size: 0.8125rem; font-weight: 600; color: var(--danger); white-space: nowrap; }
 /* Letra de 16 px nos controles: abaixo disso, o iPhone amplia a tela ao tocar no campo. */
 .fill-input {
   width: 100%; min-height: 44px; padding: 8px 10px; font: inherit; font-size: 16px; color: var(--text);
-  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--field-border); border-radius: var(--radius-sm);
 }
 textarea.fill-input { min-height: 88px; resize: vertical; }
 select.fill-input[multiple] { min-height: 120px; }
 .fill-input:disabled { opacity: 0.6; cursor: not-allowed; }
-.fill-field .check { font-size: 16px; }
+.fill-field .check { font-size: 16px; font-weight: normal; }
 .fill-note:empty { display: none; }
 .fill-note[data-kind="warning"] { color: var(--danger); font-weight: 600; }
 
 /* Numeração, cabeçalho e rodapé (js/all-pages-text.js): cada um com os detalhes embaixo, que só aparecem ligado. */
-.all-pages-group + .all-pages-group { border-top: 1px solid var(--border); padding-top: 8px; }
+.all-pages-group + .all-pages-group { border-top: 1px dashed var(--field-border); padding-top: 8px; }
 .all-pages-detail { display: grid; gap: 8px; padding: 0 0 8px 32px; }
 
+/* Recorte: linha clara de azul caneta sobre um traço escuro mais largo (js/viewer.js põe o contorno), para ter 3:1
+   tanto no papel branco quanto no fundo escuro. */
 .crop { position: relative; flex: none; touch-action: none; }
 .crop img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; }
 .crop-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.crop-lines polygon { fill: rgb(45 212 191 / 18%); stroke: #2dd4bf; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.crop-lines polygon { fill: rgb(58 99 255 / 16%); stroke: #8aa2ff; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .crop.invalid .crop-lines polygon { fill: rgb(249 112 102 / 18%); stroke: #f97066; }
+.crop-lines polygon.crop-halo, .crop.invalid .crop-lines polygon.crop-halo { fill: none; stroke: rgb(0 0 0 / 80%); stroke-width: 5; stroke-linejoin: round; }
+/* Canto escolhido com um toque (o próximo toque na foto o leva até lá): bolinha cheia, com anel em volta. */
+.crop.armed { cursor: crosshair; }
+.crop-handle.armed::before { inset: 9px; background: #3a63ff; border-color: #fff; box-shadow: 0 0 0 3px #3a63ff, 0 1px 6px rgb(0 0 0 / 55%); }
 /* Alvo de 48 px para o dedo; o que se vê é a bolinha do meio. */
 .crop-handle {
   position: absolute; width: 48px; height: 48px; margin: -24px 0 0 -24px; padding: 0;
@@ -683,7 +869,7 @@ select.fill-input[multiple] { min-height: 120px; }
 }
 .crop-handle::before {
   content: ""; position: absolute; inset: 13px; border-radius: 50%;
-  background: #fff; border: 3px solid #0f766e; box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
+  background: #fff; border: 3px solid #3a63ff; box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
 }
 .crop-handle:active { cursor: grabbing; }
 .crop-handle:active::before, .crop-handle:focus-visible::before { inset: 9px; }
@@ -692,4 +878,9 @@ select.fill-input[multiple] { min-height: 120px; }
 .crop-loupe {
   position: fixed; left: 0; top: 0; z-index: 3; border-radius: 50%; pointer-events: none;
   background: var(--surface-2); box-shadow: 0 0 0 3px #fff, 0 0 0 4px rgb(0 0 0 / 30%), 0 6px 18px rgb(0 0 0 / 40%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropzone { transition: none; }
+  .btn:active:not(:disabled) { transform: none; }
 }
