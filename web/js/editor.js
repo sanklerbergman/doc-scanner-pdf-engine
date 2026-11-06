@@ -164,8 +164,9 @@ function done(type, action) {
  * @param {(page: object, edits: object[]) => Promise<void>} deps.save grava as edições na página
  * @param {(message: string) => Promise<boolean>} deps.confirm confirmação dentro do app (descartar o que não foi aplicado)
  * @param {() => void} deps.leave volta para a página em tela cheia
+ * @param {ReturnType<import('./page-zoom.js').setupPageZoom>} deps.zoom o zoom da página (page-zoom.js)
  */
-export function setupEditor({ stage, hint, save, confirm, leave }) {
+export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
   const surface = $('#edit');
   const image = $('#edit-image');
   const canvas = $('#edit-canvas');
@@ -321,6 +322,7 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     toolbar.hidden = false;
     actions.hidden = false;
     togglePanel(false);
+    zoom.attach({ surface, base: wholePage, resized, cancel: cancelDrag, focus: () => (selected >= 0 ? centerOf(items[selected]) : null) });
     fit();
     chooseTool(tool, { announce: false }); // a ferramenta da página anterior continua (marcar ✓ em várias páginas)
     say(items.length
@@ -337,6 +339,7 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
     items = [];
     history = [];
     selected = -1;
+    zoom.detach(surface);
     surface.hidden = toolbar.hidden = actions.hidden = panel.hidden = true;
     boxes.replaceChildren();
     cover.replaceChildren();
@@ -349,20 +352,33 @@ export function setupEditor({ stage, hint, save, confirm, leave }) {
   const active = () => !!page && !surface.hidden;
   const dirty = () => active() && JSON.stringify(items) !== initial;
 
-  // A área tem exatamente o tamanho da página na tela, como a das tarjas; o canvas, a densidade da tela.
-  function fit() {
-    if (!active()) return;
+  // Com zoom 1, a área tem exatamente o tamanho da página na tela, como a das tarjas; o zoom (page-zoom.js) multiplica.
+  function wholePage() {
     const margin = 12;
     const scale = Math.min((stage.clientWidth - margin * 2) / size.width, (stage.clientHeight - margin * 2) / size.height);
-    const width = Math.max(40, size.width * scale);
-    const height = Math.max(40, size.height * scale);
-    surface.style.width = `${width}px`;
-    surface.style.height = `${height}px`;
+    return { width: size.width * scale, height: size.height * scale };
+  }
+  const centerOf = (item) => [(item.x0 + item.x1) / 2, (item.y0 + item.y1) / 2];
+
+  // A área mudou de tamanho (tela ou zoom). No meio da pinça, o canvas só estica junto (barato); no fim, ganha a
+  // densidade da tela no tamanho novo e as edições são desenhadas de novo.
+  function resized(final) {
+    if (!active()) return;
+    if (!final) {
+      if (selected >= 0) placeBar();
+      return;
+    }
+    const width = surface.clientWidth;
+    const height = surface.clientHeight;
     let ratio = window.devicePixelRatio || 1;
     if (width * height * ratio * ratio > MAX_PIXELS) ratio = Math.sqrt(MAX_PIXELS / (width * height));
     canvas.width = Math.round(width * ratio);
     canvas.height = Math.round(height * ratio);
     render(-1, { keepFocus: true });
+  }
+
+  function fit() {
+    if (active()) zoom.layout();
   }
   // No quadro seguinte, fora do aviso do ResizeObserver: mudar a superfície dentro dele dava "ResizeObserver loop" no WebKit.
   // O próprio observador também começa no quadro seguinte: o módulo carrega sob demanda, e criado no meio da entrega dos

@@ -1271,3 +1271,20 @@ Pedido do dono em 2026-11-04 (#24): a tarja saía sempre preta, e a maioria dos 
 - [x] `test/redact-replace.test.js`: cor e texto passando pelo corte, giro e layout do Word; pixels na cor de cada tarja; tamanho e posição do texto; Word e foto com a caixa na cor certa e o texto depois dela; conferência aceitando só o texto escrito; letras no PDF/A
 - [x] No Chromium (Playwright, `scripts/serve.js`), com o PDF.js de verdade: o texto escrito sai num trecho separado do resto da linha (não se junta a "CPF:"), e a conferência passa; foto e Word com tarja branca e texto, do "Tarjar" ao PDF baixado, sem o CPF no arquivo
 - [x] No iPhone 16e, no site publicado. Conferido pelo dono na v5.0.1 (2026-11-04)
+
+## Zoom no Editar e no Tarjar
+
+Pedido do dono em 2026-11-05: no Editar a página só aparecia inteira na tela, sem zoom, e marcar a tarja em detalhe pequeno também era difícil. Precisa valer no celular e no computador.
+
+### Abordagem
+
+- Um módulo só (`page-zoom.js`) para os dois modos, ligado ao que está na tela. A página vai de 100% a 400% (a imagem dos dois modos tem 2000 px no lado maior) e rola dentro do palco.
+- **Celular:** pinçar com dois dedos amplia, e arrastar com os dois move a página. Um dedo continua sendo da ferramenta; o segundo dedo cancela o que o primeiro fazia (traço, tarja ou caixa em andamento).
+- **Computador:** Ctrl e a roda do mouse (ou a pinça do trackpad) ampliam no ponto do cursor; a roda sozinha e as barras rolam.
+- **Os dois:** −, % e + na barra do título (o % volta para a página inteira) e as teclas +, − e 0. Com uma tarja ou edição selecionada, os botões ampliam com ela no meio da tela.
+- No meio da pinça o canvas das edições só estica; ao soltar, ele é desenhado de novo no tamanho novo.
+
+### Testes
+
+- [x] No Chrome (Playwright, `scripts/serve.js`), no computador e com toque simulado de celular: botões, teclas, Ctrl e roda, roda sozinha e pinça, nos dois modos; a pinça não cria tarja nem edição; tarja e retângulo marcados com a página ampliada
+- [ ] No iPhone, no site publicado

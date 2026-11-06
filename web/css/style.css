@@ -457,7 +457,15 @@ select:disabled, input[type="text"]:disabled, input[type="password"]:disabled { 
    gesto passava para a página do scanner, que rolava solta por baixo (no iPhone e com a roda do mouse). */
 html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.viewer-head h2 { margin: 0; font-size: 1.05rem; }
+.viewer-head h2 { margin: 0; font-size: 1.05rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-head > :not(h2) { flex: none; }
+/* Zoom do Tarjar e do Editar (js/page-zoom.js): na barra do título, sem cobrir a página. */
+.page-zoom { display: flex; gap: 4px; margin-left: auto; touch-action: manipulation; }
+.page-zoom .btn { min-width: 44px; padding: 6px 8px; justify-content: center; font-variant-numeric: tabular-nums; }
+#page-zoom-fit { min-width: 64px; }
+/* A página ampliada rola dentro do palco; menor que ele, fica no meio (margin: auto). */
+.viewer-stage.zoomable { overflow: auto; overscroll-behavior: contain; justify-content: flex-start; align-items: flex-start; -webkit-overflow-scrolling: touch; }
+.viewer-stage.zoomable > .edit, .viewer-stage.zoomable > .redact { margin: auto; }
 .viewer-frame { flex: 1 1 0; min-height: 0; position: relative; display: flex; }
 .viewer-step {
   position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;

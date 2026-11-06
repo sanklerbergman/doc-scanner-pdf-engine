@@ -6,6 +6,7 @@ import { FULL_QUAD, fromRotated, toRotated, isConvex, isFullFrame } from './geom
 import { normalizeRect } from './redact.js';
 import { replacementLayout, winAnsiText, droppedMessage } from './edit-text.js';
 import { followKeyboard } from './keyboard-panel.js';
+import { setupPageZoom } from './page-zoom.js';
 import { wordCount } from './page-text.js';
 import { t, plural } from './i18n.js';
 
@@ -108,6 +109,8 @@ export function setupViewer({
   const editButton = $('#viewer-edit');
   const fillButton = $('#viewer-fill');
   const discard = $('#discard-dialog');
+  // Zoom da página no Tarjar e no Editar (page-zoom.js): os botões ficam na barra do título.
+  const zoom = setupPageZoom({ stage, controls: $('#page-zoom'), say: (message) => { hint.textContent = message; } });
 
   let page = null;
   let label = '';
@@ -158,6 +161,7 @@ export function setupViewer({
     redact.hidden = true;
     redactActions.hidden = true;
     closeTextPanel(false);
+    zoom.detach(redact);
     editor?.close();
     filler?.close();
     viewActions.hidden = false;
@@ -379,18 +383,24 @@ export function setupViewer({
     redact.hidden = false;
     redactActions.hidden = false;
     hint.textContent = redactHint(page);
+    zoom.attach({
+      surface: redact, base: redactBase, resized: () => {}, cancel: cancelDrawing,
+      focus: () => (marks[current] ? [(marks[current].x0 + marks[current].x1) / 2, (marks[current].y0 + marks[current].y1) / 2] : null),
+    });
     fitRedact();
     drawMarks();
     redactAdd.focus();
   }
 
-  // A área das tarjas tem exatamente o tamanho da página na tela, como a do recorte.
-  function fitRedact() {
-    if (redact.hidden || !redactImage.naturalWidth) return;
+  // Com zoom 1, a área das tarjas tem exatamente o tamanho da página na tela, como a do recorte; o zoom
+  // (page-zoom.js) multiplica.
+  function redactBase() {
     const margin = 8;
     const scale = Math.min((stage.clientWidth - margin * 2) / redactImage.naturalWidth, (stage.clientHeight - margin * 2) / redactImage.naturalHeight);
-    redact.style.width = `${Math.max(40, redactImage.naturalWidth * scale)}px`;
-    redact.style.height = `${Math.max(40, redactImage.naturalHeight * scale)}px`;
+    return { width: redactImage.naturalWidth * scale, height: redactImage.naturalHeight * scale };
+  }
+  function fitRedact() {
+    if (!redact.hidden && redactImage.naturalWidth) zoom.layout();
   }
 
   const place = (element, { x0, y0, x1, y1 }) => {
@@ -503,10 +513,12 @@ export function setupViewer({
     drawMarks();
     hint.textContent = plural(marks.length, '{n} tarja marcada. Toque em "Aplicar tarjas" quando terminar.', '{n} tarjas marcadas. Toque em "Aplicar tarjas" quando terminar.');
   });
-  redact.addEventListener('pointercancel', () => {
+  // O toque foi cancelado (pelo navegador, ou pelo segundo dedo da pinça do zoom): a tarja em andamento some.
+  function cancelDrawing() {
     drawing = null;
     redactPreview.hidden = true;
-  });
+  }
+  redact.addEventListener('pointercancel', cancelDrawing);
 
   redactBoxes.addEventListener('click', (event) => {
     const remove = event.target.closest('.redact-remove');
@@ -648,7 +660,7 @@ export function setupViewer({
   };
   const loadEditor = () => (loading ??= import('./editor.js').then(async ({ setupEditor, loadTools }) => {
     await loadTools(); // as ferramentas das outras fases, antes de a barra ser montada
-    return (editor = setupEditor({ stage, hint, save: saveEdits, confirm: confirmDiscard, leave: leaveEdit }));
+    return (editor = setupEditor({ stage, hint, save: saveEdits, confirm: confirmDiscard, leave: leaveEdit, zoom }));
   }).catch((err) => {
     loading = null; // sem rede e sem cache: tenta de novo na próxima vez
     throw err;
@@ -950,6 +962,7 @@ export function setupViewer({
     redact.hidden = true;
     redactActions.hidden = true;
     closeTextPanel(false);
+    zoom.detach(redact);
     marks = [];
     editor?.close();
     filler?.close();

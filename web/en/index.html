@@ -300,6 +300,13 @@
   <dialog id="viewer" class="viewer" aria-labelledby="viewer-title">
     <div class="viewer-head">
       <h2 id="viewer-title"></h2>
+      <!-- Zoom da página no Tarjar e no Editar (js/page-zoom.js). Também: dois dedos no celular, Ctrl e a roda do mouse
+           no computador e as teclas +, − e 0. -->
+      <div id="page-zoom" class="page-zoom" role="group" aria-label="Page zoom" hidden>
+        <button id="page-zoom-out" type="button" class="btn" aria-label="Zoom out" title="Zoom out (− key)">−</button>
+        <button id="page-zoom-fit" type="button" class="btn" aria-label="Whole page" title="Whole page (0 key)">100%</button>
+        <button id="page-zoom-in" type="button" class="btn" aria-label="Zoom in" title="Zoom in (+ key)">+</button>
+      </div>
       <button id="viewer-close" type="button" class="btn">Close</button>
     </div>
     <!-- Moldura: as setas de anterior/próxima ficam nas laterais, como num leitor de PDF, e não rolam junto
