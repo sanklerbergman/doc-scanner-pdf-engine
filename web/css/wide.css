@@ -1,0 +1,103 @@
+/* ---------- Tela larga, sem páginas (a partir de 1100 px) ----------
+   A abertura vira duas colunas: à esquerda o título, o carimbo e o texto de abertura; à direita a área de soltar, da
+   altura do bloco da esquerda, com "Escolher arquivos" na primeira dobra (1280×800, 1440×900, 1920×880).
+   A ordem de leitura e do Tab segue o HTML (hero antes do dropzone): só grade de duas colunas, sem order.
+   Com páginas (o recibo à mostra), a abertura volta a ser uma coluna compacta (shell.css esconde o texto e reduz a
+   área a "Adicionar mais"); a mesa de trabalho embaixo é do wide-work.css.
+   Largura: a .wrap (cabeçalho, conteúdo e rodapé) cresce para 1240 px; textos continuam na medida de leitura (≤70ch),
+   e os cartões de privacidade, retorno e doação ficam numa coluna de leitura alinhada à esquerda da abertura (o
+   cartão na largura do texto de 70ch, sem um vazio grande dentro dele), como o rodapé. */
+@media (min-width: 1100px) {
+  .wrap { max-width: 1240px; padding-inline: 24px; }
+
+  main:not(:has(#workspace:not([hidden]))) .intro {
+    display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    align-items: stretch; gap: 56px; padding: 48px 0 16px;
+  }
+  main:not(:has(#workspace:not([hidden]))) .intro .hero { padding: 0; align-self: center; }
+  main:not(:has(#workspace:not([hidden]))) .intro .proof { margin: 24px 0 28px; }
+  main:not(:has(#workspace:not([hidden]))) .intro .lead { max-width: 58ch; }
+
+  /* A folha em branco à espera do papel: alta, conteúdo no meio, o botão como ação principal. */
+  main:not(:has(#workspace:not([hidden]))) .intro .dropzone {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 320px; padding: 40px 32px;
+  }
+  main:not(:has(#workspace:not([hidden]))) .intro .dropzone-actions { width: 100%; }
+  main:not(:has(#workspace:not([hidden]))) .intro .dropzone-actions .btn { flex: 0 1 320px; }
+  main:not(:has(#workspace:not([hidden]))) .intro .hint { max-width: 42ch; }
+
+  /* Os cartões: coluna de leitura (70ch do texto + recuo do visto + respiro do cartão), começando na borda da abertura. */
+  main > .card { max-width: calc(70ch + 30px + 50px); }
+  main:not(:has(#workspace:not([hidden]))) > #privacy { margin-top: 40px; }
+}
+/* ---------- Tela larga, com páginas: a mesa de trabalho (a partir de 1100 px) ----------
+   Duas colunas no <main>: à esquerda (larga) o cabeçalho "Páginas", o recibo e a busca de dados (.work-pages); à
+   direita os ajustes (#settings) e, logo abaixo deles, a barra do Gerar PDF com o aviso e o resultado (.work-side).
+   A .work-side fica no fim da coluna (logo abaixo dos ajustes, ou no fim da lista, se ela for mais alta) e presa no pé
+   da tela enquanto o fim está abaixo dela: o Gerar PDF sempre à vista, como a barra do celular, mas nunca por cima da
+   lista de páginas; no máximo cobre o pé dos ajustes, e o scroll-padding mantém o foco acima dela.
+   Por que grade com subgrid, e não um <aside>: o #dock precisa ser filho do <main> no celular (o sticky é limitado
+   pelo pai, e a região de aviso #status existe mesmo sem páginas). A .work-side é display: contents fora daqui, então
+   no celular a barra continua presa no pé, sobre a lista, como antes. O #workspace vira subgrade, sem display:
+   contents, para não perder o papel de região. A .work-side ocupa a mesma área dos ajustes (alinhada ao fim), para o
+   sticky poder subir sobre eles até o pé da tela; a linha de baixo tem a altura dela no mínimo (--side-h), para que,
+   parada, ela fique abaixo dos ajustes e não em cima.
+   Ordem do HTML = ordem da tela e do Tab: páginas, ajustes, barra, resultado. Sem rolagem interna: mais alta que a tela,
+   a .work-side sobe até o pé dela aparecer (--side-h). --side-h vem do js/app.js (ResizeObserver). */
+.work-side { display: contents; }
+
+@media (min-width: 1100px) {
+  main:has(#workspace:not([hidden])) {
+    display: grid; column-gap: 32px; align-items: start;
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 392px);
+    /* abertura | ajustes | barra e resultado, ou o resto da lista se ela for mais alta | cartões */
+    grid-template-rows: auto auto minmax(calc(var(--side-h, 0px) + 4px), 1fr);
+  }
+  main:has(#workspace:not([hidden])) > * { grid-column: 1 / -1; min-width: 0; }
+  main:has(#workspace:not([hidden])) > .intro { grid-row: 1; margin-bottom: 18px; }
+  main:has(#workspace:not([hidden])) > #workspace {
+    grid-row: 2 / span 2; align-self: stretch; margin-top: 0;
+    display: grid; grid-template-columns: subgrid; grid-template-rows: subgrid;
+  }
+  .work-pages { grid-column: 1; grid-row: 1 / span 2; min-width: 0; }
+  #workspace > #settings { grid-column: 2; grid-row: 1; margin-top: 0; min-width: 0; }
+
+  /* Os dois títulos na mesma linha: o de Ajustes com a altura do cabeçalho das páginas (que tem o "Limpar tudo"). */
+  #workspace > #settings > .settings-title { display: flex; align-items: center; min-height: 44px; margin-bottom: 8px; font-size: 1.25rem; }
+
+  main:has(#workspace:not([hidden])) > .work-side {
+    display: flex; flex-direction: column; gap: 12px;
+    grid-column: 2; grid-row: 2 / span 2; align-self: end; z-index: 5; margin-top: 4px;
+    /* Papel por baixo: passando sobre o pé dos ajustes, nada aparece entre a barra e o resultado nem abaixo deles. */
+    padding: 12px 0 16px; background: var(--bg);
+    /* Presa no pé da tela; mais alta que a tela, sobe até o topo dela aparecer e o resto vem rolando. */
+    position: sticky; bottom: min(0px, calc(100dvh - var(--side-h, 0px)));
+  }
+  /* Borda de papel que esmaece: passando sobre o pé dos ajustes, a barra lê como camada por cima, não como corte. */
+  main:has(#workspace:not([hidden])) > .work-side::before {
+    content: ""; position: absolute; left: 0; right: 0; top: -28px; height: 28px; pointer-events: none;
+    background: linear-gradient(to bottom, transparent, var(--bg));
+  }
+  .work-side > .dock { position: static; margin: 0; padding: 0; z-index: auto; }
+  .work-side .dock-notice { width: 100%; }
+  .work-side .dock-bar { margin: 0; padding: 12px 12px 12px 16px; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+  .work-side .dock-summary, .work-side .dock-actions { flex: 1 1 100%; }
+  .work-side > .result { margin-top: 0; padding: 18px 16px; }
+  .work-side .result-files { max-width: none; }
+
+  /* A barra só pode cobrir o pé da coluna dos ajustes: o foco do Tab para acima dela (o js/app.js também confere). */
+  html:has(#workspace:not([hidden])) { scroll-padding-bottom: calc(var(--side-h, 0px) + 12px); }
+
+  /* Com páginas, a abertura encolhe: o título numa linha, o carimbo menor ao lado do "Como conferir". A altura vai
+     para a mesa de trabalho (os ajustes cabem mais na primeira tela). */
+  main:has(#workspace:not([hidden])) .hero { padding-top: 20px; }
+  main:has(#workspace:not([hidden])) .hero h1 { font-size: 1.625rem; margin-bottom: 0.25em; }
+  main:has(#workspace:not([hidden])) .hero-line { display: inline; }
+  main:has(#workspace:not([hidden])) .proof { margin: 8px 0 14px; }
+
+  /* Recibo com a folha maior: dá para reconhecer a página sem abrir a tela cheia. */
+  .work-pages .page-card { grid-template-columns: 44px 72px minmax(0, 1fr) auto 44px 44px; padding-block: 12px; }
+  .work-pages .thumb { width: 72px; height: 96px; }
+  .work-pages .page-menu { padding-left: 124px; }
+}

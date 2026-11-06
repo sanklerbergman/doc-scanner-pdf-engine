@@ -2175,6 +2175,14 @@ new ResizeObserver(([entry]) => {
   const lift = height ? parseFloat(getComputedStyle(els.dock).bottom) || 0 : 0;
   document.documentElement.style.setProperty('--dock-h', `${Math.ceil(height + lift)}px`);
 }).observe(els.dock);
+// Tela larga (css/wide.css): a barra do Gerar PDF e o resultado (.work-side) ficam na coluna dos ajustes, presos no pé
+// da tela. A altura deles vai para --side-h (o scroll-padding, a linha da grade e, mais altos que a tela, até onde
+// sobem: sem rolagem interna). No celular a .work-side é display: contents e mede 0.
+const workSide = document.querySelector('.work-side');
+if (workSide) new ResizeObserver(([entry]) => {
+  const height = entry.borderBoxSize?.[0]?.blockSize ?? workSide.offsetHeight;
+  document.documentElement.style.setProperty('--side-h', `${Math.ceil(height)}px`);
+}).observe(workSide);
 // O navegador só rola até o foco quando ele está fora da tela, e a barra muda de altura no mesmo instante (ela volta
 // quando o foco sai de um campo de texto no celular), antes do --dock-h: um botão ficava metade embaixo dela. No foco
 // (não na rolagem), se a barra presa cobre parte dele, rola só o que falta para ele ficar 12px acima dela.
@@ -2182,8 +2190,10 @@ document.addEventListener('focusin', (event) => {
   const target = event.target;
   if (!(target instanceof Element) || els.dock.contains(target) || target.closest('dialog')) return;
   requestAnimationFrame(() => {
-    if (getComputedStyle(els.dock).position !== 'sticky') return;
-    const dock = els.dock.getBoundingClientRect();
+    // Presa no pé: a barra (celular) ou, na tela larga, a coluna da barra e do resultado (.work-side).
+    const bar = [els.dock, workSide].find((node) => node && getComputedStyle(node).position === 'sticky');
+    if (!bar || bar.contains(target)) return;
+    const dock = bar.getBoundingClientRect();
     const box = target.getBoundingClientRect();
     if (dock.height && box.bottom > dock.top && box.top < dock.bottom) {
       window.scrollBy({ top: Math.min(box.bottom - dock.top + 12, box.top - 12), behavior: 'instant' });

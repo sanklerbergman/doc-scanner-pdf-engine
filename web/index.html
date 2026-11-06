@@ -21,6 +21,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/shell.css">
+  <link rel="stylesheet" href="css/wide.css">
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
@@ -75,6 +76,8 @@
   </header>
 
   <main id="main" class="wrap">
+    <!-- Abertura: título e carimbo + área de adicionar. Na tela larga (wide.css), lado a lado. -->
+    <div class="intro">
     <section class="hero">
       <h1><span class="hero-line">Foto, Word ou PDF: tudo vira PDF.</span> <span class="hero-line">Sem mandar nada pra ninguém.</span></h1>
       <!-- Carimbo de conferência: é a regra da CSP acima (connect-src 'none'), não uma promessa. O link leva ao jeito de
@@ -104,8 +107,13 @@
       <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
       <input id="file-input" type="file" accept="image/*,.heic,.heif,.pdf,application/pdf,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" multiple hidden>
     </section>
+    </div>
 
     <section id="workspace" class="workspace" hidden aria-labelledby="pages-title">
+      <!-- Mesa de trabalho: na tela larga (css/wide.css), as páginas (.work-pages) à esquerda e os ajustes à direita,
+           com a barra do Gerar PDF e o resultado (.work-side) logo abaixo deles. No celular, os dois embrulhos não mudam
+           nada: a ordem do HTML é a ordem da tela e do Tab. -->
+      <div class="work-pages">
       <div class="workspace-head">
         <h2 id="pages-title">Páginas <span id="page-count" class="page-count" aria-hidden="true"></span></h2>
         <button id="clear" type="button" class="btn btn-ghost">Limpar tudo</button>
@@ -129,6 +137,7 @@
       <div class="find-row">
         <button id="find-data" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-search"/></svg> Procurar dados para tarjar</button>
         <p class="field-note">CPF, CNPJ, e-mail, telefone, CEP e cartão, no texto das páginas. Nas fotos, o texto é reconhecido na hora (OCR, uns 5 MB na primeira vez).</p>
+      </div>
       </div>
 
       <!-- Ajustes: à vista só o essencial; o resto em seções recolhidas, cada uma com o resumo do que está ligado no
@@ -276,6 +285,9 @@
          Em cima, o aviso das ações (#status, a única região de aviso da tela principal, e o "Desfazer"); embaixo, com
          páginas, o resumo do que está ligado e o "Gerar PDF". As janelas e a tela cheia têm a região de aviso delas. O
          #status nunca sai da árvore de acessibilidade: sem texto à mostra, o cartão só some da tela (css/shell.css). -->
+    <!-- .work-side: no celular e sem páginas é display: contents (a barra continua presa no pé, limitada pelo <main>);
+         na tela larga com páginas, fica na coluna dos ajustes, presa no pé da tela (css/wide.css, --side-h em js/app.js). -->
+    <div class="work-side">
     <div id="dock" class="dock">
       <div class="dock-notice">
         <p id="status" class="status" role="status" aria-live="polite"></p>
@@ -304,6 +316,7 @@
       </div>
       <p id="result-notes" class="result-notes" hidden></p>
     </section>
+    </div>
 
     <section id="privacy" class="card privacy" aria-labelledby="privacy-title">
       <h2 id="privacy-title">O que acontece com seus documentos? Nada.</h2>
