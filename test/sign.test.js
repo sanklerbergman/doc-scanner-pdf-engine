@@ -123,12 +123,12 @@ test('certificado do titular: nome sem o CPF, emissor, validade e cadeia complet
 });
 
 test('certificado vencido, sem uso para assinar, com chave pequena ou de curva elíptica é recusado com o motivo', async () => {
-  await assert.rejects(openCertificate(certificate('vencido.pfx'), PASSWORD), (err) => err instanceof SignError && /venceu em 01\/01\/2021/.test(err.message));
+  await assert.rejects(openCertificate(certificate('vencido.pfx'), PASSWORD), (err) => err instanceof SignError && /venceu em 01\/01\/2021/.test(err.message) && !err.wrongPassword);
   await assert.rejects(openCertificate(certificate('sem-assinatura.pfx'), PASSWORD), /não serve para assinar/);
   await assert.rejects(openCertificate(certificate('chave-1024.pfx'), PASSWORD), /pequena demais \(1024 bits\)/);
   await assert.rejects(openCertificate(certificate('ec.pfx'), PASSWORD), /curva elíptica/);
   await assert.rejects(openCertificate(certificate('titular-aes.pfx'), PASSWORD, new Date('2000-01-01')), /só vale a partir/);
-  await assert.rejects(openCertificate(certificate('titular-aes.pfx'), 'errada'), (err) => err instanceof SignError && /senha não confere/.test(err.message));
+  await assert.rejects(openCertificate(certificate('titular-aes.pfx'), 'errada'), (err) => err instanceof SignError && /senha não confere/.test(err.message) && err.wrongPassword);
 });
 
 // ---------- PDF assinado ----------

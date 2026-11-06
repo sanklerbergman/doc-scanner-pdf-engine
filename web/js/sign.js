@@ -17,6 +17,16 @@ import { t, LOCALE } from './i18n.js';
 
 export class SignError extends Error {
   name = 'SignError';
+
+  /**
+   * @param {string} message
+   * @param {{wrongPassword?: boolean}} [options] wrongPassword: a senha do certificado não confere (a tela liga o erro
+   *   ao campo da senha; os outros erros são do arquivo)
+   */
+  constructor(message, { wrongPassword = false } = {}) {
+    super(message);
+    this.wrongPassword = wrongPassword;
+  }
 }
 
 const RSA_OID = '1.2.840.113549.1.1.1';
@@ -64,7 +74,7 @@ export async function openCertificate(file, password, now = new Date()) {
   try {
     content = await readPkcs12(file, password);
   } catch (err) {
-    if (err instanceof Pkcs12Error) throw new SignError(err.message);
+    if (err instanceof Pkcs12Error) throw new SignError(err.message, { wrongPassword: err.reason === 'password' });
     throw err;
   }
   const { keys, certificates } = content;

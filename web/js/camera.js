@@ -12,6 +12,30 @@ const $ = (selector) => document.querySelector(selector);
 const DARK_BELOW = 60;
 const BRIGHT_ABOVE = 80;
 
+// Aviso falado do papel (#camera-chip só aparece na tela). O detector oscila com o tremor da mão; para não falar sem
+// parar, um estado novo só é anunciado depois de se manter por PAPER_SETTLE_MS, com PAPER_GAP_MS entre dois anúncios,
+// nunca repetido, e nunca por cima de um aviso mais importante (foto tirada, pouca luz) ainda recente.
+export const PAPER_SETTLE_MS = 1000;
+export const PAPER_GAP_MS = 2500;
+
+/** Estado inicial de paperAnnouncement: nada anunciado ainda. */
+export const PAPER_IDLE = Object.freeze({ announced: null, pending: null, since: 0, lastAt: -Infinity });
+
+/**
+ * Decide se a mudança de estado do papel deve ser falada agora. Função pura: recebe o estado e devolve o próximo.
+ * @param {{announced: boolean|null, pending: boolean|null, since: number, lastAt: number}} state
+ * @param {boolean} found o detector achou o papel nesta leitura
+ * @param {number} now tempo em ms
+ * @param {number} [busyUntil] até quando um aviso prioritário ocupa a fala (ms)
+ * @returns {{state: typeof state, announce: boolean|null}} announce: true (achou), false (procurando) ou null (calar)
+ */
+export function paperAnnouncement(state, found, now, busyUntil = -Infinity) {
+  const next = found === state.pending ? state : { ...state, pending: found, since: now };
+  if (next.pending === next.announced || now - next.since < PAPER_SETTLE_MS
+    || now - next.lastAt < PAPER_GAP_MS || now < busyUntil) return { state: next, announce: null };
+  return { state: { ...next, announced: found, lastAt: now }, announce: found };
+}
+
 /**
  * @param {{onPhoto: (file: File) => void, useNative: () => void}} handlers
  *   onPhoto recebe cada foto tirada; useNative abre a câmera do sistema.
@@ -32,6 +56,13 @@ export function setupCamera({ onPhoto, useNative }) {
   const outlineShape = outline.querySelector('polygon');
   const chip = $('#camera-chip');
   let misses = 0;
+  // Região só para leitor de tela, sem mudar o visual nem apagar o texto de #camera-message.
+  const paperStatus = document.createElement('p');
+  paperStatus.className = 'sr-only';
+  paperStatus.setAttribute('role', 'status');
+  chip.parentElement.after(paperStatus);
+  let paperState = PAPER_IDLE;
+  let busyUntil = -Infinity; // avisos de foto e de luz têm prioridade sobre o do papel
   const probe = document.createElement('canvas');
   probe.width = probe.height = 32;
   let lightTimer = 0;
@@ -39,7 +70,10 @@ export function setupCamera({ onPhoto, useNative }) {
   let track = null;
   let photos = 0;
 
-  const say = (text) => { message.textContent = text; };
+  const say = (text) => {
+    message.textContent = text;
+    busyUntil = performance.now() + PAPER_GAP_MS;
+  };
 
   async function open() {
     photos = 0;
@@ -98,6 +132,9 @@ export function setupCamera({ onPhoto, useNative }) {
     chip.hidden = false;
     chip.textContent = found ? t('Papel encontrado') : t('Procurando o papel…');
     chip.classList.toggle('found', Boolean(found));
+    const step = paperAnnouncement(paperState, Boolean(found), performance.now(), busyUntil);
+    paperState = step.state;
+    if (step.announce !== null) paperStatus.textContent = chip.textContent;
   }
 
   // Mede a claridade do miolo da imagem e avisa quando está escuro demais para uma foto nítida.
@@ -116,6 +153,7 @@ export function setupCamera({ onPhoto, useNative }) {
     const warn = dark && !torchOn;
     if (warn === !warning.hidden) return;
     warning.hidden = !warn;
+    busyUntil = performance.now() + PAPER_GAP_MS;
     torch.classList.toggle('attention', warn);
     warning.textContent = torch.hidden
       ? t('Ambiente escuro: a foto pode sair borrada. Chegue perto de uma luz ou use a câmera do sistema com flash.')
@@ -166,6 +204,8 @@ export function setupCamera({ onPhoto, useNative }) {
     chip.hidden = true;
     outlineShape.setAttribute('points', '');
     misses = 0;
+    paperState = PAPER_IDLE;
+    paperStatus.textContent = '';
     torch.classList.remove('attention');
     stream?.getTracks().forEach((t) => t.stop());
     stream = track = null;

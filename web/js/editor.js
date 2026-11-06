@@ -2,10 +2,10 @@
 // Carregado na primeira vez que a pessoa toca em "Editar" (viewer.js). Separado das tarjas: a tarja apaga, a edição
 // acrescenta; as duas usam as mesmas coordenadas, e a tarja fica por cima de tudo.
 //
-// Tocar seleciona; arrastar move; as alças dos cantos mudam o tamanho; a barra junto da edição selecionada tem Remover
-// e Duplicar. Pelo teclado: "Novo" cria a edição da ferramenta no meio da página; cada edição é um grupo com foco, e
+// Tocar seleciona; arrastar move; as alças dos cantos mudam o tamanho; a barra junto da edição selecionada tem Remover,
+// Duplicar e as setas de mover e mudar o tamanho com toques, sem arrastar (edit-nudge.js). Pelo teclado: "Novo" cria a edição da ferramenta no meio da página; cada edição é um grupo com foco, e
 // as setas movem 1%, Shift e setas mudam o tamanho, Delete remove. Desfazer volta qualquer passo da sessão. Nada muda
-// na página até "Aplicar".
+// na página até "Aplicar". Na barra de ferramentas, um Tab só: as setas ← e → (Home e End) passam de uma a outra.
 //
 // Pontos de encaixe das próximas fases:
 // - registerTool: a ferramenta na barra, as propriedades que valem para ela, a criação pelo ponteiro (pointer) e pelo
@@ -22,6 +22,7 @@ import './edit-types.js';
 import { t, plural } from './i18n.js';
 import { redactionColor } from './redact.js';
 import { replacementSvg } from './viewer.js';
+import { nudgeControls, nudgeOf } from './edit-nudge.js';
 
 /**
  * @typedef {object} Tool
@@ -120,7 +121,6 @@ const $ = (selector) => document.querySelector(selector);
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const TAP = 6; // px da tela: menos que isso é um toque, não um arrasto
 const INK_JOIN = 24; // pontos: traço que começa até essa distância do desenho anterior entra nele
-const KEY_STEP = 0.01; // as setas movem 1% da página
 const MAX_PIXELS = 6e6; // canvas das edições: no iPhone, mais que isso pesa na memória
 
 // Cria um elemento. Chaves "aria-*" e "data-*" viram atributos; o resto, propriedades.
@@ -211,6 +211,27 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
   }, [swatch, el('span', { textContent: t('Cor') })]);
   toolbar.replaceChildren(...toolButtons, propsButton);
 
+  // Tabindex móvel: a barra é uma parada só do Tab, no último botão que teve o foco (ao abrir, a ferramenta escolhida);
+  // ← e → passam ao vizinho (dando a volta), Home e End às pontas. Botão desabilitado fica de fora.
+  const toolbarButtons = [...toolButtons, propsButton];
+  function rove(target) {
+    for (const button of toolbarButtons) button.tabIndex = button === target ? 0 : -1;
+  }
+  rove(toolButtons[0]);
+  toolbar.addEventListener('focusin', (event) => {
+    if (toolbarButtons.includes(event.target)) rove(event.target);
+  });
+  toolbar.addEventListener('keydown', (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const enabled = toolbarButtons.filter((button) => !button.disabled);
+    const at = enabled.indexOf(document.activeElement);
+    if (at < 0) return;
+    const next = { ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: enabled.length - 1 }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    enabled[(next + enabled.length) % enabled.length].focus();
+  });
+
   // Um grupo de opções (rádios) por propriedade; só aparecem as que valem para a ferramenta ou a edição selecionada.
   const groups = new Map([...PROPERTIES].map(([id, property]) => {
     const group = el('fieldset', { className: `edit-prop edit-prop-${property.look ?? 'text'}`, 'data-prop': id }, [
@@ -241,6 +262,8 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
     swatch.style.background = values[tint] ?? current[tint];
     propsButton.disabled = !(target.props ?? []).length;
     if (propsButton.disabled) togglePanel(false);
+    // A parada do Tab não pode ficar num botão desabilitado: volta para a ferramenta escolhida.
+    if (propsButton.disabled && propsButton.tabIndex === 0) rove(toolButtons.find((button) => button.dataset.tool === tool.id));
   }
 
   function togglePanel(open = panel.hidden) {
@@ -272,6 +295,8 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
     tool = next;
     lastInk = null;
     for (const button of toolButtons) button.setAttribute('aria-pressed', String(button.dataset.tool === tool.id));
+    // Fora da barra, a parada do Tab acompanha a ferramenta escolhida (ao abrir a página, ela recebe o foco).
+    if (!toolbar.contains(document.activeElement)) rove(toolButtons.find((button) => button.dataset.tool === tool.id));
     surface.dataset.tool = tool.pointer === 'select' ? 'select' : 'create';
     // Outra ferramenta de criar: a seleção (alças e barra) sai da frente da página.
     if (tool.pointer !== 'select') selected = -1;
@@ -407,6 +432,8 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
     if (!active()) return;
     paint();
     const had = keepFocus ? boxes.contains(document.activeElement) && Number(document.activeElement.closest('[data-index]')?.dataset.index) : null;
+    // Recolocar a barra tira o foco do botão dela (as setas de mover): ele volta depois.
+    const inBar = bar.contains(document.activeElement) ? document.activeElement : null;
     const list = items.map((item, i) => {
       const type = typeOf(item);
       const box = el('div', {
@@ -424,6 +451,7 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
     undoButton.disabled = !history.length;
     const target = focus >= 0 ? focus : typeof had === 'number' ? had : -1;
     if (target >= 0) boxes.querySelector(`[data-index="${target}"]`)?.focus({ preventScroll: true });
+    else if (inBar && bar.isConnected) inBar.focus({ preventScroll: true });
     showProps();
   }
 
@@ -435,9 +463,14 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
     }));
   }
 
+  // Mover e mudar o tamanho com toques (edit-nudge.js): o mesmo passo das setas do teclado.
+  const nudge = nudgeControls({ act: (kind, dx, dy) => selected >= 0 && step(selected, kind, dx, dy, { announce: true }), say });
   const bar = el('div', { className: 'edit-bar', role: 'group', 'aria-label': t('Edição selecionada') }, [
-    el('button', { type: 'button', className: 'btn', 'data-act': 'remove' }, [icon('remove'), ` ${t('Remover')}`]),
-    el('button', { type: 'button', className: 'btn', 'data-act': 'duplicate' }, [icon('copy'), ` ${t('Duplicar')}`]),
+    el('div', { className: 'edit-bar-row' }, [
+      el('button', { type: 'button', className: 'btn', 'data-act': 'remove' }, [icon('remove'), ` ${t('Remover')}`]),
+      el('button', { type: 'button', className: 'btn', 'data-act': 'duplicate' }, [icon('copy'), ` ${t('Duplicar')}`]),
+    ]),
+    nudge.element,
   ]);
 
   // A barra fica acima da edição; sem espaço, embaixo; sem espaço também, dentro dela, no alto. Sempre na página.
@@ -592,18 +625,29 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
       }
       return;
     }
-    const move = { ArrowLeft: [-KEY_STEP, 0], ArrowRight: [KEY_STEP, 0], ArrowUp: [0, -KEY_STEP], ArrowDown: [0, KEY_STEP] }[event.key];
+    const move = nudgeOf(event.key);
     if (!move) return;
     event.preventDefault();
-    const kind = event.shiftKey ? 'grow' : 'move';
-    // As setas seguidas na mesma edição (até 1 s entre uma e outra) viram um passo só do Desfazer.
+    step(index, event.shiftKey ? 'grow' : 'move', move[0], move[1], { focus: true });
+  });
+
+  /**
+   * Um passo das setas (do teclado ou da barra): move a edição, ou muda o tamanho dela (kind 'grow').
+   * Os passos seguidos na mesma edição (até 1 s entre um e outro) viram um passo só do Desfazer.
+   * focus: o foco vai para a caixa (teclado); announce: o aviso diz o que mudou (barra, onde o foco fica no botão).
+   */
+  function step(index, kind, dx, dy, { focus = false, announce = false } = {}) {
     const now = performance.now();
     if (!(lastKey && lastKey.index === index && lastKey.kind === kind && now - lastKey.time < 1000)) remember();
     lastKey = { index, kind, time: now };
-    items[index] = kind === 'grow' ? growEdit(items[index], move[0], move[1], aspect()) : moveEdit(items[index], move[0], move[1]);
+    items[index] = kind === 'grow' ? growEdit(items[index], dx, dy, aspect()) : moveEdit(items[index], dx, dy);
     selected = index;
-    render(index);
-  });
+    render(focus ? index : -1);
+    if (announce) {
+      const type = typeOf(items[index]);
+      say(kind === 'move' ? `${done(type, 'moved')}.` : t('{label}: tamanho mudado.', { label: type.label }));
+    }
+  }
   // Ctrl+Z (⌘Z no Mac) desfaz, com o foco em qualquer lugar do modo Editar.
   surface.closest('dialog').addEventListener('keydown', (event) => {
     if (!active() || !(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== 'z') return;

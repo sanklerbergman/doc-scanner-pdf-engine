@@ -7,6 +7,7 @@ import { normalizeRect } from './redact.js';
 import { replacementLayout, winAnsiText, droppedMessage } from './edit-text.js';
 import { followKeyboard } from './keyboard-panel.js';
 import { setupPageZoom } from './page-zoom.js';
+import { nudgeControls, nudgeOf } from './edit-nudge.js';
 import { wordCount } from './page-text.js';
 import { t, plural } from './i18n.js';
 
@@ -43,6 +44,7 @@ const START_INSET = 0.04; // sem recorte ainda: os cantos começam um pouco para
 const LOUPE_SIZE = 120; // diâmetro da lupa do recorte, em px da tela
 const LOUPE_ZOOM = 3; // ampliação sobre a foto como ela aparece na tela
 const LOUPE_GAP = 48; // do dedo até a borda da lupa: o dedo não cobre
+const TAP = 6; // px da tela: menos que isso, no canto do recorte, é um toque (escolhe o canto), não um arrasto
 
 /**
  * @param {object} deps
@@ -83,6 +85,12 @@ export function setupViewer({
   const crop = $('#crop');
   const cropImage = $('#crop-image');
   const polygon = $('#crop-polygon');
+  // Traço duplo na linha do recorte: um contorno escuro por baixo da linha clara, para ela aparecer (contraste de 3:1)
+  // tanto no papel branco quanto no fundo escuro.
+  const halo = polygon.cloneNode();
+  halo.removeAttribute('id');
+  halo.classList.add('crop-halo');
+  polygon.before(halo);
   const handles = [...crop.querySelectorAll('.crop-handle')];
   const loupe = $('#crop-loupe');
   const hint = $('#viewer-hint');
@@ -109,7 +117,8 @@ export function setupViewer({
   const editButton = $('#viewer-edit');
   const fillButton = $('#viewer-fill');
   const discard = $('#discard-dialog');
-  // Zoom da página no Tarjar e no Editar (page-zoom.js): os botões ficam na barra do título.
+  // Zoom da página (page-zoom.js): os botões ficam na barra do título. No Tarjar e no Editar, a página amplia em
+  // passos; na visualização, entre a página inteira e a ampliada (como no toque na imagem).
   const zoom = setupPageZoom({ stage, controls: $('#page-zoom'), say: (message) => { hint.textContent = message; } });
 
   let page = null;
@@ -122,6 +131,8 @@ export function setupViewer({
   let token = 0; // invalida renderizações que terminam depois de a pessoa já ter mudado de tela
   let copying = null; // AbortController da cópia do texto em andamento (o OCR pode levar segundos)
   let loupeOwner = null; // ponteiro que arrasta o canto mostrado na lupa
+  let pressed = null; // {index, id, x, y, moved}: o canto do recorte sob o ponteiro, antes de saber se é toque ou arrasto
+  let armed = -1; // o canto escolhido com um toque: o próximo toque na foto o leva até lá
   let editor = null; // modo Editar (editor.js), carregado na primeira vez
   let filler = null; // modo Preencher (form-panel.js), carregado na primeira vez
   const urls = { view: '', crop: '', redact: '' };
@@ -171,6 +182,7 @@ export function setupViewer({
     updateNav(true);
     image.hidden = false;
     stage.classList.remove('zoomed');
+    zoom.view(viewZoom);
     image.src = page.thumbUrl; // aparece na hora; a versão nítida entra em seguida
     image.alt = t('{label}, como vai sair no PDF', { label });
     const message = typeof note === 'string' ? note : '';
@@ -200,6 +212,7 @@ export function setupViewer({
     image.hidden = true;
     viewActions.hidden = true;
     stage.classList.remove('zoomed');
+    zoom.view(null);
     hint.textContent = t('Preparando a foto…');
     const blob = await renderOriginal(page);
     if (mine !== token) return;
@@ -210,6 +223,8 @@ export function setupViewer({
     await cropImage.decode().catch(() => {});
     if (mine !== token) return;
     hideLoupe(); // a tela pode ter fechado no meio de um arrasto
+    pressed = null;
+    arm(-1);
     crop.hidden = false;
     cropActions.hidden = false;
     const redacted = page.redactions?.length;
@@ -235,7 +250,9 @@ export function setupViewer({
   }
 
   function drawPoints() {
-    polygon.setAttribute('points', points.map(([x, y]) => `${x * 100},${y * 100}`).join(' '));
+    const list = points.map(([x, y]) => `${x * 100},${y * 100}`).join(' ');
+    polygon.setAttribute('points', list);
+    halo.setAttribute('points', list);
     handles.forEach((handle, i) => {
       handle.style.left = `${points[i][0] * 100}%`;
       handle.style.top = `${points[i][1] * 100}%`;
@@ -252,34 +269,73 @@ export function setupViewer({
     drawPoints();
   }
 
+  // Sem arrastar (WCAG 2.5.7): tocar num canto o escolhe, e tocar na foto leva o canto escolhido até ali. Tocar de
+  // novo no mesmo canto desiste. O arrasto e a lupa continuam como antes: o canto só anda depois de o dedo andar.
+  function arm(index) {
+    armed = index;
+    handles.forEach((handle, i) => handle.classList.toggle('armed', i === index));
+    crop.classList.toggle('armed', index >= 0);
+  }
+
   handles.forEach((handle, index) => {
-    handle.setAttribute('aria-label', t('{corner}: arraste ou use as setas', { corner: CORNERS[index] }));
+    handle.setAttribute('aria-label', t('{corner}: arraste, use as setas ou toque nele e depois no lugar dele na foto', { corner: CORNERS[index] }));
     handle.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       handle.setPointerCapture(event.pointerId);
       handle.focus();
+      pressed = { index, id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
       showLoupe(index, event, crop.getBoundingClientRect());
     });
     handle.addEventListener('pointermove', (event) => {
       if (!handle.hasPointerCapture(event.pointerId)) return;
       const box = crop.getBoundingClientRect();
+      if (pressed?.id === event.pointerId && !pressed.moved) {
+        if (Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) < TAP) return;
+        pressed.moved = true;
+        arm(-1); // arrastou: o canto escolhido antes (este ou outro) fica para trás
+      }
       movePoint(index, (event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height);
       showLoupe(index, event, box);
+    });
+    // Soltar sem ter andado é um toque: escolhe o canto (ou desiste, se já era ele).
+    handle.addEventListener('pointerup', (event) => {
+      if (pressed?.id !== event.pointerId) return;
+      const tapped = !pressed.moved;
+      pressed = null;
+      if (!tapped) return;
+      if (armed === index) {
+        arm(-1);
+        hint.textContent = t('Arraste os quatro cantos até as bordas do papel.');
+      } else {
+        arm(index);
+        hint.textContent = t('{corner} escolhido: toque no lugar da foto para onde ele vai.', { corner: CORNERS[index] });
+      }
     });
     // pointerup, pointercancel e perda de captura soltam o canto sozinhos (a captura acaba junto); a lupa some.
     for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
       handle.addEventListener(type, (event) => {
         if (event.pointerId === loupeOwner) hideLoupe();
+        if (type !== 'pointerup' && pressed?.id === event.pointerId) pressed = null;
       });
     }
     // Pelas setas a lupa não aparece: nada cobre o canto.
     handle.addEventListener('keydown', (event) => {
-      const step = event.shiftKey ? 0.05 : 0.01;
-      const move = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key];
+      const move = nudgeOf(event.key, event.shiftKey ? 0.05 : 0.01);
       if (!move) return;
       event.preventDefault();
       movePoint(index, points[index][0] + move[0], points[index][1] + move[1]);
     });
+  });
+
+  // O toque na foto, com um canto escolhido, leva o canto até ali; o foco fica nele.
+  crop.addEventListener('click', (event) => {
+    if (armed < 0 || event.target.closest('.crop-handle')) return;
+    const box = crop.getBoundingClientRect();
+    const index = armed;
+    arm(-1);
+    movePoint(index, (event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height);
+    handles[index].focus();
+    if (isConvex(points)) hint.textContent = t('{corner} no lugar novo.', { corner: CORNERS[index] });
   });
 
   // ---------- Lupa do recorte ----------
@@ -335,14 +391,17 @@ export function setupViewer({
     if (ex > sx && ey > sy) ctx.drawImage(cropImage, sx, sy, ex - sx, ey - sy, (sx - x0) * kx, (sy - y0) * ky, (ex - sx) * kx, (ey - sy) * ky);
     // As duas linhas do recorte que saem do canto, na cor do polígono (vermelha quando os cantos se cruzam).
     const at = ([px, py]) => [side / 2 + (px - cx) * unitX, side / 2 + (py - cy) * unitY];
-    ctx.lineWidth = 2 * dpr;
+    // Com o mesmo traço duplo da tela: o contorno escuro por baixo.
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = getComputedStyle(polygon).stroke;
-    ctx.beginPath();
-    ctx.moveTo(...at(points[(index + 3) % 4]));
-    ctx.lineTo(side / 2, side / 2);
-    ctx.lineTo(...at(points[(index + 1) % 4]));
-    ctx.stroke();
+    for (const [color, line] of [['rgba(0, 0, 0, 0.8)', 5], [getComputedStyle(polygon).stroke, 2]]) {
+      ctx.lineWidth = line * dpr;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(...at(points[(index + 3) % 4]));
+      ctx.lineTo(side / 2, side / 2);
+      ctx.lineTo(...at(points[(index + 1) % 4]));
+      ctx.stroke();
+    }
     // Mira: um anel em volta do ponto exato, branco com contorno escuro para aparecer em qualquer foto.
     const ring = 7 * dpr;
     for (const [color, line] of [['rgba(0, 0, 0, 0.6)', 3.5], ['#fff', 1.5]]) {
@@ -356,7 +415,20 @@ export function setupViewer({
 
   // ---------- Tarjas ----------
   // Arrastar sobre a página marca um retângulo. Pelo teclado: "Nova tarja" cria uma no meio da página, as setas
-  // movem, Shift e setas mudam o tamanho, e Delete remove. Nada muda na página até "Aplicar tarjas".
+  // movem, Shift e setas mudam o tamanho, e Delete remove. Sem arrastar nem teclado: "Nova tarja" e as setas das
+  // opções da tarja selecionada (edit-nudge.js), que fazem o mesmo. Nada muda na página até "Aplicar tarjas".
+
+  // Mover e mudar o tamanho da tarja selecionada com toques: o mesmo passo das setas do teclado.
+  const redactNudge = nudgeControls({
+    act: (kind, dx, dy) => {
+      if (current < 0) return;
+      nudgeMark(current, kind, dx, dy);
+      drawMarks();
+      hint.textContent = kind === 'move' ? t('Tarja {n} movida.', { n: current + 1 }) : t('Tarja {n}: tamanho mudado.', { n: current + 1 });
+    },
+    say: (message) => { hint.textContent = message; },
+  });
+  $('.redact-options').append(redactNudge.element);
 
   async function showRedact() {
     const mine = nextToken();
@@ -365,6 +437,7 @@ export function setupViewer({
     image.hidden = true;
     viewActions.hidden = true;
     stage.classList.remove('zoomed');
+    zoom.view(null);
     hint.textContent = t('Preparando a página…');
     let blob;
     try {
@@ -455,6 +528,7 @@ export function setupViewer({
     const color = marks[current]?.color === 'white' || (current < 0 && markColor === 'white') ? 'white' : 'black';
     for (const button of redactColors) button.setAttribute('aria-pressed', String(button.dataset.color === color));
     redactWrite.disabled = current < 0;
+    redactNudge.setDisabled(current < 0);
   }
 
   function selectMark(index) {
@@ -533,23 +607,27 @@ export function setupViewer({
       removeMark(index);
       return;
     }
-    const step = 0.01;
-    const move = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key];
+    const move = nudgeOf(event.key);
     if (!move) return;
     event.preventDefault();
-    const mark = marks[index];
-    let next;
-    if (event.shiftKey) {
-      next = normalizeRect({ ...mark, x1: mark.x1 + move[0], y1: mark.y1 + move[1] });
-    } else {
-      // Move sem sair da página e sem mudar o tamanho.
-      const dx = Math.min(1 - mark.x1, Math.max(-mark.x0, move[0]));
-      const dy = Math.min(1 - mark.y1, Math.max(-mark.y0, move[1]));
-      next = { ...mark, x0: mark.x0 + dx, y0: mark.y0 + dy, x1: mark.x1 + dx, y1: mark.y1 + dy };
-    }
-    if (next) marks[index] = next;
+    nudgeMark(index, event.shiftKey ? 'grow' : 'move', move[0], move[1]);
     drawMarks(index);
   });
+
+  // Um passo das setas (do teclado ou das opções): move a tarja sem sair da página e sem mudar o tamanho, ou (grow)
+  // leva o canto de baixo à direita, sem deixar a tarja pequena demais.
+  function nudgeMark(index, kind, dx, dy) {
+    const mark = marks[index];
+    let next;
+    if (kind === 'grow') {
+      next = normalizeRect({ ...mark, x1: mark.x1 + dx, y1: mark.y1 + dy });
+    } else {
+      const mx = Math.min(1 - mark.x1, Math.max(-mark.x0, dx));
+      const my = Math.min(1 - mark.y1, Math.max(-mark.y0, dy));
+      next = { ...mark, x0: mark.x0 + mx, y0: mark.y0 + my, x1: mark.x1 + mx, y1: mark.y1 + my };
+    }
+    if (next) marks[index] = next;
+  }
 
   redactBoxes.addEventListener('focusin', (event) => {
     const box = event.target.closest('.redact-box');
@@ -562,7 +640,7 @@ export function setupViewer({
   redactAdd.addEventListener('click', () => {
     marks.push({ x0: 0.3, y0: 0.45, x1: 0.7, y1: 0.55, ...newColor() });
     drawMarks(marks.length - 1);
-    hint.textContent = t('Tarja criada no meio da página: use as setas para mover e Shift e setas para mudar o tamanho.');
+    hint.textContent = t('Tarja criada no meio da página: use as setas (da tela ou do teclado) para mover; Tamanho, ou Shift e setas, muda o tamanho.');
   });
   redactUndo.addEventListener('click', () => {
     if (!marks.length) return;
@@ -673,6 +751,7 @@ export function setupViewer({
     image.hidden = true;
     viewActions.hidden = true;
     stage.classList.remove('zoomed');
+    zoom.view(null);
     hint.textContent = t('Preparando a página…');
     let base;
     try {
@@ -682,6 +761,7 @@ export function setupViewer({
       if (mine !== token) return;
       image.hidden = false;
       viewActions.hidden = false;
+      zoom.view(viewZoom);
       updateNav(true);
       hint.textContent = t('Não deu para preparar a página para editar. Confira a conexão e tente de novo.');
       return;
@@ -716,6 +796,7 @@ export function setupViewer({
     image.hidden = true;
     viewActions.hidden = true;
     stage.classList.remove('zoomed');
+    zoom.view(null);
     hint.textContent = t('Preparando a página…');
     let base;
     try {
@@ -725,6 +806,7 @@ export function setupViewer({
       if (mine !== token) return;
       image.hidden = false;
       viewActions.hidden = false;
+      zoom.view(viewZoom);
       updateNav(true);
       hint.textContent = t('Não deu para preparar a página para preencher. Confira a conexão e tente de novo.');
       return;
@@ -864,7 +946,10 @@ export function setupViewer({
     prevButton.style.left = `${Math.max(12, box.left - frame.left - size - gap)}px`;
     nextButton.style.right = `${Math.max(12, frame.right - box.right - size - gap)}px`;
   }
-  image.addEventListener('load', placeSteps);
+  image.addEventListener('load', () => {
+    placeSteps();
+    zoom.refresh(); // a versão nítida tem outro tamanho: o número do zoom acompanha
+  });
   new ResizeObserver(() => requestAnimationFrame(placeSteps)).observe(stage);
 
   // Na primeira e na última página, a seta que não leva a lugar nenhum some; no recorte, as duas.
@@ -916,9 +1001,26 @@ export function setupViewer({
   $('#viewer-close').addEventListener('click', () => leaveIfSure(() => dialog.close()));
   image.addEventListener('click', () => {
     if (swiped) { swiped = false; return; }
-    stage.classList.toggle('zoomed');
-    placeSteps();
+    setViewZoom(!stage.classList.contains('zoomed'));
   });
+
+  // Zoom da visualização: a página inteira ou ampliada (a imagem com 2,2× a largura do palco, no CSS). O toque na
+  // imagem e os botões de zoom da barra do título (page-zoom.js, também pelo teclado) fazem o mesmo.
+  function setViewZoom(on) {
+    stage.classList.toggle('zoomed', on);
+    placeSteps();
+    zoom.refresh();
+  }
+  const viewZoom = { level: viewLevel, set: setViewZoom };
+  // O zoom da imagem na tela, em relação à página inteira (o número que o botão do meio mostra).
+  function viewLevel() {
+    if (!stage.classList.contains('zoomed') || !image.naturalWidth) return 1;
+    const style = getComputedStyle(stage);
+    const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const height = stage.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    const fit = image.naturalWidth * Math.min(1, width / image.naturalWidth, height / image.naturalHeight);
+    return Math.max(1, (width * 2.2) / fit);
+  }
 
   $('#crop-detect').addEventListener('click', () => {
     const quad = detect(page);
@@ -963,6 +1065,7 @@ export function setupViewer({
     redactActions.hidden = true;
     closeTextPanel(false);
     zoom.detach(redact);
+    zoom.view(null);
     marks = [];
     editor?.close();
     filler?.close();

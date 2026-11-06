@@ -1,5 +1,6 @@
 // Zoom da página nos modos Tarjar e Editar da tela cheia (viewer.js e editor.js): um só para os dois, ligado ao modo
-// que está na tela (attach) e desligado ao sair (detach).
+// que está na tela (attach) e desligado ao sair (detach). Na visualização (view), os mesmos botões trocam entre a
+// página inteira e a ampliada, como o toque na imagem: assim o zoom também funciona pelo teclado (WCAG 2.1.1).
 //
 // - Celular: pinçar com dois dedos amplia, e arrastar com os dois move a página ampliada. Um dedo continua sendo da
 //   ferramenta (desenhar, marcar a tarja, mover a caixa): o segundo dedo que encosta cancela o que o primeiro fazia.
@@ -40,12 +41,21 @@ export function setupPageZoom({ stage, controls, say }) {
   let pinch = null; // a pinça em andamento; fica até o último dedo sair, para o dedo que sobra não desenhar
   let settleTimer = 0;
   let gesture = null; // a pinça do trackpad no Safari
+  /** @type {null | {level: () => number, set: (on: boolean) => void}} a visualização: ampliada ou não (viewer.js) */
+  let simple = null;
+
+  // O botão do meio mostra o zoom; o nome dele começa pelo mesmo número (WCAG 2.5.3) e diz o que ele faz.
+  function showLevel(level) {
+    const n = Math.round(level * 100);
+    fitButton.textContent = `${n}%`;
+    fitButton.setAttribute('aria-label', level > MIN ? t('{n}%, voltar à página inteira', { n }) : t('{n}%, página inteira', { n }));
+  }
 
   function setSize() {
     const { width, height } = target.base();
     target.surface.style.width = `${Math.max(40, width * zoom)}px`;
     target.surface.style.height = `${Math.max(40, height * zoom)}px`;
-    fitButton.textContent = `${Math.round(zoom * 100)}%`;
+    showLevel(zoom);
     zoomIn.disabled = zoom >= MAX;
     zoomOut.disabled = fitButton.disabled = zoom <= MIN;
   }
@@ -87,9 +97,26 @@ export function setupPageZoom({ stage, controls, say }) {
     announce();
   }
 
-  zoomIn.addEventListener('click', () => step(zoom * STEP));
-  zoomOut.addEventListener('click', () => step(zoom / STEP < 1.1 ? MIN : zoom / STEP));
-  fitButton.addEventListener('click', () => step(MIN));
+  // Na visualização, só dois tamanhos: + amplia, − e o botão do meio voltam à página inteira.
+  function showSimple() {
+    const level = simple.level();
+    showLevel(level);
+    zoomIn.disabled = level > MIN;
+    zoomOut.disabled = fitButton.disabled = level <= MIN;
+  }
+  function setSimple(on) {
+    simple.set(on);
+    showSimple();
+    // O botão que tinha o foco pode ter ficado desabilitado: o foco passa para o outro lado.
+    if (document.activeElement?.disabled) (on ? zoomOut : zoomIn).focus();
+    say(on
+      ? t('Página ampliada em {n}%. Para mover, role a página ou deslize o dedo.', { n: Math.round(simple.level() * 100) })
+      : t('Página inteira na tela.'));
+  }
+
+  zoomIn.addEventListener('click', () => (simple ? setSimple(true) : step(zoom * STEP)));
+  zoomOut.addEventListener('click', () => (simple ? setSimple(false) : step(zoom / STEP < 1.1 ? MIN : zoom / STEP)));
+  fitButton.addEventListener('click', () => (simple ? setSimple(false) : step(MIN)));
 
   // ---------- Pinça com dois dedos ----------
   // Na fase de captura, antes da ferramenta do modo: o segundo dedo é do zoom, não dela.
@@ -183,17 +210,19 @@ export function setupPageZoom({ stage, controls, say }) {
   // ---------- Teclas ----------
 
   stage.closest('dialog').addEventListener('keydown', (event) => {
-    if (!target || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!(target || simple) || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.target.matches('input, textarea, select, [contenteditable]')) return;
     const action = { '+': zoom * STEP, '=': zoom * STEP, '-': zoom / STEP, '0': MIN }[event.key];
     if (action === undefined) return;
     event.preventDefault();
-    step(action < 1.1 ? MIN : action);
+    if (simple) setSimple(event.key === '+' || event.key === '=');
+    else step(action < 1.1 ? MIN : action);
   });
 
   return {
     /** Liga o zoom no modo que acabou de abrir. Começa com a página inteira na tela. */
     attach(next) {
+      simple = null;
       target = next;
       zoom = 1;
       touches.clear();
@@ -213,6 +242,24 @@ export function setupPageZoom({ stage, controls, say }) {
       stage.classList.remove('zoomable');
       controls.hidden = true;
       stage.scrollTo(0, 0);
+    },
+    /**
+     * Liga os botões na visualização (viewer.js): level diz o zoom da imagem (1 é a página inteira) e set amplia ou
+     * volta. null desliga (outro modo, ou a tela fechando).
+     * @param {null | {level: () => number, set: (on: boolean) => void}} next
+     */
+    view(next) {
+      simple = next;
+      if (next) {
+        controls.hidden = false;
+        showSimple();
+      } else if (!target) {
+        controls.hidden = true;
+      }
+    },
+    /** A visualização mudou de tamanho por fora (o toque na imagem): os botões acompanham. */
+    refresh() {
+      if (simple) showSimple();
     },
     /** A tela mudou de tamanho: a página acompanha, no mesmo zoom. */
     layout() {

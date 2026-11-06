@@ -1,7 +1,7 @@
 // Service worker: guarda só os arquivos do próprio app para funcionar offline.
 // Rede primeiro (pega atualizações), cache como reserva. Imagens do usuário nunca passam por aqui.
 // A política de segurança dele vem do cabeçalho (web/_headers): só consegue buscar arquivos do próprio site.
-const CACHE = 'scanner-doc-v43';
+const CACHE = 'scanner-doc-v44';
 const APP_FILES = [
   './',
   './en/',
@@ -60,6 +60,7 @@ const APP_FILES = [
   './js/watermark.js',
   './js/edit-types.js',
   './js/editor.js',
+  './js/edit-nudge.js',
   './js/all-pages.js',
   './js/edit-text.js',
   './js/edit-text-tool.js',
