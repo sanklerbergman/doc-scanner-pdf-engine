@@ -246,7 +246,7 @@
         </details>
 
         <details id="more-secure" class="more">
-          <summary><span class="more-title">Password, PDF/A and signature</span> <span id="more-secure-state" class="more-state"></span></summary>
+          <summary><span class="more-title">Password and PDF/A</span> <span id="more-secure-state" class="more-state"></span></summary>
           <div class="settings more-body">
             <!-- Proteger com senha (js/pdf-crypt.js, AES-256): a senha só fica nos campos até o PDF ser gerado. -->
             <div class="field field-wide check-field">
@@ -272,10 +272,6 @@
               <p id="pdfa-note" class="field-note">Archiving format (PDF/A-2b) that some courts require for electronic filings. On screen the PDF looks the same; inside the file go the standard identification, the color profile and, for Word pages and the signature stamp, the fonts, with only the letters used (the first time, the app downloads each font, about 0.5 MB).</p>
               <p id="pdfa-blocked" class="field-note field-blocked" hidden></p>
             </div>
-            <!-- Assinar gera o PDF e assina no fim (js/sign.js): a janela pede o certificado A1. -->
-            <div class="field field-wide sign-field">
-              <button id="sign" type="button" class="btn btn-lg"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-pen"/></svg> Sign with a digital certificate (A1)</button>
-            </div>
           </div>
         </details>
       </div>
@@ -298,6 +294,8 @@
         <p class="dock-summary"><span id="dock-summary" class="dock-summary-text"></span> <button id="dock-change" type="button" class="btn btn-ghost dock-change" aria-label="Change the settings">Change</button></p>
         <div class="dock-actions">
           <button id="cancel" type="button" class="btn btn-lg" hidden>Cancel</button>
+          <!-- Assinar gera o PDF e assina no fim (js/sign.js): a janela pede o certificado A1. Some enquanto gera. -->
+          <button id="sign" type="button" class="btn btn-lg dock-sign" aria-label="Sign with a digital certificate (A1)" title="Sign with a digital certificate (A1)"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-pen"/></svg> Sign</button>
           <button id="generate" type="button" class="btn btn-primary btn-lg">Create PDF</button>
         </div>
       </div>

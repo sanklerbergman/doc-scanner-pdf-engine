@@ -360,10 +360,11 @@ async function addFiles(fileList) {
 function imagesMessage(count, cropped) {
   const added = plural(count, '{n} imagem adicionada', '{n} imagens adicionadas');
   const missed = count - cropped;
-  if (!missed) return t('{added}, com o papel recortado automaticamente. Se os cantos não ficaram certos, use "Ajustar recorte".', { added });
-  if (!cropped) return t('{added}. Não achei as bordas do papel: use "Recortar" para marcar os cantos.', { added });
-  return plural(missed, '{added}. Em uma delas não achei as bordas do papel: use "Recortar" para marcar os cantos.',
-    '{added}. Em {n} delas não achei as bordas do papel: use "Recortar" para marcar os cantos.', { added });
+  // Curtos de propósito: no celular, o aviso fica acima da barra e cabe em duas linhas sem cobrir o recibo.
+  if (!missed) return t('{added}. Recortei o papel; se ficou torto, use "Ajustar recorte".', { added });
+  if (!cropped) return t('{added}. Não achei as bordas do papel: marque os cantos em "Recortar".', { added });
+  return plural(missed, '{added}. Em uma delas não achei o papel: use "Recortar".',
+    '{added}. Em {n} delas não achei o papel: use "Recortar".', { added });
 }
 
 // Um .docx vira várias páginas na lista, que dá para reordenar e misturar com fotos.
@@ -1332,7 +1333,9 @@ function setBusy(busy, label = t('Gerando…')) {
   state.busy = busy;
   if (busy) disarmClear();
   els.generate.disabled = busy;
-  els.generate.textContent = busy ? label : t('Gerar PDF');
+  if (busy) els.generate.textContent = label;
+  else syncGenerate();
+  els.sign.hidden = busy; // o "Cancelar" toma o lugar dele na barra
   if (busy) els.workspace.setAttribute('aria-busy', 'true');
   else els.workspace.removeAttribute('aria-busy');
   for (const control of lockedWhileBusy) control.disabled = busy;
@@ -1356,6 +1359,16 @@ function discardPdf() {
   state.output = null;
   els.result.hidden = true;
   els.resultFiles.replaceChildren();
+  syncGenerate();
+}
+
+// Um botão cheio por vez: com o PDF à vista, o principal é o "Baixar" do resultado, e o da barra vira contorno,
+// "Gerar de novo". Qualquer mudança apaga o PDF (discardPdf) e devolve o "Gerar PDF" cheio. Gerando, o texto é o do
+// setBusy.
+function syncGenerate() {
+  const again = Boolean(state.output) && !els.result.hidden;
+  els.generate.classList.toggle('btn-primary', !again);
+  if (!state.busy) els.generate.textContent = again ? t('Gerar de novo') : t('Gerar PDF');
 }
 
 // Sair da página (fechar, recarregar, outro endereço) apaga as páginas: nada fica guardado. Com páginas na lista e
@@ -1758,6 +1771,9 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     // O cartão mostra o que foi conferido de verdade, como carimbo, e os avisos; o leitor de tela ouve tudo uma vez só,
     // pela região de aviso (que fica escondida na tela com o sucesso: o cartão já diz).
     const checks = [
+      // Sem assinatura nem PDF/A, o PDF não leva metadado nenhum (pdf.js); assinado, leva o certificado e a hora,
+      // e o PDF/A leva a identificação do padrão (XMP).
+      !signer && !pdfa && t('Sem metadados'),
       redacted.length && t('Tarjas conferidas: nada sob elas'),
       password && t('Protegido com senha (AES-256)'),
       signer && t('Assinado por {name}', { name: signer.name }),
@@ -1785,7 +1801,6 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     els.cancel.disabled = false;
     setBusy(false);
     // Foco só depois de liberar os controles (controle desabilitado não recebe foco).
-    if (!ok && signer) reveal(els.sign);
     if (!ok) (signer ? els.sign : els.generate).focus();
     else (state.output.length === 1 ? els.download : els.downloadAll).focus();
   }
@@ -1955,8 +1970,17 @@ function showResult(groups, signer, { checks = [], notes = [] } = {}) {
   els.resultInfo.textContent = single
     ? `${files[0].file.name} · ${pages(groups[0].length)} · ${sizeText(total, files[0].before)}`
     : t('{size} no total', { size: sizeText(total, totalBefore) });
-  els.resultChecks.replaceChildren(...checks.map((text) => el('li', {}, [el('span', { className: 'stamp stamp-sm stamp-in', textContent: text })])));
-  els.resultChecks.hidden = !checks.length;
+  // Todo resultado leva o carimbo do topo: a página abre e fecha com a mesma garantia (só na tela, nunca no PDF).
+  checks = [t('Processado no aparelho · 0 bytes enviados'), ...checks];
+  // Carimbo de várias partes ("Processado no aparelho · 0 bytes enviados"): uma parte por linha, como o do topo.
+  const stamp = (text) => {
+    const parts = text.split(' · ');
+    if (parts.length === 1) return el('span', { className: 'stamp stamp-sm stamp-in', textContent: text });
+    return el('span', { className: 'stamp stamp-sm stamp-parts stamp-in' },
+      parts.map((part, i) => el('span', { textContent: i < parts.length - 1 ? `${part} ·` : part })));
+  };
+  els.resultChecks.replaceChildren(...checks.map((text) => el('li', {}, [stamp(text)])));
+  els.resultChecks.hidden = false;
   const shownNotes = [single
     ? t('Ele só existe aqui no seu aparelho até você baixar.')
     : t('Eles só existem aqui no seu aparelho até você baixar.'), ...notes].filter(Boolean);
@@ -1975,6 +1999,7 @@ function showResult(groups, signer, { checks = [], notes = [] } = {}) {
   els.share.hidden = !(navigator.canShare && navigator.canShare({ files: all }));
   els.share.lastChild.textContent = ` ${single ? t('Compartilhar') : t('Compartilhar todos')}`;
   els.result.hidden = false;
+  syncGenerate();
 }
 
 // ---------- Prévia do resultado ----------

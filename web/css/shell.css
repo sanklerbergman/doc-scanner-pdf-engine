@@ -68,8 +68,6 @@ main:has(#workspace:not([hidden])) .workspace { margin-top: 18px; }
 /* O corpo usa a grade dos ajustes (.settings), sem o cartão dela: nada de cartão dentro de cartão. */
 .more > .more-body { margin: 0; padding: 12px 14px 14px; border: 0; border-radius: 0; background: none; box-shadow: none; }
 .more .all-pages { border: 0; margin: 0; padding: 0; min-width: 0; }
-.sign-field { padding-top: 4px; }
-.sign-field .btn { width: 100%; max-width: 420px; }
 
 /* Momento de risco: senha sem recuperação e endereço antes de assinar. Borda e ícone de aviso, não nota discreta. */
 .risk-note {
@@ -123,7 +121,10 @@ main:has(#workspace:not([hidden])) .workspace { margin-top: 18px; }
 .dock-change { flex: none; min-height: 44px; padding: 0 12px; color: var(--accent-ink); font-weight: 600; }
 .dock-actions { flex: 1 1 260px; display: flex; gap: 8px; }
 .dock-actions .btn { flex: 1 1 auto; min-height: 52px; }
-.dock-actions #cancel { flex: 0 1 auto; }
+.dock-actions #cancel, .dock-actions .dock-sign { flex: 0 1 auto; }
+/* "Assinar" ao lado do "Gerar PDF": secundário e compacto, para o principal continuar dominando a barra. */
+.dock-actions .dock-sign { padding-inline: 14px; }
+.dock-actions #generate { flex-grow: 1; white-space: nowrap; }
 
 @media (min-width: 720px) {
   /* No computador, a barra flutua um pouco acima do pé da tela, com a borda inteira (também no fim, no lugar dela). */
@@ -149,7 +150,11 @@ main:has(#workspace:not([hidden])) .workspace { margin-top: 18px; }
 .result-title { font-size: 1.25rem; }
 .result-info { margin: 4px 0 0; text-align: center; color: var(--muted); font-family: var(--font-mono); font-size: 0.85rem; overflow-wrap: anywhere; }
 .result-checks { list-style: none; margin: 16px 0 4px; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 12px; }
-.result-checks li { display: flex; }
+.result-checks li { display: flex; align-items: center; }
+/* Carimbo de várias partes ("Processado no aparelho · 0 bytes enviados"): uma parte por linha, centralizada,
+   com a largura da maior parte (sem sobra de caixa no celular). */
+.stamp-parts { flex-direction: column; align-items: center; gap: 0; }
+.stamp-parts > span { white-space: nowrap; }
 .result-notes { margin: 14px auto 0; max-width: 60ch; text-align: center; color: var(--muted); font-size: 0.92rem; }
 
 /* Celular em pé: os botões de adicionar sobem para a primeira tela (o título, o carimbo e o texto de abertura ficam
@@ -159,4 +164,22 @@ main:has(#workspace:not([hidden])) .workspace { margin-top: 18px; }
   .hero h1 { font-size: 1.5rem; }
   .proof { margin: 10px 0 14px; gap: 6px 12px; }
   .lead { font-size: 0.9375rem; line-height: 1.5; }
+
+  /* Com páginas, a abertura encolhe (como na tela larga, wide.css) para o recibo subir: o título numa linha só, com a
+     segunda frase só para o leitor de tela (o carimbo logo abaixo diz o mesmo), e o carimbo menor, ao lado do "Como
+     conferir". Sem páginas, fica tudo como acima. */
+  main:has(#workspace:not([hidden])) .hero { padding: 12px 0 8px; }
+  main:has(#workspace:not([hidden])) .hero h1 { font-size: 1.125rem; letter-spacing: -0.01em; margin-bottom: 0; }
+  main:has(#workspace:not([hidden])) .hero-line + .hero-line {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  main:has(#workspace:not([hidden])) .proof { margin: 8px 0 0; flex-wrap: nowrap; gap: 12px; }
+  main:has(#workspace:not([hidden])) .proof-stamp { padding: 4px 9px 3px; border-width: 3px; font-size: 0.6875rem; }
+  main:has(#workspace:not([hidden])) .proof-link { flex: none; font-size: 0.875rem; }
+  main:has(#workspace:not([hidden])) .workspace { margin-top: 14px; }
+}
+/* Celular estreito (320px): o carimbo não cabe ao lado do link sem quebrar em quatro linhas; o link desce. */
+@media (max-width: 360px) {
+  main:has(#workspace:not([hidden])) .hero h1 { font-size: 1rem; }
+  main:has(#workspace:not([hidden])) .proof { flex-wrap: wrap; row-gap: 0; }
 }

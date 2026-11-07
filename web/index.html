@@ -246,7 +246,7 @@
         </details>
 
         <details id="more-secure" class="more">
-          <summary><span class="more-title">Senha, PDF/A e assinatura</span> <span id="more-secure-state" class="more-state"></span></summary>
+          <summary><span class="more-title">Senha e PDF/A</span> <span id="more-secure-state" class="more-state"></span></summary>
           <div class="settings more-body">
             <!-- Proteger com senha (js/pdf-crypt.js, AES-256): a senha só fica nos campos até o PDF ser gerado. -->
             <div class="field field-wide check-field">
@@ -272,10 +272,6 @@
               <p id="pdfa-note" class="field-note">Formato de arquivamento (PDF/A-2b) que alguns tribunais pedem no processo eletrônico. Na tela, o PDF fica igual; dentro do arquivo vão a identificação do padrão, o perfil de cor e, nas páginas de Word e no carimbo da assinatura, as fontes, só com as letras usadas (na primeira vez, o app baixa cada fonte, uns 0,5 MB).</p>
               <p id="pdfa-blocked" class="field-note field-blocked" hidden></p>
             </div>
-            <!-- Assinar gera o PDF e assina no fim (js/sign.js): a janela pede o certificado A1. -->
-            <div class="field field-wide sign-field">
-              <button id="sign" type="button" class="btn btn-lg"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-pen"/></svg> Assinar com certificado digital (A1)</button>
-            </div>
           </div>
         </details>
       </div>
@@ -298,6 +294,8 @@
         <p class="dock-summary"><span id="dock-summary" class="dock-summary-text"></span> <button id="dock-change" type="button" class="btn btn-ghost dock-change" aria-label="Mudar os ajustes">Mudar</button></p>
         <div class="dock-actions">
           <button id="cancel" type="button" class="btn btn-lg" hidden>Cancelar</button>
+          <!-- Assinar gera o PDF e assina no fim (js/sign.js): a janela pede o certificado A1. Some enquanto gera. -->
+          <button id="sign" type="button" class="btn btn-lg dock-sign" aria-label="Assinar com certificado digital (A1)" title="Assinar com certificado digital (A1)"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-pen"/></svg> Assinar</button>
           <button id="generate" type="button" class="btn btn-primary btn-lg">Gerar PDF</button>
         </div>
       </div>
