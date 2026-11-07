@@ -6,7 +6,8 @@ export default {
   'Transforme fotos e documentos do Word em PDF, junte, separe e comprima PDFs, reconheça o texto das fotos e assine com certificado digital A1, direto no navegador. Sem upload, sem cadastro, sem rastreio. Projeto open source.':
     'Turn photos and Word documents into PDF, merge, split and compress PDFs, make the text in photos searchable and sign with an A1 digital certificate, right in your browser. No upload, no sign-up, no tracking. Open source.',
   'Pular para o conteúdo': 'Skip to content',
-  'Foto, Word ou PDF: tudo vira PDF.': 'Photo, Word or PDF: everything becomes a PDF.',
+  'Foto, Word ou PDF:': 'Photo, Word or PDF:',
+  'tudo vira PDF.': 'everything becomes a PDF.',
   'Sem mandar nada pra ninguém.': 'Without sending anything to anyone.',
   'Tire uma foto, escolha imagens, abra um documento do Word ou junte, separe e comprima PDFs. Deixe o texto das fotos pesquisável, tarje dados e assine com seu certificado digital A1. Tudo acontece aqui no seu navegador: sem cadastro, sem upload, sem rastreio.':
     'Take a photo, pick images, open a Word document, or merge, split and compress PDFs. Make the text in photos searchable, redact data and sign with your A1 digital certificate. Everything happens right here in your browser: no sign-up, no upload, no tracking.',
@@ -74,7 +75,8 @@ export default {
   'Baixar PDF': 'Download PDF',
   'Compartilhar': 'Share',
   'Desfazer': 'Undo',
-  'O que acontece com seus documentos? Nada.': 'What happens to your documents? Nothing.',
+  'O que acontece com seus documentos?': 'What happens to your documents?',
+  'Nada.': 'Nothing.',
   'Não existe upload.': 'There is no upload.',
   'As imagens são processadas pelo seu próprio navegador. Não temos servidor que receba arquivos — esta é só uma página estática.':
     'Images are processed by your own browser. We have no server that receives files — this is just a static page.',

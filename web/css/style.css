@@ -160,7 +160,10 @@ h2 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
 /* Título sem palavra sobrando sozinha na última linha: no celular, as linhas se equilibram; na tela larga, uma frase
    por linha (antes, "pra ninguém." caía sozinho na segunda). */
 .hero h1 { text-wrap: balance; margin-bottom: 0.4em; }
-@media (min-width: 600px) { .hero-line { display: block; } }
+/* Na tela larga, cada frase do título numa linha. .phrase: trecho de título que não quebra por dentro, para a quebra
+   cair na pontuação ("Foto, Word ou PDF: / tudo vira PDF.", "…seus documentos? / Nada."), nunca em "Word ou / PDF".
+   No celular quebra normalmente (o trecho não caberia numa linha). */
+@media (min-width: 600px) { .hero-line { display: block; } .phrase { white-space: nowrap; } }
 .lead { font-size: 1.0625rem; color: var(--muted); max-width: 62ch; margin: 0; }
 
 /* Botões. Primário: cheio de azul caneta. Os outros: contorno (borda de 3:1), texto na cor do texto.
@@ -470,6 +473,8 @@ select:disabled, textarea:disabled, input:disabled { opacity: 0.6; cursor: not-a
   padding: 24px; margin-top: 24px;
 }
 .card h2 { max-width: 34ch; }
+/* O título da privacidade cabe numa linha no cartão largo; o .phrase quebra no "?" quando não cabe. */
+.privacy h2 { max-width: none; }
 .card p, .card li { max-width: 70ch; }
 .checklist { padding-left: 0; margin: 16px 0; list-style: none; display: grid; gap: 12px; }
 .checklist li { padding-left: 30px; position: relative; }
