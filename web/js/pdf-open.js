@@ -202,7 +202,7 @@ export async function openPdfFile(file, password = null) {
   }
   notes.push(...formNotes);
   if (doc.hasAnnotations()) {
-    notes.push(t('No PDF novo, links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.'));
+    notes.push(t('No PDF novo, links e campos de formulário ficam fixos na página: continuam visíveis, mas sem clique nem edição.'));
   }
   const pages = doc.pages.map((page, index) => ({ index, width: page.width, height: page.height }));
   const images = compressibleBytes(doc);

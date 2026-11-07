@@ -97,7 +97,7 @@ test('#16: o PDF com senha desenha a prévia (a cópia decifrada) já com os val
 
 test('ao abrir: a nota diz quantos campos o formulário tem, e o aviso do #16 só fica para o que o app não desenha igual', async () => {
   const notes = async (bytes) => (await openPdfFile(new File([bytes], 'formulario.pdf'))).notes;
-  const annotations = 'No PDF novo, links e campos de formulário viram parte da página: o que estava preenchido continua visível, mas não dá mais para clicar nem editar.';
+  const annotations = 'No PDF novo, links e campos de formulário ficam fixos na página: continuam visíveis, mas sem clique nem edição.';
   assert.deepEqual(await notes(formPdf()), ['Este PDF tem um formulário com 1 campo.', annotations], 'o valor é desenhado de novo: sem aviso');
   assert.deepEqual(await notes(formPdf({ need: false, ap: 'value' })), ['Este PDF tem um formulário com 1 campo.', annotations]);
   // Letra fora das fontes padrão do PDF: o app desenha o resto, e avisa.

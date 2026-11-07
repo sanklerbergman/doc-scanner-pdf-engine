@@ -1801,8 +1801,8 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     els.cancel.disabled = false;
     setBusy(false);
     // Foco só depois de liberar os controles (controle desabilitado não recebe foco).
-    if (!ok) (signer ? els.sign : els.generate).focus();
-    else (state.output.length === 1 ? els.download : els.downloadAll).focus();
+    if (!ok) focusPinned(signer ? els.sign : els.generate);
+    else focusPinned(state.output.length === 1 ? els.download : els.downloadAll);
   }
 }
 
@@ -2208,6 +2208,15 @@ if (workSide) new ResizeObserver(([entry]) => {
   const height = entry.borderBoxSize?.[0]?.blockSize ?? workSide.offsetHeight;
   document.documentElement.style.setProperty('--side-h', `${Math.ceil(height)}px`);
 }).observe(workSide);
+// Foco num controle da parte presa no pé (a barra; na tela larga, também o resultado): ela já está à vista, e o
+// scroll-padding-bottom (que reserva a altura dela) faria o navegador achar que o controle está coberto por ela mesma
+// e rolar a página até o fim (ao fechar o aviso, a tela descia até "O que acontece com seus documentos?"). Fora da
+// parte presa (o resultado no celular), o foco rola normalmente até o controle.
+function focusPinned(control) {
+  const pinned = [els.dock, workSide].find((node) => node && node.contains(control) && getComputedStyle(node).position === 'sticky');
+  control.focus({ preventScroll: Boolean(pinned) });
+}
+
 // O navegador só rola até o foco quando ele está fora da tela, e a barra muda de altura no mesmo instante (ela volta
 // quando o foco sai de um campo de texto no celular), antes do --dock-h: um botão ficava metade embaixo dela. No foco
 // (não na rolagem), se a barra presa cobre parte dele, rola só o que falta para ele ficar 12px acima dela.
@@ -2228,7 +2237,7 @@ document.addEventListener('focusin', (event) => {
 
 els.statusDismiss.addEventListener('click', () => {
   announce('');
-  if (!els.dockBar.hidden) els.generate.focus();
+  if (!els.dockBar.hidden) focusPinned(els.generate);
   else focusAddButton();
 });
 

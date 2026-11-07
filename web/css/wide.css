@@ -81,6 +81,16 @@
   }
   .work-side > .dock { position: static; margin: 0; padding: 0; z-index: auto; }
   .work-side .dock-notice { width: 100%; }
+  /* Com aviso, ele vira o topo do cartão da barra, separado por fio tracejado (como os itens do recibo), em vez de um
+     cartão solto flutuando sobre os ajustes. */
+  .work-side > .dock:has(> .dock-notice > .status:not(:empty):not([data-kind="success"]), > .dock-notice > #undo:not([hidden])) { gap: 0; }
+  .work-side > .dock:has(> .dock-notice > .status:not(:empty):not([data-kind="success"]), > .dock-notice > #undo:not([hidden])) > .dock-notice {
+    padding: 8px 4px 8px 16px; border-bottom: 1px dashed var(--border); border-radius: var(--radius) var(--radius) 0 0; box-shadow: none;
+  }
+  .work-side > .dock:has(> .dock-notice > .status:not(:empty):not([data-kind="success"]), > .dock-notice > #undo:not([hidden])) .status:not([data-kind="error"]) { color: var(--muted); }
+  .work-side > .dock:has(> .dock-notice > .status:not(:empty):not([data-kind="success"]), > .dock-notice > #undo:not([hidden])) > .dock-bar {
+    border-top: 0; border-radius: 0 0 var(--radius) var(--radius);
+  }
   .work-side .dock-bar { margin: 0; padding: 12px 12px 12px 16px; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
   .work-side .dock-summary, .work-side .dock-actions { flex: 1 1 100%; }
   .work-side > .result { margin-top: 0; padding: 18px 16px; }
