@@ -113,7 +113,7 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
     stage.classList.add('filling');
     stop = followKeyboard(panel);
     drawBoxes();
-    say(t('Toque num campo da página ou use Anterior e Próximo. Os valores ficam fixos no PDF.'));
+    say(t('Toque ou clique num campo da página, ou use Anterior e Próximo. Os valores ficam fixos no PDF.'));
     select(0);
     // Rótulos pelo texto em volta do campo (PDF.js): chegam depois; até lá (ou sem eles), o /TU ou o nome do campo.
     textItems(target).then((list) => {

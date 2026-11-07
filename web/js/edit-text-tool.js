@@ -116,7 +116,7 @@ function open(api, index = -1, at = null) {
     stop = followKeyboard(ui.panel);
   }
   ui.area.focus();
-  api.say(item ? t('Mude o texto e toque em "Trocar o texto".') : t('Escreva o texto e toque em "Pôr na página".'));
+  api.say(item ? t('Mude o texto e use "Trocar o texto".') : t('Escreva o texto e use "Pôr na página".'));
 }
 
 function close(restore) {
@@ -149,7 +149,7 @@ function apply() {
     api.select(index);
     api.say(t('Texto trocado.'));
   } else {
-    api.add(textEdit(content, at ?? [0.5, 0.5], api.page), t('Texto na página. Para mudar, toque nele de novo ou use Enter.'));
+    api.add(textEdit(content, at ?? [0.5, 0.5], api.page), t('Texto na página. Para mudar, toque ou clique nele de novo, ou use Enter.'));
   }
 }
 
@@ -163,5 +163,5 @@ registerTool({
   },
   keyboard: (api) => open(api),
   open: (api, index) => open(api, index),
-  hint: t('Toque onde vai o texto, ou use "Novo" para pôr no meio da página.'),
+  hint: t('Toque ou clique onde vai o texto, ou use "Novo" para pôr no meio da página.'),
 });

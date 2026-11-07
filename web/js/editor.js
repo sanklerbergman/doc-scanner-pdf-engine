@@ -94,7 +94,7 @@ registerProperty('width', {
 const SHAPE = ['color', 'width'];
 registerTool({
   id: 'select', label: t('Selecionar'), icon: 'select', pointer: 'select',
-  hint: t('Toque numa edição para selecionar. Arraste para mover; as alças dos cantos mudam o tamanho.'),
+  hint: t('Toque ou clique numa edição para selecionar. Arraste para mover; as alças dos cantos mudam o tamanho.'),
 });
 registerTool({
   id: 'ink', label: t('Desenho'), title: t('Desenho à mão'), icon: 'draw', type: 'ink', pointer: 'stroke', props: SHAPE,
@@ -110,11 +110,11 @@ registerTool({
 });
 registerTool({
   id: 'check', label: t('Certo'), title: t('Marca de certo (✓)'), icon: 'check-mark', type: 'check', pointer: 'mark', keyboard: true, props: SHAPE,
-  hint: t('Toque onde vai o ✓, ou arraste para escolher o tamanho. Pelo teclado, use "Novo".'),
+  hint: t('Toque ou clique onde vai o ✓, ou arraste para escolher o tamanho. Pelo teclado, use "Novo".'),
 });
 registerTool({
   id: 'cross', label: t('Xis'), title: t('Marca de xis (✗)'), icon: 'remove', type: 'cross', pointer: 'mark', keyboard: true, props: SHAPE,
-  hint: t('Toque onde vai o ✗, ou arraste para escolher o tamanho. Pelo teclado, use "Novo".'),
+  hint: t('Toque ou clique onde vai o ✗, ou arraste para escolher o tamanho. Pelo teclado, use "Novo".'),
 });
 
 const $ = (selector) => document.querySelector(selector);
@@ -351,7 +351,7 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
     fit();
     chooseTool(tool, { announce: false }); // a ferramenta da página anterior continua (marcar ✓ em várias páginas)
     say(items.length
-      ? t('Toque numa edição para selecionar, ou escolha uma ferramenta. O que você acrescenta fica fixo no PDF.')
+      ? t('Toque ou clique numa edição para selecionar, ou escolha uma ferramenta. O que você acrescenta fica fixo no PDF.')
       : t('Escolha uma ferramenta e desenhe na página. O que você acrescenta fica fixo no PDF.'));
     toolButtons.find((button) => button.dataset.tool === tool.id)?.focus();
   }
@@ -509,7 +509,7 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
     selected = tool.pointer === 'stroke' ? -1 : items.length - 1;
     render(selected >= 0 ? selected : -1);
     say(message ?? (items.length === 1
-      ? t('{done}. Toque em "Aplicar" quando terminar.', { done: done(typeOf(item), 'created') })
+      ? t('{done}. Ao terminar, use "Aplicar".', { done: done(typeOf(item), 'created') })
       : t('{done}. Ficam {n} edições.', { done: done(typeOf(item), 'created'), n: items.length })));
     return items.length - 1;
   }
@@ -833,7 +833,7 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
       return;
     }
     lastInk = inkFromStrokes([stroke], props, size);
-    add(lastInk, t('Desenho criado. Os próximos traços perto dele entram no mesmo desenho. Toque em "Aplicar" quando terminar.'));
+    add(lastInk, t('Desenho criado. Os próximos traços perto dele entram no mesmo desenho. Ao terminar, use "Aplicar".'));
   }
 
   // O traço passa perto (INK_JOIN pontos) da caixa do desenho?

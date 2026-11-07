@@ -367,10 +367,10 @@ function imagesMessage(count, cropped) {
   const added = plural(count, '{n} imagem adicionada', '{n} imagens adicionadas');
   const missed = count - cropped;
   // Curtos de propósito: no celular, o aviso fica acima da barra e cabe em duas linhas sem cobrir o recibo.
-  if (!missed) return t('{added}. Recortei o papel; se ficou torto, use "Ajustar recorte".', { added });
-  if (!cropped) return t('{added}. Não achei as bordas do papel: marque os cantos em "Recortar".', { added });
-  return plural(missed, '{added}. Em uma delas não achei o papel: use "Recortar".',
-    '{added}. Em {n} delas não achei o papel: use "Recortar".', { added });
+  if (!missed) return t('{added}. Recortei o papel; se ficou torto, use "Recortar" no menu ⋯ da página.', { added });
+  if (!cropped) return t('{added}. Não achei as bordas do papel: marque os cantos em "Recortar", no menu ⋯ da página.', { added });
+  return plural(missed, '{added}. Em uma delas não achei o papel: use "Recortar", no menu ⋯ da página.',
+    '{added}. Em {n} delas não achei o papel: use "Recortar", no menu ⋯ da página.', { added });
 }
 
 // Um .docx vira várias páginas na lista, que dá para reordenar e misturar com fotos.
@@ -781,7 +781,7 @@ function renderPages() {
       el('span', { className: 'page-num', textContent: String(i + 1).padStart(2, '0'), 'aria-hidden': 'true' }),
       el('button', {
         type: 'button', className: 'thumb', 'data-action': 'view', disabled: state.busy,
-        'aria-label': doc ? t('Ver a página {n} em tela cheia', { n: i + 1 }) : t('Ver a página {n} em tela cheia e ajustar o recorte', { n: i + 1 }),
+        'aria-label': doc ? t('Ver a página {n} em tela cheia', { n: i + 1 }) : t('Ver a página {n} em tela cheia e recortar', { n: i + 1 }),
       }, [el('img', { src: page.thumbUrl, alt: '' })]),
       el('div', { className: 'page-info' }, [
         el('p', { className: 'page-name', title: page.name ?? page.file?.name ?? '' }, [
@@ -799,7 +799,7 @@ function renderPages() {
       }, [icon('more')]),
       el('div', { className: 'page-menu', id: menuId, role: 'group', 'aria-label': t('Mais ações, página {n}', { n: i + 1 }), hidden: !open }, [
         // O recorte é o ajuste que mais muda o resultado da foto: primeiro do menu (e também na miniatura).
-        ...(doc ? [] : [cropButton(page.quad ? t('Ajustar recorte') : t('Recortar'), i + 1)]),
+        ...(doc ? [] : [cropButton(t('Recortar'), i + 1)]),
         button('left', 'left', t('Mover para antes'), i === 0),
         button('right', 'right', t('Mover para depois'), i === total - 1),
         button('rotate', 'rotate', t('Girar')),
@@ -1293,7 +1293,7 @@ let clearTimer;
 els.clear.addEventListener('click', () => {
   if (!els.clear.dataset.armed) {
     els.clear.dataset.armed = '1';
-    els.clear.textContent = t('Toque de novo para confirmar');
+    els.clear.textContent = t('Mais uma vez para confirmar');
     clearTimer = setTimeout(disarmClear, 3000);
     return;
   }
@@ -1337,14 +1337,26 @@ function groupFileName(base, group, total) {
   return `${base}-${first === last ? first : `${first}-${last}`}.pdf`;
 }
 
-// label: o que aparece no botão de gerar enquanto o app trabalha.
-function setBusy(busy, label = t('Gerando…')) {
+// button e label: o botão que mostra o trabalho (o indicador e o texto) enquanto o app trabalha. Gerar o PDF usa o
+// próprio "Gerar PDF"; a busca de dados usa o "Procurar dados para tarjar", e o "Gerar PDF" só trava, sem mudar de
+// nome (#35). O botão volta com o conteúdo de antes.
+let busyButton = null;
+let busyContent = null;
+function setBusy(busy, { button = els.generate, label = t('Gerando…') } = {}) {
   state.busy = busy;
   if (busy) disarmClear();
   els.generate.disabled = busy;
-  els.generate.classList.toggle('btn-loading', busy); // roda o indicador antes do texto (css/style.css)
-  if (busy) els.generate.textContent = label;
-  else syncGenerate();
+  if (busy) {
+    busyButton = button;
+    busyContent = [...button.childNodes];
+    button.classList.add('btn-loading'); // roda o indicador antes do texto (css/style.css)
+    button.textContent = label;
+  } else if (busyButton) {
+    busyButton.classList.remove('btn-loading');
+    if (busyButton !== els.generate) busyButton.replaceChildren(...busyContent);
+    busyButton = busyContent = null;
+  }
+  if (!busy) syncGenerate();
   els.sign.hidden = busy; // o "Cancelar" toma o lugar dele na barra
   if (busy) els.workspace.setAttribute('aria-busy', 'true');
   else els.workspace.removeAttribute('aria-busy');
@@ -2380,7 +2392,7 @@ const inside = (outer, inner) => inner.x0 >= outer.x0 && inner.y0 >= outer.y0 &&
 
 async function findData() {
   if (!state.pages.length || state.busy) return;
-  setBusy(true, t('Procurando…'));
+  setBusy(true, { button: els.findData, label: t('Procurando dados…') });
   const list = [...state.pages];
   const toRead = list.filter((page) => isPhoto(page) && page.ocr?.key !== ocrKey(page));
   let ocr = null;
@@ -2483,9 +2495,14 @@ function showFindings(list, missed) {
 }
 
 function updateFindApply() {
-  const count = els.findList.querySelectorAll('input:checked').length;
+  const checked = [...els.findList.querySelectorAll('input:checked')];
+  const count = checked.length;
+  // Um dado que aparece várias vezes vira uma tarja em cada lugar: o botão diz as duas contas (#35).
+  const marks = checked.reduce((sum, input) => sum + (findings?.[input.dataset.key]?.rects.length ?? 1), 0);
   els.findApply.disabled = !count;
-  els.findApply.textContent = count === 0 ? t('Tarjar os marcados') : plural(count, 'Tarjar {n} dado', 'Tarjar {n} dados');
+  els.findApply.textContent = count === 0 ? t('Tarjar os marcados')
+    : marks > count ? plural(count, 'Tarjar {n} dado ({marks})', 'Tarjar {n} dados ({marks})', { marks: plural(marks, '{n} tarja', '{n} tarjas') })
+      : plural(count, 'Tarjar {n} dado', 'Tarjar {n} dados');
 }
 
 els.findData.addEventListener('click', findData);

@@ -153,7 +153,7 @@ export function setupViewer({
     return ++token;
   }
 
-  // startInCrop: abre direto no ajuste do recorte (botão "Ajustar recorte" do cartão).
+  // startInCrop: abre direto no ajuste do recorte (botão "Recortar" do cartão).
   function open(target, name, startInCrop = false) {
     page = target;
     label = name;
@@ -192,7 +192,7 @@ export function setupViewer({
       if (mine !== token) return;
       setUrl('view', image, blob);
       // Com a cópia do texto em andamento, o aviso dela continua na tela.
-      if (!copying) hint.textContent = message || (viewHint(page) ?? t('É assim que a página vai sair no PDF. Toque na imagem para ampliar.'));
+      if (!copying) hint.textContent = message || (viewHint(page) ?? t('É assim que a página vai sair no PDF. Toque ou clique na imagem para ampliar.'));
       // Página de PDF sem campos que parece um formulário: a dica de sempre dá lugar à do Editar → Texto.
       if (!message && !viewHint(page)) {
         formHint(page).then((tip) => {
@@ -278,7 +278,7 @@ export function setupViewer({
   }
 
   handles.forEach((handle, index) => {
-    handle.setAttribute('aria-label', t('{corner}: arraste, use as setas ou toque nele e depois no lugar dele na foto', { corner: CORNERS[index] }));
+    handle.setAttribute('aria-label', t('{corner}: arraste, use as setas ou escolha ele e depois o lugar dele na foto', { corner: CORNERS[index] }));
     handle.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       handle.setPointerCapture(event.pointerId);
@@ -308,7 +308,7 @@ export function setupViewer({
         hint.textContent = t('Arraste os quatro cantos até as bordas do papel.');
       } else {
         arm(index);
-        hint.textContent = t('{corner} escolhido: toque no lugar da foto para onde ele vai.', { corner: CORNERS[index] });
+        hint.textContent = t('{corner} escolhido: agora toque ou clique no lugar da foto para onde ele vai.', { corner: CORNERS[index] });
       }
     });
     // pointerup, pointercancel e perda de captura soltam o canto sozinhos (a captura acaba junto); a lupa some.
@@ -621,7 +621,7 @@ export function setupViewer({
     marks.push(rect);
     current = marks.length - 1;
     drawMarks();
-    hint.textContent = plural(marks.length, '{n} tarja marcada. Toque em "Aplicar tarjas" quando terminar.', '{n} tarjas marcadas. Toque em "Aplicar tarjas" quando terminar.');
+    hint.textContent = plural(marks.length, '{n} tarja marcada. Ao terminar, use "Aplicar tarjas".', '{n} tarjas marcadas. Ao terminar, use "Aplicar tarjas".');
   });
   // O toque foi cancelado (pelo navegador, ou pelo segundo dedo da pinça do zoom): a tarja em andamento some.
   function cancelDrawing() {
@@ -967,7 +967,7 @@ export function setupViewer({
       return;
     }
     if (blocked) {
-      hint.textContent = t('O navegador não liberou a área de transferência. Toque em "Copiar texto" de novo.');
+      hint.textContent = t('O navegador não liberou a área de transferência. Use "Copiar texto" de novo.');
       return;
     }
     const count = wordCount(result.value);

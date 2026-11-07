@@ -20,7 +20,7 @@ const PREVIEW_SIDE = 1200; // prévia guardada na memória (miniaturas e tela ch
 const MAX_PIXELS = 50e6; // arquivo maior que isso nem é aberto: só decodificar ocuparia 200 MB
 const MAX_BYTES = 50 * 1024 * 1024;
 const JPEG_QUALITY = 0.92; // texto e traço de logotipo sem borrão visível
-const TAP_MOVE = t('Toque sem arrastar: onde o dedo encostar, a imagem entra.');
+const TAP_MOVE = t('Toque ou clique sem arrastar: a imagem entra nesse ponto.');
 
 class ImageError extends Error {}
 
@@ -192,8 +192,8 @@ function pick(api, point) {
       if (!editing()) return; // a pessoa saiu do modo Editar enquanto a imagem era preparada
       const box = boxAround(point[0], point[1], startSize(image, api.page), api.page);
       api.add({ type: 'image', ...box, image: image.id }, image.reduced
-        ? t('Imagem posta na página: arraste para mover; os cantos mudam o tamanho sem deformar. Ela foi reduzida para {side} pixels no lado maior, o bastante para imprimir nítida. Toque em "Aplicar" quando terminar.', { side: MAX_SIDE })
-        : t('Imagem posta na página: arraste para mover; os cantos mudam o tamanho sem deformar. Toque em "Aplicar" quando terminar.'));
+        ? t('Imagem posta na página: arraste para mover; os cantos mudam o tamanho sem deformar. Ela foi reduzida para {side} pixels no lado maior, o bastante para imprimir nítida. Ao terminar, use "Aplicar".', { side: MAX_SIDE })
+        : t('Imagem posta na página: arraste para mover; os cantos mudam o tamanho sem deformar. Ao terminar, use "Aplicar".'));
     } catch (err) {
       if (!(err instanceof ImageError)) console.error(err);
       if (editing()) api.say(err instanceof ImageError ? err.message : t('Não deu para abrir essa imagem. Tente outra, em PNG ou JPEG.'));
@@ -206,7 +206,7 @@ function pick(api, point) {
 registerTool({
   id: 'image', label: t('Imagem'), icon: 'image', type: 'image', after: 'ink', // depois do Desenho, como no plano
 
-  hint: t('Toque na página onde vai a imagem (PNG ou JPEG), ou use "Novo" para pô-la no meio. Os cantos mudam o tamanho sem deformar.'),
+  hint: t('Toque ou clique na página onde vai a imagem (PNG ou JPEG), ou use "Novo" para pô-la no meio. Os cantos mudam o tamanho sem deformar.'),
   // Toque: numa edição, seleciona; fora, com algo selecionado, só tira a seleção; senão, escolhe a imagem. Arrastar
   // não faz nada (a imagem entra no tamanho dela, e depois os cantos mudam o tamanho).
   pointer(api, point, event) {
