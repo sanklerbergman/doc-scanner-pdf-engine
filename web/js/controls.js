@@ -7,6 +7,7 @@
 //   dá nome ao grupo; travar o <select> (disabled) trava o grupo.
 // - Senha visível: o botão .password-toggle ao lado do campo troca o tipo do campo; aria-pressed diz o estado ao
 //   leitor de tela. Fechar a janela, ou setChoice/hidePasswords, volta a esconder.
+// - Fileira que rola de lado (scrollEdges, #34): a ponta com mais conteúdo esmaece e mostra uma seta.
 
 /**
  * @param {HTMLSelectElement} select
@@ -67,6 +68,27 @@ export function hidePasswords(root = document) {
     button.setAttribute('aria-pressed', 'false');
     button.previousElementSibling.type = 'password';
   }
+}
+
+/**
+ * Fileira que rola de lado (#34): marca no pai "more-start" e "more-end" quando sobra conteúdo fora da tela daquele
+ * lado, para o CSS esmaecer a ponta e mostrar a seta.
+ * @param {HTMLElement} scroller
+ */
+export function scrollEdges(scroller) {
+  const wrap = scroller.parentElement;
+  const update = () => {
+    const max = scroller.scrollWidth - scroller.clientWidth;
+    // Direita para a esquerda (não usado hoje) daria scrollLeft negativo: o módulo cobre os dois.
+    const at = Math.abs(scroller.scrollLeft);
+    wrap.classList.toggle('more-start', max > 1 && at > 1);
+    wrap.classList.toggle('more-end', max > 1 && at < max - 1);
+  };
+  scroller.addEventListener('scroll', update, { passive: true });
+  new ResizeObserver(update).observe(scroller);
+  // As ferramentas entram depois (editor.js) e mudam quando a fileira aparece.
+  new MutationObserver(update).observe(scroller, { childList: true, attributes: true, attributeFilter: ['hidden'] });
+  update();
 }
 
 export function setupPasswordToggles() {

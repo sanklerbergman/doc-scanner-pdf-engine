@@ -18,7 +18,7 @@ import { paintEdits, rotateEdits, fileExtras, editCharacters, redactEdits } from
 import './edit-types.js';
 import { paintReplacements } from './edit-text.js';
 import { setupAllPages, spotGrid } from './all-pages.js';
-import { segmented, setChoice, focusChoice, hidePasswords, setupPasswordToggles } from './controls.js';
+import { segmented, setChoice, focusChoice, hidePasswords, setupPasswordToggles, scrollEdges } from './controls.js';
 import './all-pages-text.js'; // numeração, cabeçalho e rodapé (fase 2)
 import './watermark.js'; // marca d'água em todas as páginas (fase 3)
 import { forgetMedia, keepImages } from './edit-media.js';
@@ -198,6 +198,7 @@ const els = {
 // Tamanho, qualidade e margem em botões (js/controls.js); o <select> escondido continua guardando o valor.
 for (const select of [els.pageSize, els.quality, els.margin]) segmented(select);
 setupPasswordToggles();
+scrollEdges($('#edit-tools'));
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
 const lockedWhileBusy = [

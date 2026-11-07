@@ -146,6 +146,7 @@ export default {
   'Novo': 'New',
   'Aplicar': 'Apply',
   'Tarja selecionada': 'Selected redaction',
+  'Cor da tarja': 'Redaction color',
   'Preta': 'Black',
   'Branca': 'White',
   'Escrever por cima': 'Write on top',

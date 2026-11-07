@@ -532,8 +532,11 @@ export function setupViewer({
   function showOptions() {
     const color = marks[current]?.color === 'white' || (current < 0 && markColor === 'white') ? 'white' : 'black';
     for (const button of redactColors) button.setAttribute('aria-pressed', String(button.dataset.color === color));
+    // Sem tarja selecionada, escrever, mover e o tamanho não têm em que agir: somem, em vez de ficar apagados (#34).
     redactWrite.disabled = current < 0;
     redactNudge.setDisabled(current < 0);
+    redactWrite.hidden = current < 0;
+    redactNudge.element.hidden = current < 0;
   }
 
   function selectMark(index) {
@@ -724,7 +727,7 @@ export function setupViewer({
     textPanel.hidden = true;
     stopKeyboard?.();
     stopKeyboard = null;
-    if (focus) (redactBoxes.children[current] ?? redactWrite).focus();
+    if (focus) (redactBoxes.children[current] ?? redactAdd).focus();
   }
 
   function setMarkText(value) {

@@ -445,22 +445,31 @@
       <button id="viewer-copy" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-copy"/></svg> Copy text</button>
     </div>
     <!-- Ferramentas do modo Editar, numa linha só (rola de lado no celular): js/editor.js põe os botões. -->
-    <div id="edit-tools" class="edit-tools" role="toolbar" aria-label="Editing tools" hidden></div>
+    <div class="edit-tools-wrap">
+      <div id="edit-tools" class="edit-tools" role="toolbar" aria-label="Editing tools" hidden></div>
+      <svg class="icon edit-tools-more edit-tools-more-start" aria-hidden="true" focusable="false"><use href="#i-right"/></svg>
+      <svg class="icon edit-tools-more edit-tools-more-end" aria-hidden="true" focusable="false"><use href="#i-right"/></svg>
+    </div>
+    <!-- Ações do Tarjar e do Editar em três pesos (#34): criar e desfazer sem borda (ferramenta), Cancelar com borda
+         (saída) e Aplicar cheio (a ação principal). -->
     <div id="viewer-edit-actions" class="viewer-actions edit-actions" hidden>
-      <button id="edit-add" type="button" class="btn">New</button>
-      <button id="edit-undo" type="button" class="btn">Undo</button>
+      <button id="edit-add" type="button" class="btn btn-ghost">New</button>
+      <button id="edit-undo" type="button" class="btn btn-ghost">Undo</button>
       <button id="edit-cancel" type="button" class="btn">Cancel</button>
       <button id="edit-apply" type="button" class="btn btn-primary">Apply</button>
     </div>
-    <div id="viewer-redact-actions" class="viewer-actions" hidden>
-      <!-- Cor e texto da tarja selecionada (a última criada ou tocada); a cor também vale para as próximas (#24). -->
+    <div id="viewer-redact-actions" class="viewer-actions redact-actions" hidden>
+      <!-- Cor e texto da tarja selecionada (a última criada ou tocada); a cor também vale para as próximas (#24). A cor é
+           uma escolha em botões; escrever por cima, mover e o tamanho só aparecem com uma tarja selecionada (#34). -->
       <div class="redact-options" role="group" aria-label="Selected redaction">
-        <button id="redact-black" type="button" class="btn redact-color" data-color="black" aria-pressed="true"><span class="redact-swatch" aria-hidden="true"></span> Black</button>
-        <button id="redact-white" type="button" class="btn redact-color" data-color="white" aria-pressed="false"><span class="redact-swatch redact-swatch-white" aria-hidden="true"></span> White</button>
+        <div class="redact-colors" role="group" aria-label="Redaction color">
+          <button id="redact-black" type="button" class="redact-color" data-color="black" aria-pressed="true"><span class="redact-swatch" aria-hidden="true"></span> Black</button>
+          <button id="redact-white" type="button" class="redact-color" data-color="white" aria-pressed="false"><span class="redact-swatch redact-swatch-white" aria-hidden="true"></span> White</button>
+        </div>
         <button id="redact-write" type="button" class="btn">Write on top</button>
       </div>
-      <button id="redact-add" type="button" class="btn">New redaction</button>
-      <button id="redact-undo" type="button" class="btn">Undo</button>
+      <button id="redact-add" type="button" class="btn btn-ghost">New redaction</button>
+      <button id="redact-undo" type="button" class="btn btn-ghost">Undo</button>
       <button id="redact-cancel" type="button" class="btn">Cancel</button>
       <button id="redact-apply" type="button" class="btn btn-primary">Apply redactions</button>
     </div>
@@ -612,7 +621,7 @@
   <footer class="site-footer">
     <div class="wrap">
       <p>Made by the community, for the community. Open source under the MIT license — <a data-repo-link href="#" rel="noopener noreferrer">contribute on GitHub</a>.</p>
-      <p class="version">Version <a data-release-link href="#" rel="noopener noreferrer">5.5.0</a></p>
+      <p class="version">Version <a data-release-link href="#" rel="noopener noreferrer">5.6.0</a></p>
       <p class="signature"><a href="https://sankler.com.br" rel="noopener noreferrer">by <picture><source srcset="../sankler-logo-reduzido-fundo-escuro.svg" media="(prefers-color-scheme: dark)"><img src="../sankler-logo-reduzido-fundo-claro.svg" alt="Sankler" width="114" height="18"></picture></a></p>
     </div>
   </footer>

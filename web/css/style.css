@@ -801,10 +801,28 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .redact-box svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .redact-preview { pointer-events: none; background: rgb(0 0 0 / 55%); border-style: dashed; }
 .redact-preview.white { background: rgb(255 255 255 / 60%); }
-/* Cor e texto da tarja: uma linha só acima dos botões. */
+/* Cor e texto da tarja: uma linha só acima dos botões. A cor é uma escolha em botões, com a mesma anatomia do
+   .segmented dos ajustes (#33, #34); escrever, mover e o tamanho somem sem tarja selecionada (.btn e .nudge têm
+   display próprio, por isso o [hidden] aqui). */
 .redact-options { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .redact-options .btn { flex: 0 1 auto; min-width: 0; }
-.redact-color[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+.redact-options [hidden] { display: none; }
+.redact-colors {
+  display: inline-grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 3px; flex: none;
+  padding: 3px; border: 1px solid var(--field-border); border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.redact-color {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 4px 14px;
+  border: 1px solid transparent; border-radius: 6px; background: none; color: var(--muted);
+  font: inherit; font-weight: 600; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.redact-color[aria-pressed="true"] {
+  background: var(--surface); border-color: var(--accent); color: var(--accent-ink); box-shadow: 0 1px 2px rgb(11 12 16 / 8%);
+}
+.redact-color:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (hover: hover) { .redact-color:hover:not([aria-pressed="true"]) { color: var(--text); background: color-mix(in srgb, var(--surface) 55%, transparent); } }
+/* Ações: criar e desfazer à esquerda, sem borda; Cancelar e Aplicar à direita. No celular, duas fileiras de dois. */
+.redact-actions .btn-ghost, .edit-actions .btn-ghost { padding-inline: 10px; }
 .redact-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 3px; background: #000; box-shadow: 0 0 0 1px var(--field-border); vertical-align: -3px; }
 .redact-swatch-white { background: #fff; }
 /* Remover: alvo de 32 px no canto da tarja, sem depender do tamanho dela. */
@@ -862,11 +880,29 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 .nudge-size[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 .redact-options .nudge { flex: none; }
 .redact-options .nudge .nudge-btn { flex: none; }
-/* Ferramentas numa linha só, que rola de lado no celular. A margem automática centraliza sem esconder a ponta. */
+/* Ferramentas numa linha só, que rola de lado no celular. A margem automática centraliza sem esconder a ponta. Quando
+   sobra ferramenta fora da tela, a ponta daquele lado esmaece e mostra uma seta (js/controls.js, scrollEdges; #34). */
 .edit-tools {
   display: flex; gap: 4px; padding: 6px 8px; overflow-x: auto; overscroll-behavior-x: contain;
   background: var(--surface); border-top: 1px solid var(--border); scrollbar-width: thin;
 }
+.edit-tools-wrap { position: relative; }
+.edit-tools-wrap:has(> .edit-tools[hidden]) { display: none; }
+.edit-tools-wrap::before, .edit-tools-wrap::after {
+  content: ""; position: absolute; top: 1px; bottom: 0; width: 40px; z-index: 1; pointer-events: none;
+  opacity: 0; transition: opacity 0.15s ease-out;
+}
+.edit-tools-wrap::before { left: 0; background: linear-gradient(to right, var(--surface) 30%, transparent); }
+.edit-tools-wrap::after { right: 0; background: linear-gradient(to left, var(--surface) 30%, transparent); }
+.edit-tools-wrap.more-start::before, .edit-tools-wrap.more-end::after { opacity: 1; }
+.edit-tools-more {
+  position: absolute; top: 50%; z-index: 2; width: 20px; height: 20px; margin-top: -10px; color: var(--muted);
+  pointer-events: none; opacity: 0; transition: opacity 0.15s ease-out;
+}
+.edit-tools-more-start { left: 2px; transform: scaleX(-1); }
+.edit-tools-more-end { right: 2px; }
+.edit-tools-wrap.more-start .edit-tools-more-start, .edit-tools-wrap.more-end .edit-tools-more-end { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .edit-tools-wrap::before, .edit-tools-wrap::after, .edit-tools-more { transition: none; } }
 .edit-tools > :first-child { margin-left: auto; }
 .edit-tools > :last-child { margin-right: auto; }
 .edit-tool {

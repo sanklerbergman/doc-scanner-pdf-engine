@@ -266,6 +266,9 @@ Firmes e diretos, com verbo de ação e ícone de traço do sprite.
 ### Janelas
 Cartão de 10px no meio da tela, com sombra de janela. Abaixo de 600px viram painel que sobe do pé (cantos de 16px só em cima, 0,32s, sem animação com movimento reduzido). Nos dois, o corpo rola e os botões de ação ficam presos no rodapé da janela, separados por fio tracejado.
 
+### Barras do Tarjar e do Editar
+Três pesos, por papel: criar e desfazer sem borda (ghost), Cancelar com borda, Aplicar cheio. A cor da tarja é escolha em botões, com a anatomia da escolha em botões dos ajustes. Controles que agem na tarja selecionada (escrever por cima, mover, tamanho) só aparecem com uma selecionada. A fileira de ferramentas do Editar, quando passa da tela, esmaece a ponta com mais ferramentas e mostra uma seta cinza ali (`scrollEdges`, `js/controls.js`).
+
 ### Navigation
 Cabeçalho branco com fio embaixo, 60px: ícone de 28px e "Scanner Doc" em 800 à esquerda, troca de idioma à direita (sublinhada por contorno azul quando o navegador está em outra língua). Rodapé em cinza, 0,875rem, com versão em mono e a assinatura "por" seguida do logo reduzido da Sankler, trocado por `<picture>` entre a versão de fundo claro e a de fundo escuro, nunca recolorido.
 

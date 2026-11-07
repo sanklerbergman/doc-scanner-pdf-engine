@@ -445,22 +445,31 @@
       <button id="viewer-copy" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-copy"/></svg> Copiar texto</button>
     </div>
     <!-- Ferramentas do modo Editar, numa linha só (rola de lado no celular): js/editor.js põe os botões. -->
-    <div id="edit-tools" class="edit-tools" role="toolbar" aria-label="Ferramentas de edição" hidden></div>
+    <div class="edit-tools-wrap">
+      <div id="edit-tools" class="edit-tools" role="toolbar" aria-label="Ferramentas de edição" hidden></div>
+      <svg class="icon edit-tools-more edit-tools-more-start" aria-hidden="true" focusable="false"><use href="#i-right"/></svg>
+      <svg class="icon edit-tools-more edit-tools-more-end" aria-hidden="true" focusable="false"><use href="#i-right"/></svg>
+    </div>
+    <!-- Ações do Tarjar e do Editar em três pesos (#34): criar e desfazer sem borda (ferramenta), Cancelar com borda
+         (saída) e Aplicar cheio (a ação principal). -->
     <div id="viewer-edit-actions" class="viewer-actions edit-actions" hidden>
-      <button id="edit-add" type="button" class="btn">Novo</button>
-      <button id="edit-undo" type="button" class="btn">Desfazer</button>
+      <button id="edit-add" type="button" class="btn btn-ghost">Novo</button>
+      <button id="edit-undo" type="button" class="btn btn-ghost">Desfazer</button>
       <button id="edit-cancel" type="button" class="btn">Cancelar</button>
       <button id="edit-apply" type="button" class="btn btn-primary">Aplicar</button>
     </div>
-    <div id="viewer-redact-actions" class="viewer-actions" hidden>
-      <!-- Cor e texto da tarja selecionada (a última criada ou tocada); a cor também vale para as próximas (#24). -->
+    <div id="viewer-redact-actions" class="viewer-actions redact-actions" hidden>
+      <!-- Cor e texto da tarja selecionada (a última criada ou tocada); a cor também vale para as próximas (#24). A cor é
+           uma escolha em botões; escrever por cima, mover e o tamanho só aparecem com uma tarja selecionada (#34). -->
       <div class="redact-options" role="group" aria-label="Tarja selecionada">
-        <button id="redact-black" type="button" class="btn redact-color" data-color="black" aria-pressed="true"><span class="redact-swatch" aria-hidden="true"></span> Preta</button>
-        <button id="redact-white" type="button" class="btn redact-color" data-color="white" aria-pressed="false"><span class="redact-swatch redact-swatch-white" aria-hidden="true"></span> Branca</button>
+        <div class="redact-colors" role="group" aria-label="Cor da tarja">
+          <button id="redact-black" type="button" class="redact-color" data-color="black" aria-pressed="true"><span class="redact-swatch" aria-hidden="true"></span> Preta</button>
+          <button id="redact-white" type="button" class="redact-color" data-color="white" aria-pressed="false"><span class="redact-swatch redact-swatch-white" aria-hidden="true"></span> Branca</button>
+        </div>
         <button id="redact-write" type="button" class="btn">Escrever por cima</button>
       </div>
-      <button id="redact-add" type="button" class="btn">Nova tarja</button>
-      <button id="redact-undo" type="button" class="btn">Desfazer</button>
+      <button id="redact-add" type="button" class="btn btn-ghost">Nova tarja</button>
+      <button id="redact-undo" type="button" class="btn btn-ghost">Desfazer</button>
       <button id="redact-cancel" type="button" class="btn">Cancelar</button>
       <button id="redact-apply" type="button" class="btn btn-primary">Aplicar tarjas</button>
     </div>
@@ -612,7 +621,7 @@
   <footer class="site-footer">
     <div class="wrap">
       <p>Feito pela comunidade, para a comunidade. Código aberto sob licença MIT — <a data-repo-link href="#" rel="noopener noreferrer">contribua no GitHub</a>.</p>
-      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">5.5.0</a></p>
+      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">5.6.0</a></p>
       <p class="signature"><a href="https://sankler.com.br" rel="noopener noreferrer">por <picture><source srcset="sankler-logo-reduzido-fundo-escuro.svg" media="(prefers-color-scheme: dark)"><img src="sankler-logo-reduzido-fundo-claro.svg" alt="Sankler" width="114" height="18"></picture></a></p>
     </div>
   </footer>
