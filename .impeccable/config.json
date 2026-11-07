@@ -65,6 +65,16 @@
         ],
         "createdAt": "2026-11-07T04:48:22.689Z",
         "reason": "agent: generated EN copy of web/index.html; viewer/editor <img> get blob: src at runtime (critique B, 2026-11-07)"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "web/en/index.html",
+          "web/index.html"
+        ],
+        "createdAt": "2026-11-07T21:39:24.794Z",
+        "reason": "agent decided: o único achado é um <fieldset class=\"field\"> (#all-pages ou as escolhas em botões); os dois têm border 0 e padding 0 no CSS (.more .all-pages, .choice), conferido aberto no celular e no computador em 2026-11-07"
       }
     ]
   }
