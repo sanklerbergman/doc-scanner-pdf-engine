@@ -37,6 +37,7 @@ export default {
   'Página comprida ou com letra miúda:': 'Long page or small print:',
   'na qualidade Alta o texto pequeno sai mais nítido (o arquivo fica maior).': 'with High quality, small text comes out sharper (the file gets larger).',
   'Usar qualidade Alta': 'Use High quality',
+  'Mostrar a senha': 'Show password',
   'Texto pesquisável (OCR)': 'Searchable text (OCR)',
   'Reconhece o texto impresso das fotos e dos PDFs escaneados: no PDF dá para buscar, selecionar e copiar. Página de PDF que já tem texto fica como está. Na primeira vez o app baixa uns 5 MB, e cada página leva alguns segundos. O texto vai junto no PDF, escondido embaixo da imagem, inclusive CPF, endereço e valores. Uma tarja feita depois, em outro programa, não apaga esse texto: se for tarjar, tarje aqui no app ou deixe esta opção desligada.':
     'Recognizes the printed text in photos and scanned PDFs: in the PDF you can search, select and copy it. PDF pages that already have text stay as they are. The first time, the app downloads about 7 MB, and each page takes a few seconds. The text goes into the PDF, hidden under the image, including ID numbers, addresses and amounts. Redacting later in another program does not remove this text: if you need to redact, do it here in the app or leave this option off.',

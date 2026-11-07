@@ -214,7 +214,7 @@ Papel frio e tinta preta, com uma única tinta de cor (azul caneta) e o vermelho
 
 Coluna única centrada de até 960px com 16px de margem lateral, celular primeiro (iPhone de 390px de referência). O recibo de páginas fica em uma coluna também no computador, na largura de leitura. Os ajustes usam grade automática de colunas de no mínimo 200px com 16px de vão. O ritmo é de 4 em 4px, com 8, 12, 16 e 24px como passos mais usados; a primeira tela encolhe no celular (até 520px) para os dois botões de adicionar caberem nela, e com páginas na lista a área de soltar vira uma linha só, "Adicionar mais".
 
-A barra do polegar é `sticky` no pé da tela, sangrando até a borda no celular; a partir de 720px ela flutua 12px acima do pé com borda inteira e cantos de 10px. Com o teclado virtual aberto num campo de texto, a barra sai da frente. A altura dela vai para `--dock-h` (um `ResizeObserver` no `#dock`), e o `scroll-padding-bottom` do `html` usa esse valor mais 12px: o foco do Tab nunca para embaixo da barra. Até 480px de altura (celular deitado, zoom de 400%) a barra deixa de ser presa e fica no lugar dela, depois dos ajustes. O item do recibo é uma grade de duas linhas no celular e uma linha só a partir de 640px. Pontos de quebra observados: 420, 520, 600, 640 e 720px de largura, 480px de altura (celular deitado), mais `pointer: coarse` e `hover: hover`, que decidem qual botão de adicionar é o cheio e se há hover.
+A barra do polegar é `sticky` no pé da tela, sangrando até a borda no celular; a partir de 720px ela flutua 12px acima do pé com borda inteira e cantos de 10px. Com o teclado virtual aberto num campo de texto, a barra sai da frente. A altura dela vai para `--dock-h` (um `ResizeObserver` no `#dock`), e o `scroll-padding-bottom` do `html` usa esse valor mais 12px: o foco do Tab nunca para embaixo da barra. No computador (a partir de 1100px) com páginas, a coluna dos ajustes começa no topo, ao lado da abertura, e reserva no pé a altura da barra (`--side-h`): os ajustes principais e o "Gerar PDF" cabem juntos na primeira tela de 1280×800. Até 480px de altura (celular deitado, zoom de 400%) a barra deixa de ser presa e fica no lugar dela, depois dos ajustes. O item do recibo é uma grade de duas linhas no celular e uma linha só a partir de 640px. Pontos de quebra observados: 420, 520, 600, 640 e 720px de largura, 480px de altura (celular deitado), mais `pointer: coarse` e `hover: hover`, que decidem qual botão de adicionar é o cheio e se há hover.
 
 ## Elevation & Depth
 
@@ -244,6 +244,8 @@ Firmes e diretos, com verbo de ação e ícone de traço do sprite.
 - **Contorno (padrão):** cartão branco, borda de campo, texto preto. No toque, o segundo botão de adicionar ganha borda e texto azuis.
 - **Sem borda (ghost):** texto azul de escrever, fundo lavado no hover ("Mudar", resumo da barra).
 - **Ícone:** 44×44, transparente, ícone de 20px.
+- **Destrutivo:** contorno e texto em vermelho de erro, fundo lavado de vermelho no hover ("Descartar").
+- **Carregando:** anel de 1em girando antes do texto e cursor de espera; desabilitado sem carregar usa `not-allowed` a 60%.
 
 ### Cards / Containers
 - **Corner Style:** 10px (md).
@@ -256,6 +258,13 @@ Firmes e diretos, com verbo de ação e ícone de traço do sprite.
 - **Style:** cartão branco, borda de campo de 1px (3:1 ou mais), cantos de 8px, 44px de altura, letra de 16px.
 - **Focus:** o contorno de 3px em azul caneta; hover troca a borda para azul.
 - **Error / Disabled:** desabilitado a 60% de opacidade; caixa de seleção de 22px com `accent-color` azul e linha de 44px.
+- **Select:** sem a seta do sistema; seta de traço em grafite (SVG em `data:`), a 12px da borda direita, igual em todo sistema.
+- **Escolha em botões (segmented):** para escolhas de três opções (tamanho, qualidade, margem). Trilho de papel rebaixado com borda de campo e 3px de folga; a opção marcada é cartão branco com borda azul caneta e texto azul de escrever. Texto entre parênteses da opção vira uma segunda linha menor ("Leve" / "bom para e-mail"). Rádios de verdade por baixo (`js/controls.js`), o `<select>` escondido guarda o valor.
+- **Interruptor (switch):** para ligar uma função (OCR, senha, PDF/A, carimbo). Trilho de 42×26 em pílula (a única pílula fora da câmera), desligado com papel rebaixado, borda e bolinha na cor de campo; ligado, azul caneta com bolinha branca. `role="switch"` num checkbox.
+- **Senha:** botão de olho de 44px dentro do campo, à direita; azul quando a senha está à mostra (`aria-pressed`). Fechar a janela volta a esconder.
+
+### Janelas
+Cartão de 10px no meio da tela, com sombra de janela. Abaixo de 600px viram painel que sobe do pé (cantos de 16px só em cima, 0,32s, sem animação com movimento reduzido). Nos dois, o corpo rola e os botões de ação ficam presos no rodapé da janela, separados por fio tracejado.
 
 ### Navigation
 Cabeçalho branco com fio embaixo, 60px: ícone de 28px e "Scanner Doc" em 800 à esquerda, troca de idioma à direita (sublinhada por contorno azul quando o navegador está em outra língua). Rodapé em cinza, 0,875rem, com versão em mono e a assinatura "por" seguida do logo reduzido da Sankler, trocado por `<picture>` entre a versão de fundo claro e a de fundo escuro, nunca recolorido.

@@ -55,20 +55,30 @@
     grid-template-rows: auto auto minmax(calc(var(--side-h, 0px) + 4px), 1fr);
   }
   main:has(#workspace:not([hidden])) > * { grid-column: 1 / -1; min-width: 0; }
-  main:has(#workspace:not([hidden])) > .intro { grid-row: 1; margin-bottom: 18px; }
+  /* A coluna dos ajustes começa no topo, ao lado da abertura (#33): antes ela começava abaixo da abertura, e em
+     1440×900 a barra do Gerar PDF, presa no pé da tela, cobria o "Nome do arquivo" logo na primeira tela. A abertura
+     fica só na coluna da esquerda; o #workspace cobre as três linhas e as duas colunas (subgrade), e por isso não
+     recebe toque: só os filhos dele (pointer-events), senão ele taparia os botões da abertura. */
+  main:has(#workspace:not([hidden])) > .intro { grid-column: 1; grid-row: 1; margin-bottom: 18px; }
   main:has(#workspace:not([hidden])) > #workspace {
-    grid-row: 2 / span 2; align-self: stretch; margin-top: 0;
+    grid-row: 1 / span 3; align-self: stretch; margin-top: 0; pointer-events: none;
     display: grid; grid-template-columns: subgrid; grid-template-rows: subgrid;
   }
-  .work-pages { grid-column: 1; grid-row: 1 / span 2; min-width: 0; }
-  #workspace > #settings { grid-column: 2; grid-row: 1; margin-top: 0; min-width: 0; }
+  #workspace > * { pointer-events: auto; }
+  .work-pages { grid-column: 1; grid-row: 2 / span 2; min-width: 0; }
+  /* Os ajustes ocupam as três linhas (a sobra de altura vai para a linha de baixo, a flexível) e reservam no pé a
+     altura da barra (--side-h): parada no fim, ela fica abaixo do último ajuste, nunca por cima. */
+  #workspace > #settings {
+    grid-column: 2; grid-row: 1 / span 3; align-self: start; margin-top: 0; min-width: 0;
+    padding-top: 20px; padding-bottom: calc(var(--side-h, 0px) + 8px);
+  }
 
   /* Os dois títulos na mesma linha: o de Ajustes com a altura do cabeçalho das páginas (que tem o "Limpar tudo"). */
   #workspace > #settings > .settings-title { display: flex; align-items: center; min-height: 44px; margin-bottom: 8px; font-size: 1.25rem; }
 
   main:has(#workspace:not([hidden])) > .work-side {
     display: flex; flex-direction: column; gap: 12px;
-    grid-column: 2; grid-row: 2 / span 2; align-self: end; z-index: 5; margin-top: 4px;
+    grid-column: 2; grid-row: 1 / span 3; align-self: end; z-index: 5; margin-top: 4px;
     /* Papel por baixo: passando sobre o pé dos ajustes, nada aparece entre a barra e o resultado nem abaixo deles. */
     padding: 12px 0 16px; background: var(--bg);
     /* Presa no pé da tela; mais alta que a tela, sobe até o topo dela aparecer e o resto vem rolando. */

@@ -47,6 +47,24 @@
         ],
         "createdAt": "2026-11-06T15:36:24.621Z",
         "reason": "agent decided: esboço da rodada de escolha, anterior ao DESIGN.md e fora do app (CSP font-src 'none'); não é código entregue"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "web/index.html"
+        ],
+        "createdAt": "2026-11-07T04:42:02.698Z",
+        "reason": "agent: the viewer/editor <img> elements get blob: src at runtime and have alt text (critique B, 2026-11-07)"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "web/en/index.html"
+        ],
+        "createdAt": "2026-11-07T04:48:22.689Z",
+        "reason": "agent: generated EN copy of web/index.html; viewer/editor <img> get blob: src at runtime (critique B, 2026-11-07)"
       }
     ]
   }

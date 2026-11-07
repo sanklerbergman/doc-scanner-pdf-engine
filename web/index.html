@@ -63,6 +63,8 @@
     <symbol id="i-check-mark" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
     <symbol id="i-form" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M7 8.5h3M12 8.5h5M7 12h3M12 12h5M7 15.5h3M12 15.5h5"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M9.9 4.7A10 10 0 0 1 12 4.5c6.5 0 10.5 7.5 10.5 7.5a17 17 0 0 1-2.6 3.5M6.4 6.4C3.4 8.3 1.5 12 1.5 12s4 7.5 10.5 7.5a10 10 0 0 0 5.6-1.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M2 2l20 20"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
   </svg>
 
@@ -159,22 +161,22 @@
             <input id="ranges" type="text" aria-describedby="output-summary" placeholder="Ex.: 1-3, 4-10" maxlength="200" autocomplete="off" spellcheck="false">
             <p id="ranges-error" class="field-note text-warning" hidden></p>
           </div>
-          <label class="field">
-            <span>Tamanho da página</span>
-            <select id="page-size">
+          <fieldset class="field choice">
+            <legend>Tamanho da página</legend>
+            <select id="page-size" hidden>
               <option value="a4" selected>A4</option>
               <option value="letter">Carta</option>
               <option value="fit">Igual à imagem</option>
             </select>
-          </label>
-          <label class="field">
-            <span>Qualidade</span>
-            <select id="quality">
+          </fieldset>
+          <fieldset class="field choice">
+            <legend>Qualidade</legend>
+            <select id="quality" hidden>
               <option value="light">Leve (bom para e-mail)</option>
               <option value="balanced" selected>Equilibrada</option>
               <option value="high">Alta (arquivo maior)</option>
             </select>
-          </label>
+          </fieldset>
           <label class="field">
             <span>Nome do arquivo</span>
             <input id="file-name" type="text" value="documento" maxlength="80" autocomplete="off" spellcheck="false">
@@ -199,14 +201,14 @@
               <span>Filtro em todas as páginas</span>
               <select id="filter-all"></select>
             </label>
-            <label class="field">
-              <span>Margem</span>
-              <select id="margin">
+            <fieldset class="field choice">
+              <legend>Margem</legend>
+              <select id="margin" hidden>
                 <option value="none">Sem margem</option>
                 <option value="small" selected>Pequena</option>
                 <option value="normal">Normal</option>
               </select>
-            </label>
+            </fieldset>
             <label class="field" hidden>
               <span>Imagens dos PDFs</span>
               <select id="pdf-compress">
@@ -239,7 +241,7 @@
           <summary><span class="more-title">Texto pesquisável (OCR)</span> <span id="more-ocr-state" class="more-state"></span></summary>
           <div class="settings more-body">
             <div id="ocr-field" class="field field-wide check-field" hidden>
-              <label class="check"><input id="ocr" type="checkbox" aria-describedby="ocr-note"> Texto pesquisável (OCR)</label>
+              <label class="check"><input id="ocr" class="switch" type="checkbox" role="switch" aria-describedby="ocr-note"> Texto pesquisável (OCR)</label>
               <p id="ocr-note" class="field-note">Reconhece o texto impresso das fotos e dos PDFs escaneados: no PDF dá para buscar, selecionar e copiar. Página de PDF que já tem texto fica como está. Na primeira vez o app baixa uns 5 MB, e cada página leva alguns segundos. O texto vai junto no PDF, escondido embaixo da imagem, inclusive CPF, endereço e valores. Uma tarja feita depois, em outro programa, não apaga esse texto: se for tarjar, tarje aqui no app ou deixe esta opção desligada.</p>
             </div>
           </div>
@@ -250,25 +252,25 @@
           <div class="settings more-body">
             <!-- Proteger com senha (js/pdf-crypt.js, AES-256): a senha só fica nos campos até o PDF ser gerado. -->
             <div class="field field-wide check-field">
-              <label class="check"><input id="protect" type="checkbox" aria-describedby="protect-note"> Proteger o PDF com senha</label>
+              <label class="check"><input id="protect" class="switch" type="checkbox" role="switch" aria-describedby="protect-note"> Proteger o PDF com senha</label>
               <p id="protect-note" class="field-note risk-note"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-alert"/></svg> <span>Quem receber o PDF vai precisar da senha para abrir. O app não guarda a senha e não tem como recuperá-la: anote num lugar seguro.</span></p>
               <p id="protect-blocked" class="field-note field-blocked" hidden>Indisponível com o PDF/A, que não permite senha.</p>
               <div id="protect-inputs" class="protect-inputs" hidden>
                 <div class="field">
                   <label for="protect-password">Senha</label>
-                  <input id="protect-password" type="password" autocomplete="off" spellcheck="false" maxlength="100">
+                  <span class="password"><input id="protect-password" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="100"><button type="button" class="password-toggle" aria-pressed="false" aria-label="Mostrar a senha"><svg class="icon icon-show" aria-hidden="true" focusable="false"><use href="#i-eye"/></svg><svg class="icon icon-hide" aria-hidden="true" focusable="false"><use href="#i-eye-off"/></svg></button></span>
                   <p id="protect-password-error" class="field-note text-warning" hidden></p>
                 </div>
                 <div class="field">
                   <label for="protect-confirm">Repita a senha</label>
-                  <input id="protect-confirm" type="password" autocomplete="off" spellcheck="false" maxlength="100">
+                  <span class="password"><input id="protect-confirm" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="100"><button type="button" class="password-toggle" aria-pressed="false" aria-label="Mostrar a senha"><svg class="icon icon-show" aria-hidden="true" focusable="false"><use href="#i-eye"/></svg><svg class="icon icon-hide" aria-hidden="true" focusable="false"><use href="#i-eye-off"/></svg></button></span>
                   <p id="protect-confirm-error" class="field-note text-warning" hidden></p>
                 </div>
               </div>
             </div>
             <!-- PDF/A-2b (js/pdf.js, js/icc.js e, nas páginas de Word e no carimbo, js/pdfa-fonts.js): sem página de outro PDF e sem senha. -->
             <div class="field field-wide check-field">
-              <label class="check"><input id="pdfa" type="checkbox" aria-describedby="pdfa-note pdfa-blocked"> PDF/A (tribunais e arquivamento)</label>
+              <label class="check"><input id="pdfa" class="switch" type="checkbox" role="switch" aria-describedby="pdfa-note pdfa-blocked"> PDF/A (tribunais e arquivamento)</label>
               <p id="pdfa-note" class="field-note">Formato de arquivamento (PDF/A-2b) que alguns tribunais pedem no processo eletrônico. Na tela, o PDF fica igual; dentro do arquivo vão a identificação do padrão, o perfil de cor e, nas páginas de Word e no carimbo da assinatura, as fontes, só com as letras usadas (na primeira vez, o app baixa cada fonte, uns 0,5 MB).</p>
               <p id="pdfa-blocked" class="field-note field-blocked" hidden></p>
             </div>
@@ -503,7 +505,7 @@
     <h2 id="discard-title">Descartar as mudanças?</h2>
     <p id="discard-text"></p>
     <div class="sheet-actions">
-      <button id="discard-confirm" type="button" class="btn">Descartar</button>
+      <button id="discard-confirm" type="button" class="btn btn-danger">Descartar</button>
       <button id="discard-keep" type="button" class="btn btn-primary">Continuar editando</button>
     </div>
   </dialog>
@@ -524,10 +526,10 @@
   <dialog id="pdf-password" class="sheet" aria-labelledby="pdf-password-title">
     <h2 id="pdf-password-title">PDF com senha</h2>
     <p><strong id="pdf-password-name"></strong> está protegido por senha. Digite a senha para abrir.</p>
-    <label class="field">
-      <span>Senha do PDF</span>
-      <input id="pdf-password-input" type="password" autocomplete="off" spellcheck="false" maxlength="200">
-    </label>
+    <div class="field">
+      <label for="pdf-password-input">Senha do PDF</label>
+      <span class="password"><input id="pdf-password-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200"><button type="button" class="password-toggle" aria-pressed="false" aria-label="Mostrar a senha"><svg class="icon icon-show" aria-hidden="true" focusable="false"><use href="#i-eye"/></svg><svg class="icon icon-hide" aria-hidden="true" focusable="false"><use href="#i-eye-off"/></svg></button></span>
+    </div>
     <p class="muted small">A senha só é usada aqui no aparelho, para abrir o arquivo, e não fica guardada.</p>
     <p id="pdf-password-status" class="sheet-status" role="status" aria-live="polite"></p>
     <div class="sheet-actions">
@@ -548,10 +550,10 @@
         <span id="sign-file-name" class="muted">Nenhum arquivo escolhido</span>
       </div>
       <input id="sign-file" type="file" accept=".pfx,.p12,application/x-pkcs12" hidden>
-      <label class="field">
-        <span>Senha do certificado</span>
-        <input id="sign-password" type="password" autocomplete="off" spellcheck="false" maxlength="200">
-      </label>
+      <div class="field">
+        <label for="sign-password">Senha do certificado</label>
+        <span class="password"><input id="sign-password" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200"><button type="button" class="password-toggle" aria-pressed="false" aria-label="Mostrar a senha"><svg class="icon icon-show" aria-hidden="true" focusable="false"><use href="#i-eye"/></svg><svg class="icon icon-hide" aria-hidden="true" focusable="false"><use href="#i-eye-off"/></svg></button></span>
+      </div>
       <p class="muted small">Só funciona o certificado A1, que é um arquivo. Token, cartão (A3) e certificado em nuvem não funcionam aqui: use o programa da certificadora.</p>
       <!-- Certificado instalado no computador (#25): o navegador não deixa o site usar os certificados do sistema para
            assinar (só para entrar em site, na conexão). O caminho é exportar o A1 para um arquivo, uma vez. -->
@@ -581,7 +583,7 @@
       <p id="sign-mode" class="tip" hidden><span></span></p>
       <!-- Carimbo visível (js/stamp.js): desligado por padrão. A assinatura vale do mesmo jeito sem ele. -->
       <div id="stamp-field" class="stamp-field">
-        <label class="check"><input id="stamp" type="checkbox" aria-describedby="stamp-note stamp-blocked"> Mostrar a assinatura na página (carimbo)</label>
+        <label class="check"><input id="stamp" class="switch" type="checkbox" role="switch" aria-describedby="stamp-note stamp-blocked"> Mostrar a assinatura na página (carimbo)</label>
         <p id="stamp-note" class="field-note">Um quadro com "Assinado digitalmente por", o seu nome (sem o CPF), a data e a hora. A assinatura vale do mesmo jeito sem ele.</p>
         <p id="stamp-blocked" class="field-note field-blocked" hidden></p>
         <div id="stamp-options" class="stamp-options" hidden>
@@ -610,7 +612,7 @@
   <footer class="site-footer">
     <div class="wrap">
       <p>Feito pela comunidade, para a comunidade. Código aberto sob licença MIT — <a data-repo-link href="#" rel="noopener noreferrer">contribua no GitHub</a>.</p>
-      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">5.4.2</a></p>
+      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">5.5.0</a></p>
       <p class="signature"><a href="https://sankler.com.br" rel="noopener noreferrer">por <picture><source srcset="sankler-logo-reduzido-fundo-escuro.svg" media="(prefers-color-scheme: dark)"><img src="sankler-logo-reduzido-fundo-claro.svg" alt="Sankler" width="114" height="18"></picture></a></p>
     </div>
   </footer>

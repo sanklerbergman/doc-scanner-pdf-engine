@@ -177,7 +177,17 @@ h2 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
   -webkit-tap-highlight-color: transparent;
 }
 .btn > * { min-width: 0; }
-.btn:disabled { opacity: 0.55; cursor: progress; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+/* Destrutivo (Descartar): contorno e texto em vermelho; o vermelho continua só para o que apaga ou dá erro. */
+.btn-danger { border-color: var(--danger); color: var(--danger); }
+/* Carregando (Gerar PDF enquanto gera): um anel girando antes do texto, e o cursor de espera só aqui. */
+.btn-loading:disabled { opacity: 1; cursor: progress; }
+.btn-loading::before {
+  content: ""; flex: none; width: 1em; height: 1em; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn-loading::before { animation-duration: 2.4s; } }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--accent-ink); }
 .btn-ghost .muted { color: var(--muted); }
@@ -187,6 +197,7 @@ h2 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
   .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
   .btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, #000); border-color: color-mix(in srgb, var(--accent) 86%, #000); color: var(--accent-text); }
   .btn-ghost:hover:not(:disabled) { border-color: transparent; background: var(--accent-soft); }
+  .btn-danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
 }
 .btn:active:not(:disabled) { transform: translateY(1px); }
 kbd {
@@ -364,6 +375,76 @@ input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [typ
   input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="color"]):hover:not(:disabled) { border-color: var(--accent); }
 }
 select:disabled, textarea:disabled, input:disabled { opacity: 0.6; cursor: not-allowed; }
+/* Select com a seta própria (igual em todo sistema). A seta é um SVG em data: (a CSP libera img-src data:), em duas
+   cores, uma por tema. O <select multiple> do preenchimento de formulário fica como lista, sem seta. */
+select:not([multiple]) {
+  appearance: none; -webkit-appearance: none; padding-right: 38px; cursor: pointer; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23565c69' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 18px;
+}
+@media (prefers-color-scheme: dark) {
+  select:not([multiple]) { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a9b6' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); }
+}
+select option { background: var(--surface); color: var(--text); }
+
+/* Escolha em botões (js/controls.js): três opções lado a lado, como o "segmented" do shadcn/ui. O trilho é o papel
+   (--surface-2); a opção marcada é a folha branca com borda de tinta azul e texto azul, como o carimbo. Rádios de
+   verdade por baixo: setas do teclado andam entre as opções, e o leitor de tela lê "1 de 3". */
+.choice { margin: 0; padding: 0; border: 0; min-width: 0; }
+.choice > legend { padding: 0; margin-bottom: 6px; font-size: 0.875rem; font-weight: 600; }
+.segmented {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 3px;
+  padding: 3px; border: 1px solid var(--field-border); border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.segment {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 40px; padding: 4px 3px; border: 1px solid transparent; border-radius: 6px;
+  text-align: center; line-height: 1.25; font-weight: 600; color: var(--muted); cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.segment input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: inherit; }
+.segment-text { font-size: 0.9375rem; hyphens: auto; -webkit-hyphens: auto; text-wrap: balance; }
+.segment-hint { font-size: 0.75rem; font-weight: normal; color: var(--muted); text-wrap: balance; }
+/* Celular estreito: a letra encolhe um pouco para "Equilibrada" caber inteira numa linha. */
+@media (max-width: 420px) { .segment-text { font-size: 0.875rem; } .segment-hint { font-size: 0.6875rem; } }
+.segment:has(input:checked) {
+  background: var(--surface); border-color: var(--accent); color: var(--accent-ink);
+  box-shadow: 0 1px 2px rgb(11 12 16 / 8%);
+}
+.segment:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (hover: hover) { .segment:hover:not(:has(input:checked, input:disabled)) { color: var(--text); background: color-mix(in srgb, var(--surface) 55%, transparent); } }
+.choice:disabled .segment { opacity: 0.6; cursor: not-allowed; }
+
+/* Interruptor (switch) para ligar e desligar uma função: OCR, senha, PDF/A, carimbo. É um checkbox com role=switch;
+   a bolinha é um fundo radial (sem ::before, que o Firefox não desenha em <input>). Desligado: trilho de papel com
+   borda de 3:1 e bolinha cinza; ligado: trilho azul caneta e bolinha branca do lado direito. */
+.switch {
+  appearance: none; -webkit-appearance: none; flex: none; width: 42px; height: 26px; margin: 0;
+  border: 1px solid var(--field-border); border-radius: 999px; cursor: pointer;
+  background: radial-gradient(circle closest-side, var(--field-border) 92%, transparent 100%) no-repeat 2px 50% / 20px 20px, var(--surface-2);
+  transition: background-position 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.18s, border-color 0.18s;
+}
+.switch:checked {
+  border-color: var(--accent);
+  background: radial-gradient(circle closest-side, #fff 92%, transparent 100%) no-repeat calc(100% - 2px) 50% / 20px 20px, var(--accent);
+}
+.check .switch { width: 42px; height: 26px; }
+.switch:disabled { opacity: 0.6; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .switch { transition: none; } }
+.check-field:has(.switch) .field-note { padding-left: 52px; }
+.check-field:has(.switch) .risk-note { padding-left: 12px; margin-left: 52px; }
+
+/* Campo de senha com o botão de mostrar (js/controls.js): o olho dentro do campo, à direita, com alvo de 44 px. */
+.password { position: relative; display: block; }
+.password > input { width: 100%; padding-right: 48px; }
+.password-toggle {
+  position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 44px; height: 44px; padding: 0;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); cursor: pointer;
+}
+.password-toggle .icon { width: 20px; height: 20px; }
+.password-toggle[aria-pressed="true"] { color: var(--accent-ink); }
+.password-toggle[aria-pressed="true"] .icon-show, .password-toggle:not([aria-pressed="true"]) .icon-hide { display: none; }
+@media (hover: hover) { .password-toggle:hover { color: var(--accent-ink); } }
 /* Caixa de seleção com texto ao lado (OCR): alvo de 44 px para o dedo. */
 .check { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; font-weight: 600; }
 .check input { width: 22px; height: 22px; margin: 0; flex: none; accent-color: var(--accent); cursor: pointer; }
@@ -547,20 +628,51 @@ select:disabled, textarea:disabled, input:disabled { opacity: 0.6; cursor: not-a
 }
 .camera :focus-visible { outline-color: #8aa2ff; }
 
-/* Janelas (assinatura, senha, busca, descarte): no meio da tela; no celular, ocupam a largura. */
+/* Janelas (assinatura, senha, busca, descarte): no meio da tela; no celular (abaixo de 600 px), painel que sobe do pé
+   da tela, como o "Drawer" do shadcn/ui, perto do polegar. Nos dois, o corpo rola e os botões de ação ficam presos no
+   rodapé da janela (#33): no iPhone, o "Abrir o certificado" da assinatura ficava abaixo da dobra. O scroll-padding
+   mantém o campo com foco acima do rodapé preso. */
 .sheet {
-  width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto;
-  padding: 20px; border: 1px solid var(--border); border-radius: var(--radius);
+  width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; overscroll-behavior: contain;
+  padding: 20px 20px 0; border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface); color: var(--text); box-shadow: var(--shadow-pop);
+  scroll-padding-bottom: 88px;
 }
 .sheet::backdrop { background: var(--backdrop); }
+.sheet > .sheet-actions {
+  position: sticky; bottom: 0; z-index: 1;
+  margin: 4px -20px 0; padding: 12px 20px 20px;
+  border-top: 1px dashed var(--border); background: var(--surface);
+}
+@media (max-width: 599px) {
+  .sheet {
+    width: 100%; max-width: 100%; max-height: calc(100dvh - 32px);
+    margin: auto 0 0; border-width: 1px 0 0; border-radius: 16px 16px 0 0;
+    animation: sheet-up 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .sheet > .sheet-actions { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .sheet::backdrop { animation: sheet-fade 0.32s ease-out; }
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@keyframes sheet-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .sheet, .sheet::backdrop { animation: none; } }
 .sheet h2 { margin: 0 0 12px; font-size: 1.25rem; }
 .sheet p { margin: 0 0 12px; max-width: 70ch; }
 .sheet .field { margin-bottom: 12px; }
 .sheet .tip { margin-bottom: 12px; }
 /* Como exportar o A1 instalado no computador (#25): fechado, uma linha só; aberto, os passos. */
 .sign-help { margin: -4px 0 12px; font-size: 0.9375rem; }
-.sign-help summary { cursor: pointer; padding: 10px 0; min-height: 44px; color: var(--accent-ink); font-weight: 600; }
+/* A mesma seta das seções recolhidas dos ajustes (css/shell.css, .more), no lugar do triângulo do navegador. */
+.sign-help summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  cursor: pointer; padding: 10px 0; min-height: 44px; color: var(--accent-ink); font-weight: 600; list-style: none;
+}
+.sign-help summary::-webkit-details-marker { display: none; }
+.sign-help summary::after {
+  content: ""; flex: none; width: 9px; height: 9px; margin-right: 6px;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translateY(-3px);
+}
+.sign-help[open] summary::after { transform: rotate(-135deg) translateY(-3px); }
 .sign-help ol { margin: 0 0 12px; padding-left: 1.4em; }
 .sign-help li { margin-bottom: 6px; }
 .sheet-alert { padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--accent); background: var(--accent-soft); font-size: 0.9375rem; }

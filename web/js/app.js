@@ -18,6 +18,7 @@ import { paintEdits, rotateEdits, fileExtras, editCharacters, redactEdits } from
 import './edit-types.js';
 import { paintReplacements } from './edit-text.js';
 import { setupAllPages, spotGrid } from './all-pages.js';
+import { segmented, setChoice, focusChoice, hidePasswords, setupPasswordToggles } from './controls.js';
 import './all-pages-text.js'; // numeração, cabeçalho e rodapé (fase 2)
 import './watermark.js'; // marca d'água em todas as páginas (fase 3)
 import { forgetMedia, keepImages } from './edit-media.js';
@@ -193,6 +194,10 @@ const els = {
   moreOcrState: $('#more-ocr-state'),
   moreSecureState: $('#more-secure-state'),
 };
+
+// Tamanho, qualidade e margem em botões (js/controls.js); o <select> escondido continua guardando o valor.
+for (const select of [els.pageSize, els.quality, els.margin]) segmented(select);
+setupPasswordToggles();
 
 // Tudo que muda o PDF fica travado enquanto ele é gerado (os cartões são tratados em renderPages).
 const lockedWhileBusy = [
@@ -699,11 +704,11 @@ function updateQualityTip() {
 }
 
 els.qualityTipApply.addEventListener('click', () => {
-  els.quality.value = 'high';
+  setChoice(els.quality, 'high');
   discardPdf();
   updateQualityTip();
   announce(t('Qualidade Alta selecionada.'));
-  els.quality.focus();
+  focusChoice(els.quality);
 });
 
 // Menu "Mais ações" aberto: o id da página (a lista é recriada a cada mudança, e o menu continua aberto nela).
@@ -1252,7 +1257,10 @@ els.protect.addEventListener('change', () => {
   updatePdfaOption();
   els.protectInputs.hidden = !els.protect.checked;
   if (els.protect.checked) els.protectPassword.focus();
-  else els.protectPassword.value = els.protectConfirm.value = '';
+  else {
+    els.protectPassword.value = els.protectConfirm.value = '';
+    hidePasswords(els.protectInputs);
+  }
   for (const input of [els.protectPassword, els.protectConfirm]) clearFieldError(input);
 });
 for (const input of [els.protectPassword, els.protectConfirm]) input.addEventListener('input', discardPdf);
@@ -1333,6 +1341,7 @@ function setBusy(busy, label = t('Gerando…')) {
   state.busy = busy;
   if (busy) disarmClear();
   els.generate.disabled = busy;
+  els.generate.classList.toggle('btn-loading', busy); // roda o indicador antes do texto (css/style.css)
   if (busy) els.generate.textContent = label;
   else syncGenerate();
   els.sign.hidden = busy; // o "Cancelar" toma o lugar dele na barra
