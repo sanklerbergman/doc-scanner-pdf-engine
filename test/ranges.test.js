@@ -17,3 +17,8 @@ test('mensagens claras para o que não dá', () => {
   assert.throws(() => parseRanges('3-1', 3), /o começo vem depois do fim/);
   assert.throws(() => parseRanges('0-1', 3), /começam no 1/);
 });
+
+test('aponta todos os problemas de uma vez (#37)', () => {
+  assert.throws(() => parseRanges('9-2, x', 3), (err) => /página 9 não existe/.test(err.message) && /Não entendi "x"/.test(err.message));
+  assert.throws(() => parseRanges('0-1, 0-2', 3), (err) => err.message.match(/começam no 1/g).length === 1);
+});

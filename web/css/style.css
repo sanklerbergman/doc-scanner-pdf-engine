@@ -808,6 +808,8 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 }
 .redact-box.white { background: rgb(255 255 255 / 90%); border-style: dashed; }
 .redact-box.selected { border-color: #3a63ff; box-shadow: 0 0 0 1px #fff; }
+/* Repetida em todas as páginas (#37): um segundo contorno tracejado em volta, como uma pilha. */
+.redact-box.everywhere { outline: 2px dashed #3a63ff; outline-offset: 4px; }
 /* Com texto escrito por cima, a caixa fica quase opaca: o texto novo não se mistura com o que ela cobre. */
 .redact-box.has-text { background: rgb(0 0 0 / 96%); }
 .redact-box.white.has-text { background: rgb(255 255 255 / 97%); }
@@ -849,6 +851,8 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 /* Painel "Ajustar tarja" (#36): as setas e o Tamanho numa linha; embaixo, "Escrever por cima" e "Pronto". */
 .redact-adjust-fields .nudge { flex-wrap: wrap; }
 .redact-adjust-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.redact-everywhere { min-height: 44px; font-weight: 600; }
+.redact-everywhere[hidden] { display: none; }
 .redact-adjust-actions .btn { flex: 1 1 auto; max-width: 260px; }
 .redact-adjust-actions .btn-primary { flex: 0 0 auto; min-width: 104px; }
 /* Celular estreito: a cor e o "Ajustar tarja" numa linha só. */

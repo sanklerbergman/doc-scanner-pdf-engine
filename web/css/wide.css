@@ -104,6 +104,8 @@
   .work-side .dock-bar { margin: 0; padding: 12px 12px 12px 16px; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius); }
   .work-side .dock-summary, .work-side .dock-actions { flex: 1 1 100%; }
   .work-side > .result { margin-top: 0; padding: 18px 16px; }
+  /* O resultado na coluna larga, embaixo do recibo (js/app.js, placeResult; #37): o fim da tarefa com espaço. */
+  .work-pages > .result { margin-top: 24px; }
   .work-side .result-files { max-width: none; }
 
   /* A barra só pode cobrir o pé da coluna dos ajustes: o foco do Tab para acima dela (o js/app.js também confere). */

@@ -434,6 +434,9 @@
       <div id="redact-adjust" class="edit-props" role="group" aria-labelledby="redact-adjust-title" hidden>
         <p id="redact-adjust-title" class="edit-props-title">Ajustar tarja</p>
         <div id="redact-adjust-fields" class="redact-adjust-fields"></div>
+        <!-- Mesma tarja em todas as páginas (#37): cabeçalho, rodapé ou carimbo que se repete. Ao aplicar, as outras páginas
+             ganham uma cópia no mesmo lugar (relativo ao tamanho de cada uma). -->
+        <label id="redact-everywhere-field" class="check redact-everywhere"><input id="redact-everywhere" type="checkbox"> Repetir em todas as páginas</label>
         <div class="redact-adjust-actions">
           <button id="redact-write" type="button" class="btn">Escrever por cima</button>
           <button id="redact-adjust-done" type="button" class="btn btn-primary">Pronto</button>
@@ -632,7 +635,7 @@
   <footer class="site-footer">
     <div class="wrap">
       <p>Feito pela comunidade, para a comunidade. Código aberto sob licença MIT — <a data-repo-link href="#" rel="noopener noreferrer">contribua no GitHub</a>.</p>
-      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">5.7.0</a></p>
+      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">5.8.0</a></p>
       <p class="signature"><a href="https://sankler.com.br" rel="noopener noreferrer">por <picture><source srcset="sankler-logo-reduzido-fundo-escuro.svg" media="(prefers-color-scheme: dark)"><img src="sankler-logo-reduzido-fundo-claro.svg" alt="Sankler" width="114" height="18"></picture></a></p>
     </div>
   </footer>

@@ -112,6 +112,7 @@ export function setupViewer({
   const redactWrite = $('#redact-write');
   const redactAdjust = $('#redact-adjust');
   const redactAdjustOpen = $('#redact-adjust-open');
+  const redactEverywhere = $('#redact-everywhere');
   const textPanel = $('#redact-text-panel');
   const textInput = $('#redact-text');
   const textNote = $('#redact-text-note');
@@ -450,6 +451,15 @@ export function setupViewer({
     if (open) redactAdjust.querySelector('button:not(:disabled)')?.focus();
   }
   redactAdjustOpen.addEventListener('click', () => toggleAdjust());
+  redactEverywhere.addEventListener('change', () => {
+    const mark = marks[current];
+    if (!mark) return;
+    mark.everywhere = redactEverywhere.checked;
+    drawMarks();
+    hint.textContent = mark.everywhere
+      ? t('Ao aplicar, esta tarja vai também para as outras páginas, no mesmo lugar.')
+      : t('Esta tarja fica só nesta página.');
+  });
   $('#redact-adjust-done').addEventListener('click', () => {
     toggleAdjust(false);
     redactAdjustOpen.focus();
@@ -526,7 +536,7 @@ export function setupViewer({
     if (current >= marks.length) current = marks.length - 1;
     redactBoxes.replaceChildren(...marks.map((mark, i) => {
       const box = document.createElement('div');
-      box.className = `redact-box${mark.color === 'white' ? ' white' : ''}${mark.text?.trim() ? ' has-text' : ''}${i === current ? ' selected' : ''}`;
+      box.className = `redact-box${mark.color === 'white' ? ' white' : ''}${mark.text?.trim() ? ' has-text' : ''}${mark.everywhere ? ' everywhere' : ''}${i === current ? ' selected' : ''}`;
       box.tabIndex = 0;
       box.dataset.index = i;
       box.setAttribute('role', 'group');
@@ -562,6 +572,10 @@ export function setupViewer({
     redactNudge.setDisabled(current < 0);
     redactAdjustOpen.hidden = current < 0;
     if (current < 0) toggleAdjust(false);
+    // Repetir nas outras páginas só faz sentido com mais de uma na lista (#37).
+    $('#redact-everywhere-field').hidden = !step(page, 1) && !step(page, -1);
+    redactEverywhere.checked = !!marks[current]?.everywhere;
+    redactEverywhere.disabled = current < 0;
   }
 
   function selectMark(index) {

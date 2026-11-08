@@ -1090,15 +1090,31 @@ const viewer = setupViewer({
     ? t('Arraste sobre o que esconder. O que fica sob a tarja é apagado, não só coberto. Esta página é de um PDF: com tarja, ela sai como imagem, e o texto dela deixa de ser selecionável.')
     : t('Arraste sobre o que esconder. O que fica sob a tarja é apagado do PDF, não só coberto.')),
   async saveRedactions(page, list) {
-    page.redactions = list;
+    // Tarja marcada "Repetir em todas as páginas" (#37): cópia no mesmo lugar em cada outra página, sem repetir uma que
+    // já esteja lá. As cópias são tarjas comuns, independentes: mudar uma não mexe nas outras.
+    const plain = ({ everywhere, ...mark }) => mark;
+    const everywhere = list.filter((mark) => mark.everywhere).map(plain);
+    page.redactions = list.map(plain);
     page.ocr = null;
     discardPdf();
     await refreshThumb(page);
+    let copied = 0;
+    for (const other of everywhere.length ? state.pages.filter((each) => each !== page) : []) {
+      const have = other.redactions ?? [];
+      const same = (a, b) => ['x0', 'y0', 'x1', 'y1'].every((key) => Math.abs(a[key] - b[key]) < 1e-6);
+      const add = everywhere.filter((mark) => !have.some((each) => same(each, mark)));
+      if (!add.length) continue;
+      other.redactions = [...have, ...add.map((mark) => ({ ...mark }))];
+      other.ocr = null;
+      await refreshThumb(other);
+      copied++;
+    }
     renderPages();
     const index = state.pages.indexOf(page) + 1;
-    announce(list.length
+    const also = copied ? ` ${plural(copied, 'A tarja repetida foi também para a outra página.', 'A tarja repetida foi também para {n} outras páginas.')}` : '';
+    announce(`${list.length
       ? plural(list.length, 'Página {page}: {n} tarja. O que está embaixo vai ser apagado do PDF.', 'Página {page}: {n} tarjas. O que está embaixo vai ser apagado do PDF.', { page: index })
-      : t('Página {page}: sem tarjas.', { page: index }));
+      : t('Página {page}: sem tarjas.', { page: index })}${also}`);
   },
   copyText: pageText,
   canCopy: () => !state.busy, // gerando o PDF ou procurando dados, o OCR e as páginas estão em uso
@@ -1209,6 +1225,19 @@ document.addEventListener('keydown', (event) => {
   if (document.querySelector('dialog[open]')) return; // tela cheia, câmera, assinatura…: o atalho não mexe na lista atrás
   event.preventDefault();
   undoRemoval();
+});
+
+// Ctrl+Enter (⌘+Enter no Mac) gera o PDF de qualquer ponto da tela principal (#37), inclusive com o foco num campo dos
+// ajustes. Com uma janela aberta, o atalho é dela.
+const MAC = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform ?? navigator.platform ?? '');
+els.generate.setAttribute('aria-keyshortcuts', MAC ? 'Meta+Enter' : 'Control+Enter');
+els.generate.title = MAC ? t('Atalho: ⌘+Enter') : t('Atalho: Ctrl+Enter');
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' || !(MAC ? event.metaKey : event.ctrlKey) || event.shiftKey || event.altKey || event.repeat) return;
+  if (event.defaultPrevented || state.busy || !state.pages.length || els.generate.disabled) return;
+  if (document.querySelector('dialog[open]')) return;
+  event.preventDefault();
+  els.generate.click();
 });
 
 els.filterAll.append(...filterOptions('document'));
@@ -2037,6 +2066,22 @@ function showResult(groups, signer, { checks = [], notes = [] } = {}) {
   syncGenerate();
 }
 
+// No computador (a partir de 1100 px, css/wide.css), o resultado vai para a coluna larga, embaixo do recibo (#37): na
+// coluna estreita dos ajustes ele ficava espremido, com o vazio ao lado. É o mesmo nó: o foco, o "Baixar PDF" e o
+// aviso continuam iguais, e a ordem do Tab segue a da tela (recibo, resultado, ajustes, barra). No celular ele volta
+// para depois da barra, como sempre.
+const wideScreen = matchMedia('(min-width: 1100px)');
+const resultHome = els.result.parentElement;
+function placeResult() {
+  const target = wideScreen.matches ? document.querySelector('.work-pages') : resultHome;
+  if (els.result.parentElement === target) return;
+  const focused = els.result.contains(document.activeElement) ? document.activeElement : null;
+  target.append(els.result);
+  focused?.focus({ preventScroll: true });
+}
+wideScreen.addEventListener('change', placeResult);
+placeResult();
+
 // ---------- Prévia do resultado ----------
 // Mostra, antes de gerar, quais arquivos vão sair e que páginas entram em cada um. Acompanha a opção
 // "Gerar", os intervalos, o nome do arquivo e qualquer mudança na lista.
@@ -2053,7 +2098,10 @@ function renderOutputPreview() {
   try {
     groups = outputGroups(total);
   } catch (err) {
-    els.outputSummary.textContent = els.ranges.value.trim() ? err.message : t('Escreva os intervalos para ver os arquivos que vão sair.');
+    // Com o erro já embaixo do campo (depois de tentar gerar), a prévia não repete a mesma mensagem (#37).
+    const shown = !els.rangesError.hidden && els.rangesError.dataset.kind === 'error';
+    els.outputSummary.textContent = !els.ranges.value.trim() ? t('Escreva os intervalos para ver os arquivos que vão sair.')
+      : shown ? t('Corrija os intervalos acima para ver os arquivos que vão sair.') : err.message;
     els.outputSummary.classList.toggle('error', !!els.ranges.value.trim());
     els.outputFiles.replaceChildren();
     return;
@@ -2145,6 +2193,7 @@ els.compressTipToggle.addEventListener('click', () => {
 });
 els.ranges.addEventListener('input', () => {
   discardPdf();
+  clearFieldError(els.ranges); // antes da prévia: digitando, o erro volta para a prévia, ao vivo
   renderOutputPreview();
 });
 els.fileName.addEventListener('input', renderOutputPreview);
