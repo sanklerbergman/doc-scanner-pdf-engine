@@ -34,10 +34,6 @@ O que os testes automáticos não alcançam. Ao conferir, tire o item daqui e di
 - Painel de assinaturas, com o certificado de teste: ele avisa que a identidade é desconhecida (não é da ICP-Brasil), mas tem que dizer que o documento não foi alterado depois de assinado. Conferir também com `openssl cms -verify` e, se der, com o `pdfsig` (Poppler)
 - A faixa de "arquivo em conformidade com PDF/A"
 
-### Com um certificado A1 de verdade
-
-- Assinar e conferir em `validar.iti.gov.br`, num documento sem nada sensível. Esse envio ao ITI é uma escolha de quem testa, fora do app. Ainda não há um A1 válido para isso
-
 ### Ferramentas
 
 - Subconjunto TrueType do PDF/A: as letras usadas estão lá, as larguras batem com as da fonte original, e o arquivo abre no fontTools (`ttx`)
@@ -45,15 +41,13 @@ O que os testes automáticos não alcançam. Ao conferir, tire o item daqui e di
 
 ## Adiado
 
-**Assinatura, fase 3: política da ICP-Brasil e cadeia.** Decisão do dono em 2026-10-16: só começa depois que alguém com um A1 real testar a assinatura no validador do ITI. Sem esse teste, não dá para saber se a política AD-RB é exigida, e a fase seria conferida só com certificado de teste.
+**Assinatura, fase 3: política da ICP-Brasil e cadeia.** Decisão do dono em 2026-10-16: só começaria depois de um teste com um A1 real no validador do ITI. Esse teste foi feito pelo dono em 2026-11-08, com um A1 comprado naquela semana: a assinatura do app, sem o identificador da política AD-RB, foi validada corretamente em `validar.iti.gov.br`. Então a AD-RB não é necessária, e o que sobra da fase são melhorias, sem urgência:
 
-- Identificador da política de assinatura da ICP-Brasil (AD-RB), se o validador do ITI exigir
 - Certificados raiz da ICP-Brasil embutidos (são públicos), para avisar quando o certificado não é da ICP-Brasil ou a cadeia está incompleta. A revogação continua sem consulta
 - ECDSA, se aparecer certificado A1 com curva elíptica
 
 ## Perguntas em aberto
 
-- **Assinatura:** o validador do ITI aceita como aprovada uma assinatura PAdES sem o identificador da política AD-RB, ou a política é obrigatória na ICP-Brasil (DOC-ICP-15)? Só um A1 válido responde.
 - **Vários arquivos de uma vez** (dividir, assinar cada um): é preciso um limite, por causa da memória no celular?
 - **PDF/A:** quais sistemas de processo eletrônico conferem de fato o PDF/A no envio, e quais só recomendam? Vale mirar o PDF/A-2u (todo texto com Unicode)? O texto do Word já sai com `ToUnicode`; falta ver se a camada do OCR com `WinAnsiEncoding` passa no veraPDF. Aceitar páginas de PDFs que já são PDF/A (o original declara `pdfaid`)? Seria preciso conferir as fontes e as cores de cada página copiada.
 - **Tarjas:** vale tarjar editando o conteúdo do PDF, para preservar o texto da página? Hoje a página de PDF tarjada sai como imagem.
