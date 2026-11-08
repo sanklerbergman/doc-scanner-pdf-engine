@@ -389,7 +389,8 @@
         <button id="page-zoom-fit" type="button" class="btn" aria-label="100%, página inteira" title="Página inteira (tecla 0)">100%</button>
         <button id="page-zoom-in" type="button" class="btn" aria-label="Aumentar o zoom" title="Aumentar o zoom (tecla +)">+</button>
       </div>
-      <button id="viewer-close" type="button" class="btn">Fechar</button>
+      <!-- No celular, o "Fechar" vira só o X (css/style.css), para o título com o número da página caber (#36). -->
+      <button id="viewer-close" type="button" class="btn viewer-close"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-remove"/></svg> <span class="viewer-close-text">Fechar</span></button>
     </div>
     <!-- Moldura: as setas de anterior/próxima ficam nas laterais, como num leitor de PDF, e não rolam junto
          com a imagem ampliada. Também dá para usar as setas do teclado ou deslizar o dedo. -->
@@ -428,6 +429,16 @@
         </div>
       </div>
       <!-- Propriedades da edição (cor e espessura): um painel que abre de baixo, por cima da página. -->
+      <!-- Ajustar a tarja selecionada (#36): escrever por cima, mover e mudar o tamanho com toques, num painel que abre de
+           baixo, como o de cor e espessura do Editar. Fora dele, a barra do Tarjar fica com a cor e as ações. -->
+      <div id="redact-adjust" class="edit-props" role="group" aria-labelledby="redact-adjust-title" hidden>
+        <p id="redact-adjust-title" class="edit-props-title">Ajustar tarja</p>
+        <div id="redact-adjust-fields" class="redact-adjust-fields"></div>
+        <div class="redact-adjust-actions">
+          <button id="redact-write" type="button" class="btn">Escrever por cima</button>
+          <button id="redact-adjust-done" type="button" class="btn btn-primary">Pronto</button>
+        </div>
+      </div>
       <div id="edit-props" class="edit-props" role="group" aria-labelledby="edit-props-title" hidden>
         <p id="edit-props-title" class="edit-props-title">Cor e espessura</p>
         <div id="edit-props-fields" class="edit-props-fields"></div>
@@ -460,13 +471,13 @@
     </div>
     <div id="viewer-redact-actions" class="viewer-actions redact-actions" hidden>
       <!-- Cor e texto da tarja selecionada (a última criada ou tocada); a cor também vale para as próximas (#24). A cor é
-           uma escolha em botões; escrever por cima, mover e o tamanho só aparecem com uma tarja selecionada (#34). -->
+           uma escolha em botões; "Ajustar tarja" (escrever por cima, mover e o tamanho) só aparece com uma selecionada (#34, #36). -->
       <div class="redact-options" role="group" aria-label="Tarja selecionada">
         <div class="redact-colors" role="group" aria-label="Cor da tarja">
           <button id="redact-black" type="button" class="redact-color" data-color="black" aria-pressed="true"><span class="redact-swatch" aria-hidden="true"></span> Preta</button>
           <button id="redact-white" type="button" class="redact-color" data-color="white" aria-pressed="false"><span class="redact-swatch redact-swatch-white" aria-hidden="true"></span> Branca</button>
         </div>
-        <button id="redact-write" type="button" class="btn">Escrever por cima</button>
+        <button id="redact-adjust-open" type="button" class="btn" aria-expanded="false" aria-controls="redact-adjust">Ajustar tarja</button>
       </div>
       <button id="redact-add" type="button" class="btn btn-ghost">Nova tarja</button>
       <button id="redact-undo" type="button" class="btn btn-ghost">Desfazer</button>
@@ -621,7 +632,7 @@
   <footer class="site-footer">
     <div class="wrap">
       <p>Feito pela comunidade, para a comunidade. Código aberto sob licença MIT — <a data-repo-link href="#" rel="noopener noreferrer">contribua no GitHub</a>.</p>
-      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">5.6.1</a></p>
+      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">5.7.0</a></p>
       <p class="signature"><a href="https://sankler.com.br" rel="noopener noreferrer">por <picture><source srcset="sankler-logo-reduzido-fundo-escuro.svg" media="(prefers-color-scheme: dark)"><img src="sankler-logo-reduzido-fundo-claro.svg" alt="Sankler" width="114" height="18"></picture></a></p>
     </div>
   </footer>

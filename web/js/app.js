@@ -343,6 +343,8 @@ async function addFiles(fileList) {
       // ou null para usar a foto inteira.
       const page = { id: nextId++, kind: 'photo', file, preview, width, height, quad: detectQuad(preview, preview.width, preview.height), rotation: 0, filter: els.filterAll.value, thumbUrl: '' };
       if (page.quad) cropped++;
+      // Sem as bordas achadas, o item mostra "Recortar" à mão até a pessoa recortar (#36).
+      else page.edgesMissed = true;
       await refreshThumb(page);
       state.pages.push(page);
       renderPages();
@@ -368,9 +370,10 @@ function imagesMessage(count, cropped) {
   const missed = count - cropped;
   // Curtos de propósito: no celular, o aviso fica acima da barra e cabe em duas linhas sem cobrir o recibo.
   if (!missed) return t('{added}. Recortei o papel; se ficou torto, use "Recortar" no menu ⋯ da página.', { added });
-  if (!cropped) return t('{added}. Não achei as bordas do papel: marque os cantos em "Recortar", no menu ⋯ da página.', { added });
-  return plural(missed, '{added}. Em uma delas não achei o papel: use "Recortar", no menu ⋯ da página.',
-    '{added}. Em {n} delas não achei o papel: use "Recortar", no menu ⋯ da página.', { added });
+  if (!cropped) return plural(count, '{added}. Não achei as bordas do papel: use "Recortar" na página.',
+    '{added}. Não achei as bordas do papel: use "Recortar" nas páginas.', { added });
+  return plural(missed, '{added}. Em uma delas não achei o papel: ela tem "Recortar" na lista.',
+    '{added}. Em {n} delas não achei o papel: elas têm "Recortar" na lista.', { added });
 }
 
 // Um .docx vira várias páginas na lista, que dá para reordenar e misturar com fotos.
@@ -790,6 +793,14 @@ function renderPages() {
         ]),
         el('p', { className: 'page-meta' }, meta),
         ...stamp,
+        // Bordas do papel não achadas: o "Recortar" fica à mão no item, sem ir ao menu "···" (#36).
+        ...(page.edgesMissed ? [el('p', { className: 'page-edges' }, [
+          el('span', { textContent: t('Bordas não achadas.') }), ' ',
+          el('button', {
+            type: 'button', className: 'btn btn-ghost page-edges-crop', 'data-action': 'crop', disabled: state.busy,
+            'aria-label': t('{label}, página {n}', { label: t('Recortar'), n: i + 1 }),
+          }, [icon('crop'), ` ${t('Recortar')}`]),
+        ])] : []),
       ]),
       el('div', { className: 'page-modes' }, [mode('redact', 'redact', t('Tarjar')), mode('edit', 'edit', t('Editar'))]),
       el('span', { className: 'drag-handle', title: t('Arraste para mudar a página de lugar'), 'aria-hidden': 'true' }, [icon('grip')]),
@@ -1057,6 +1068,7 @@ const viewer = setupViewer({
   async applyCrop(page, quad) {
     const changed = JSON.stringify(quad) !== JSON.stringify(page.quad);
     page.quad = quad;
+    page.edgesMissed = false;
     page.ocr = null;
     // As tarjas e as edições ficam sobre a foto já recortada: com outro recorte, cobririam outro lugar. Saem, com aviso.
     const redactions = changed && !!page.redactions?.length;
@@ -1999,7 +2011,8 @@ function showResult(groups, signer, { checks = [], notes = [] } = {}) {
     const parts = text.split(' · ');
     if (parts.length === 1) return el('span', { className: 'stamp stamp-sm stamp-in', textContent: text });
     return el('span', { className: 'stamp stamp-sm stamp-parts stamp-in' },
-      parts.map((part, i) => el('span', { textContent: i < parts.length - 1 ? `${part} ·` : part })));
+      // Uma parte por linha, sem o "·" sobrando no fim (#36); o leitor de tela ouve uma vírgula entre elas.
+      parts.flatMap((part, i) => [el('span', { textContent: part }), ...(i < parts.length - 1 ? [el('span', { className: 'sr-only', textContent: ', ' })] : [])]));
   };
   els.resultChecks.replaceChildren(...checks.map((text) => el('li', {}, [stamp(text)])));
   els.resultChecks.hidden = false;

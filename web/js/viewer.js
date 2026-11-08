@@ -110,6 +110,8 @@ export function setupViewer({
   const redactApply = $('#redact-apply');
   const redactColors = [$('#redact-black'), $('#redact-white')];
   const redactWrite = $('#redact-write');
+  const redactAdjust = $('#redact-adjust');
+  const redactAdjustOpen = $('#redact-adjust-open');
   const textPanel = $('#redact-text-panel');
   const textInput = $('#redact-text');
   const textNote = $('#redact-text-note');
@@ -153,6 +155,16 @@ export function setupViewer({
     return ++token;
   }
 
+  // Título da tela cheia: o longo ("Tarjas: Página 2 de 10") e, no celular, o curto ("Tarjar · 2/10", css/style.css),
+  // que cabe ao lado do zoom e do X (#36). Os números vêm do rótulo da página ("Página 2 de 10" ou "Page 2 of 10").
+  function setTitle(long, mode) {
+    const [n, total] = label.match(/\d+/g) ?? [];
+    title.replaceChildren(
+      Object.assign(document.createElement('span'), { className: 'title-long', textContent: long }),
+      Object.assign(document.createElement('span'), { className: 'title-short', ariaHidden: 'true', textContent: n ? `${mode} · ${n}/${total}` : long }),
+    );
+  }
+
   // startInCrop: abre direto no ajuste do recorte (botão "Recortar" do cartão).
   function open(target, name, startInCrop = false) {
     page = target;
@@ -166,11 +178,12 @@ export function setupViewer({
   // recebe o evento: aí não há aviso.
   async function showView(note = '') {
     const mine = nextToken();
-    title.textContent = label;
+    setTitle(label, t('Página'));
     crop.hidden = true;
     cropActions.hidden = true;
     redact.hidden = true;
     redactActions.hidden = true;
+    toggleAdjust(false);
     closeTextPanel(false);
     zoom.detach(redact);
     editor?.close();
@@ -207,7 +220,7 @@ export function setupViewer({
 
   async function showCrop() {
     const mine = nextToken();
-    title.textContent = t('Recorte: {label}', { label });
+    setTitle(t('Recorte: {label}', { label }), t('Recortar'));
     updateNav(false); // no meio do recorte, trocar de página perderia os cantos arrastados
     image.hidden = true;
     viewActions.hidden = true;
@@ -428,11 +441,23 @@ export function setupViewer({
     },
     say: (message) => { hint.textContent = message; },
   });
-  $('.redact-options').append(redactNudge.element);
+  $('#redact-adjust-fields').append(redactNudge.element);
+
+  // Painel "Ajustar tarja" (#36): abre de baixo, por cima da página, como o de cor e espessura do Editar.
+  function toggleAdjust(open = redactAdjust.hidden) {
+    redactAdjust.hidden = !open;
+    redactAdjustOpen.setAttribute('aria-expanded', String(open));
+    if (open) redactAdjust.querySelector('button:not(:disabled)')?.focus();
+  }
+  redactAdjustOpen.addEventListener('click', () => toggleAdjust());
+  $('#redact-adjust-done').addEventListener('click', () => {
+    toggleAdjust(false);
+    redactAdjustOpen.focus();
+  });
 
   async function showRedact() {
     const mine = nextToken();
-    title.textContent = t('Tarjas: {label}', { label });
+    setTitle(t('Tarjas: {label}', { label }), t('Tarjar'));
     updateNav(false);
     image.hidden = true;
     viewActions.hidden = true;
@@ -535,8 +560,8 @@ export function setupViewer({
     // Sem tarja selecionada, escrever, mover e o tamanho não têm em que agir: somem, em vez de ficar apagados (#34).
     redactWrite.disabled = current < 0;
     redactNudge.setDisabled(current < 0);
-    redactWrite.hidden = current < 0;
-    redactNudge.element.hidden = current < 0;
+    redactAdjustOpen.hidden = current < 0;
+    if (current < 0) toggleAdjust(false);
   }
 
   function selectMark(index) {
@@ -682,7 +707,7 @@ export function setupViewer({
   redactAdd.addEventListener('click', () => {
     marks.push({ x0: 0.3, y0: 0.45, x1: 0.7, y1: 0.55, ...newColor() });
     drawMarks(marks.length - 1);
-    hint.textContent = t('Tarja criada no meio da página: use as setas (da tela ou do teclado) para mover; Tamanho, ou Shift e setas, muda o tamanho.');
+    hint.textContent = t('Tarja criada no meio da página: arraste, use as setas do teclado ou "Ajustar tarja".');
   });
   redactUndo.addEventListener('click', () => {
     if (!marks.length) return;
@@ -713,6 +738,7 @@ export function setupViewer({
   function openTextPanel() {
     const mark = marks[current];
     if (!mark) return;
+    toggleAdjust(false);
     textInput.value = mark.text ?? '';
     textNote.textContent = t('O que está embaixo da tarja é apagado do PDF, e este texto vai no lugar, do maior tamanho que cabe nela. Para a letra ficar menor, deixe a tarja mais baixa.');
     textPanel.hidden = false;
@@ -788,7 +814,7 @@ export function setupViewer({
 
   async function showEdit() {
     const mine = nextToken();
-    title.textContent = t('Editar: {label}', { label });
+    setTitle(t('Editar: {label}', { label }), t('Editar'));
     updateNav(false);
     image.hidden = true;
     viewActions.hidden = true;
@@ -833,7 +859,7 @@ export function setupViewer({
   async function showFill() {
     if (!canFill(page)) return;
     const mine = nextToken();
-    title.textContent = t('Preencher: {label}', { label });
+    setTitle(t('Preencher: {label}', { label }), t('Preencher'));
     updateNav(false);
     image.hidden = true;
     viewActions.hidden = true;
@@ -1105,6 +1131,7 @@ export function setupViewer({
     redactImage.removeAttribute('src');
     redact.hidden = true;
     redactActions.hidden = true;
+    toggleAdjust(false);
     closeTextPanel(false);
     zoom.detach(redact);
     zoom.view(null);

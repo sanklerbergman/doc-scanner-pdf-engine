@@ -31,6 +31,11 @@ main:has(#workspace:not([hidden])) .dropzone-more { display: block; flex: 1 1 au
 main:has(#workspace:not([hidden])) .dropzone .hint { display: none; }
 main:has(#workspace:not([hidden])) .dropzone-actions { flex: 1 1 260px; justify-content: flex-end; gap: 8px; }
 main:has(#workspace:not([hidden])) .dropzone-actions .btn { flex: 1 1 0; max-width: 240px; min-height: 44px; padding: 6px 12px; font-size: 0.9375rem; }
+/* Com páginas na lista, o único botão cheio da tela é o "Gerar PDF": os de adicionar passam a contorno azul (#36). */
+main:has(#workspace:not([hidden])) .dropzone-actions .btn { background: var(--surface); border-color: var(--accent); color: var(--accent-ink); }
+@media (hover: hover) {
+  main:has(#workspace:not([hidden])) .dropzone-actions .btn:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent-ink); }
+}
 main:has(#workspace:not([hidden])) .workspace { margin-top: 18px; }
 @media (max-width: 420px) {
   main:has(#workspace:not([hidden])) .dropzone-actions .icon { display: none; }
