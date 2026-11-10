@@ -201,6 +201,7 @@ export function setupViewer({
     toggleAdjust(false);
     closeTextPanel(false);
     zoom.detach(redact);
+    zoom.detach(crop);
     editor?.close();
     filler?.close();
     viewActions.hidden = false;
@@ -262,20 +263,36 @@ export function setupViewer({
       : redacted ? t('Arraste os quatro cantos até as bordas do papel. Mudar o recorte apaga as tarjas desta página.')
       : edited ? t('Arraste os quatro cantos até as bordas do papel. Mudar o recorte apaga as edições desta página.')
       : t('Arraste os quatro cantos até as bordas do papel.');
-    fitCrop();
+    // Zoom (page-zoom.js) também no recorte: ajuda a pôr o canto exato na borda do papel. Com zoom 1, a área tem o
+    // tamanho da foto na tela (cropBase); os cantos ficam em %, e acompanham sozinhos.
+    zoom.attach({
+      surface: crop, base: cropBase, resized: () => {}, cancel: cancelCorner,
+      focus: () => (armed >= 0 ? points[armed] : null),
+    });
     drawPoints();
     handles[0].focus();
   }
 
-  // A área de recorte tem exatamente o tamanho da foto na tela: assim "50%" é o meio da foto.
-  function fitCrop() {
-    if (crop.hidden || !cropImage.naturalWidth) return;
+  // A pinça do zoom começou com um dedo num canto: o canto para onde está, e a lupa some.
+  function cancelCorner() {
+    if (pressed) {
+      try { handles[pressed.index].releasePointerCapture(pressed.id); } catch { /* o dedo já saiu */ }
+      pressed = null;
+    }
+    hideLoupe();
+  }
+
+  // A área de recorte tem exatamente o tamanho da foto na tela: assim "50%" é o meio da foto. O zoom (page-zoom.js)
+  // multiplica esse tamanho.
+  function cropBase() {
     const margin = 28; // espaço para os cantos não ficarem colados na borda da tela
-    const maxW = stage.clientWidth - margin * 2;
-    const maxH = stage.clientHeight - margin * 2;
-    const scale = Math.min(maxW / cropImage.naturalWidth, maxH / cropImage.naturalHeight);
-    crop.style.width = `${Math.max(40, cropImage.naturalWidth * scale)}px`;
-    crop.style.height = `${Math.max(40, cropImage.naturalHeight * scale)}px`;
+    const maxW = stage.offsetWidth - margin * 2;
+    const maxH = stage.offsetHeight - margin * 2;
+    const scale = Math.min(maxW / (cropImage.naturalWidth || 1), maxH / (cropImage.naturalHeight || 1));
+    return { width: (cropImage.naturalWidth || 1) * scale, height: (cropImage.naturalHeight || 1) * scale };
+  }
+  function fitCrop() {
+    if (!crop.hidden && cropImage.naturalWidth) zoom.layout();
   }
 
   function drawPoints() {
@@ -526,7 +543,8 @@ export function setupViewer({
   // (page-zoom.js) multiplica.
   function redactBase() {
     const margin = 8;
-    const scale = Math.min((stage.clientWidth - margin * 2) / redactImage.naturalWidth, (stage.clientHeight - margin * 2) / redactImage.naturalHeight);
+    // Sem as barras de rolagem (offsetWidth): com o zoom, a barra que aparece e some mudaria a conta e a página tremeria.
+    const scale = Math.min((stage.offsetWidth - margin * 2) / redactImage.naturalWidth, (stage.offsetHeight - margin * 2) / redactImage.naturalHeight);
     return { width: redactImage.naturalWidth * scale, height: redactImage.naturalHeight * scale };
   }
   function fitRedact() {
@@ -628,11 +646,14 @@ export function setupViewer({
   redact.addEventListener('pointerdown', (event) => {
     if (event.target.closest('.redact-remove') || drawing || dragging) return;
     event.preventDefault();
+    finishText();
     redact.setPointerCapture(event.pointerId);
     const { x, y } = pointIn(event);
     const box = event.target.closest('.redact-box:not(.redact-preview)');
     if (box) {
       const index = Number(box.dataset.index);
+      // A troca recém-tocada é sempre a última: desfazê-la (finishText) não muda a posição das outras.
+      if (!marks[index]) return; // a tarja tocada era a troca que finishText acabou de desfazer
       const kind = event.target.closest('.redact-grip') && index === current ? 'grow' : 'move';
       dragging = { id: event.pointerId, index, kind, x, y, cx: event.clientX, cy: event.clientY, start: { ...marks[index] }, moved: false };
       return;
@@ -665,8 +686,13 @@ export function setupViewer({
       const { index, kind, moved } = dragging;
       dragging = null;
       if (!moved) {
-        // Toque sem arrastar: seleciona (para mudar a cor, escrever nela ou ajustar).
+        // Toque sem arrastar: seleciona (para mudar a cor, escrever nela ou ajustar). No Trocar texto, o toque num
+        // texto já trocado abre o painel de novo, para corrigir.
         selectMark(index);
+        if (replacing && marks[index]?.text) {
+          openTextPanel();
+          return;
+        }
         hint.textContent = t('Tarja {n} selecionada: arraste para mover, ou pela alça do canto para mudar o tamanho.', { n: index + 1 });
         return;
       }
@@ -707,7 +733,11 @@ export function setupViewer({
 
   redactBoxes.addEventListener('click', (event) => {
     const remove = event.target.closest('.redact-remove');
-    if (remove) removeMark(Number(remove.dataset.index));
+    if (!remove) return;
+    const mark = marks[Number(remove.dataset.index)];
+    finishText(); // pode desfazer a troca recém-tocada e mudar as posições: a tarja é achada de novo
+    const index = marks.indexOf(mark);
+    if (index >= 0) removeMark(index);
   });
   redactBoxes.addEventListener('keydown', (event) => {
     const box = event.target.closest('.redact-box');
@@ -741,6 +771,7 @@ export function setupViewer({
   }
 
   redactBoxes.addEventListener('focusin', (event) => {
+    if (!textPanel.hidden) return; // o painel continua com a tarja dele (textMark); a seleção não muda por baixo
     const box = event.target.closest('.redact-box');
     if (box) selectMark(Number(box.dataset.index));
   });
@@ -754,6 +785,11 @@ export function setupViewer({
     hint.textContent = t('Tarja criada no meio da página: arraste, use as setas do teclado ou "Ajustar tarja".');
   });
   redactUndo.addEventListener('click', () => {
+    if (!textPanel.hidden && fresh) {
+      closeTextPanel(false); // desfazer com a troca recém-tocada aberta: desfaz só ela
+      return;
+    }
+    finishText();
     if (!marks.length) return;
     marks.pop();
     current = marks.length - 1;
@@ -787,6 +823,7 @@ export function setupViewer({
   function openTextPanel() {
     const mark = marks[current];
     if (!mark) return;
+    textMark = mark;
     toggleAdjust(false);
     textInput.value = mark.text ?? '';
     textTitle.textContent = isSwap(mark) ? t('Trocar o texto') : t('Texto por cima da tarja');
@@ -795,7 +832,7 @@ export function setupViewer({
     stopKeyboard?.();
     stopKeyboard = followKeyboard(textPanel);
     textInput.focus();
-    if (fresh >= 0) textInput.select(); // troca recém-tocada: o que a pessoa digitar substitui o original
+    if (fresh) textInput.select(); // troca recém-tocada: o que a pessoa digitar substitui o original
   }
 
   // focus: devolve o foco à tarja (fechar pelo Cancelar ou pelo "Pôr na tarja").
@@ -805,9 +842,12 @@ export function setupViewer({
     textPanel.hidden = true;
     stopKeyboard?.();
     stopKeyboard = null;
-    if (fresh >= 0) {
-      marks.splice(fresh, 1);
-      fresh = -1;
+    const undone = fresh;
+    fresh = null;
+    textMark = null;
+    if (undone) {
+      const index = marks.indexOf(undone);
+      if (index >= 0) marks.splice(index, 1);
       current = marks.length - 1;
       drawMarks();
       hint.textContent = t('Troca cancelada: o texto original continua.');
@@ -817,18 +857,25 @@ export function setupViewer({
     if (focus) (redactBoxes.children[current] ?? redactAdd).focus();
   }
 
+  // O painel escreve na tarja que ele abriu (textMark), mesmo que a seleção tenha mudado enquanto ele estava aberto.
   function setMarkText(value) {
-    const mark = marks[current];
-    if (!mark) return;
-    const { text, dropped } = winAnsiText(value);
+    const index = marks.indexOf(textMark);
+    if (index < 0) {
+      closeTextPanel(false);
+      return;
+    }
+    current = index;
+    const mark = marks[index];
+    // A troca é uma linha só, como o original: a quebra vira espaço (a segunda linha cairia na linha de baixo).
+    const { text, dropped } = winAnsiText(isSwap(mark) ? value.replace(/\s*\n\s*/g, ' ') : value);
     const clean = text.replace(/\s+$/, '');
     if (clean.trim()) mark.text = clean;
     else delete mark.text;
     // Troca com texto mais comprido: a tarja cresce para a direita, e a letra fica do tamanho do original.
     const { mark: fitted, grew } = fitMark(mark, redactPage());
     marks[current] = fitted;
-    const swapped = fresh >= 0 && !!mark.text;
-    fresh = -1;
+    const swapped = !!fresh && !!mark.text;
+    fresh = null;
     closeTextPanel(false);
     drawMarks(current);
     const note = droppedMessage(dropped);
@@ -844,8 +891,22 @@ export function setupViewer({
   $('#redact-text-put').addEventListener('click', () => setMarkText(textInput.value));
   $('#redact-text-clear').addEventListener('click', () => setMarkText(''));
   $('#redact-text-cancel').addEventListener('click', () => closeTextPanel());
+  // Na troca, Enter confirma (é uma linha só); no texto por cima de uma tarja comum, Enter quebra a linha.
+  textInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing || !isSwap(textMark)) return;
+    event.preventDefault();
+    setMarkText(textInput.value);
+  });
+
+  // Com o painel aberto, mexer na página (tocar noutro texto, noutra tarja, no ×, no Desfazer) primeiro termina o que
+  // estava sendo escrito: grava o texto ou, na troca recém-tocada sem mudança nenhuma, desfaz a troca.
+  function finishText() {
+    if (textPanel.hidden) return;
+    if (fresh && textInput.value.trim() === (fresh.text ?? '').trim()) closeTextPanel(false);
+    else setMarkText(textInput.value);
+  }
   textInput.addEventListener('input', () => {
-    textNote.textContent = droppedMessage(winAnsiText(textInput.value).dropped) || textNoteFor(marks[current]);
+    textNote.textContent = droppedMessage(winAnsiText(textInput.value).dropped) || textNoteFor(textMark);
   });
 
   // ---------- Trocar texto (#38) ----------
@@ -856,14 +917,16 @@ export function setupViewer({
   let replacing = false;
   let targets = null; // os textos da página, depois de lidos
   let targetsJob = null; // AbortController da leitura em andamento
-  let fresh = -1; // a tarja que a troca acabou de criar, enquanto o painel está aberto
+  let fresh = null; // a tarja que a troca acabou de criar, enquanto o painel está aberto
+  let textMark = null; // a tarja em que o painel escreve
 
   function stopReplacing() {
     targetsJob?.abort();
     targetsJob = null;
     replacing = false;
     targets = null;
-    fresh = -1;
+    fresh = null;
+    textMark = null;
     redact.classList.remove('replacing');
     redactReplace.setAttribute('aria-pressed', 'false');
     redactTargets.hidden = true;
@@ -935,7 +998,7 @@ export function setupViewer({
   function replaceTarget(target) {
     marks.push(replacementMark(target, redactPage()));
     current = marks.length - 1;
-    fresh = current;
+    fresh = marks[current];
     drawMarks(current);
     openTextPanel();
   }
@@ -954,7 +1017,9 @@ export function setupViewer({
   // Só o teclado chega aqui (os botões não recebem o toque nem o mouse, que vão pela área toda).
   redactTargets.addEventListener('click', (event) => {
     const button = event.target.closest('.redact-target');
-    if (button?.targetData) replaceTarget(button.targetData);
+    if (!button?.targetData) return;
+    finishText();
+    replaceTarget(button.targetData);
   });
   replaceButton.addEventListener('click', () => showRedact({ replace: true }));
 
@@ -972,7 +1037,7 @@ export function setupViewer({
     showView(note || ''); // o aviso da página que sai como imagem (saveRedactions), no lugar da dica de sempre
   });
   $('#viewer-redact').addEventListener('click', () => showRedact());
-  new ResizeObserver(() => requestAnimationFrame(fitRedact)).observe(stage);
+  new ResizeObserver(() => requestAnimationFrame(fitRedact)).observe(stage, { box: 'border-box' });
 
   // ---------- Editar ----------
   // O modo Editar (editor.js) carrega na primeira vez. A página aparece como vai sair no PDF, sem as edições, que o
@@ -1295,7 +1360,8 @@ export function setupViewer({
     const fit = Math.min(width, height * (image.naturalWidth / image.naturalHeight));
     image.style.width = `${fit * viewScale}px`;
   }
-  const viewZoom = { level: () => viewScale, set: (level) => setViewZoom(level) };
+  // at: o ponto da tela que fica parado (a roda do mouse amplia no cursor); sem ele, o meio da tela.
+  const viewZoom = { level: () => viewScale, set: (level, at) => setViewZoom(level, undefined, at) };
 
   $('#crop-detect').addEventListener('click', () => {
     const quad = detect(page);
@@ -1327,7 +1393,7 @@ export function setupViewer({
 
   // Os ajustes ao tamanho do palco rodam no quadro seguinte, fora do aviso do ResizeObserver (como no editor.js):
   // mudar o layout dentro dele dava "ResizeObserver loop" no WebKit.
-  new ResizeObserver(() => requestAnimationFrame(fitCrop)).observe(stage);
+  new ResizeObserver(() => requestAnimationFrame(fitCrop)).observe(stage, { box: 'border-box' });
   dialog.addEventListener('close', () => {
     nextToken();
     setUrl('view', image, null);
@@ -1341,6 +1407,7 @@ export function setupViewer({
     toggleAdjust(false);
     closeTextPanel(false);
     zoom.detach(redact);
+    zoom.detach(crop);
     zoom.view(null);
     marks = [];
     editor?.close();

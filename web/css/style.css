@@ -747,7 +747,7 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
 }
 /* A página ampliada rola dentro do palco; menor que ele, fica no meio (margin: auto). */
 .viewer-stage.zoomable { overflow: auto; overscroll-behavior: contain; justify-content: flex-start; align-items: flex-start; -webkit-overflow-scrolling: touch; }
-.viewer-stage.zoomable > .edit, .viewer-stage.zoomable > .redact { margin: auto; }
+.viewer-stage.zoomable > .edit, .viewer-stage.zoomable > .redact, .viewer-stage.zoomable > .crop { margin: auto; }
 .viewer-frame { flex: 1 1 0; min-height: 0; position: relative; display: flex; }
 .viewer-step {
   position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;

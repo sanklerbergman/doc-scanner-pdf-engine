@@ -1,4 +1,4 @@
-// Zoom da página nos modos Tarjar e Editar da tela cheia (viewer.js e editor.js): um só para os dois, ligado ao modo
+// Zoom da página nos modos Recortar, Tarjar e Editar da tela cheia (viewer.js e editor.js): um só para todos, ligado ao modo
 // que está na tela (attach) e desligado ao sair (detach). Na visualização (view), os mesmos botões trocam entre a
 // página inteira e a ampliada em passos, e o toque na imagem amplia ou volta: assim o zoom também funciona pelo
 // teclado (WCAG 2.1.1).
@@ -6,7 +6,8 @@
 // - Celular: pinçar com dois dedos amplia, e arrastar com os dois move a página ampliada. Um dedo continua sendo da
 //   ferramenta (desenhar, marcar a tarja, mover a caixa): o segundo dedo que encosta cancela o que o primeiro fazia.
 // - Computador: Ctrl e a roda do mouse (ou a pinça do trackpad, que o navegador entrega do mesmo jeito; no Safari,
-//   pelos eventos de gesto) ampliam no ponto do cursor; a roda sozinha e as barras rolam a página ampliada.
+//   pelos eventos de gesto) ampliam no ponto do cursor; a roda sozinha e as barras rolam a página ampliada. Vale em
+//   todas as telas da página: visualização, Recortar, Tarjar e Editar (o Preencher tem a roda dele, em form-panel.js).
 // - Os dois: os botões −, % e + na barra do título, e as teclas +, − e 0. Com uma caixa selecionada, os botões
 //   ampliam com ela no meio da tela.
 //
@@ -45,7 +46,7 @@ export function setupPageZoom({ stage, controls, say }) {
   let pinch = null; // a pinça em andamento; fica até o último dedo sair, para o dedo que sobra não desenhar
   let settleTimer = 0;
   let gesture = null; // a pinça do trackpad no Safari
-  /** @type {null | {level: () => number, set: (level: number) => void}} a visualização (viewer.js) */
+  /** @type {null | {level: () => number, set: (level: number, at?: number[]) => void}} a visualização (viewer.js) */
   let simple = null;
 
   // O botão do meio mostra o zoom; o nome dele começa pelo mesmo número (WCAG 2.5.3) e diz o que ele faz.
@@ -115,9 +116,18 @@ export function setupPageZoom({ stage, controls, say }) {
     showSimple();
     // O botão que tinha o foco pode ter ficado desabilitado: o foco passa para o outro lado.
     if (document.activeElement?.disabled) (growing ? zoomOut : zoomIn).focus();
+    announceSimple();
+  }
+  function announceSimple() {
+    const level = simple.level();
     say(level > MIN
       ? t('Página ampliada em {n}%. Para mover, role a página ou deslize o dedo.', { n: Math.round(level * 100) })
       : t('Página inteira na tela.'));
+  }
+  // Roda do mouse e pinça do trackpad na visualização: contínuo, no ponto do cursor (at); perto de 100%, encaixa.
+  function simpleTo(next, at) {
+    simple.set(next < 1.02 ? MIN : clamp(next, MIN, MAX), at);
+    showSimple();
   }
   const level = () => (simple ? simple.level() : zoom);
 
@@ -180,37 +190,44 @@ export function setupPageZoom({ stage, controls, say }) {
   function settleLater() {
     clearTimeout(settleTimer);
     settleTimer = setTimeout(() => {
-      if (!target) return;
-      target.resized(true);
-      announce();
+      if (target) {
+        target.resized(true);
+        announce();
+      } else if (simple) {
+        announceSimple();
+      }
     }, SETTLE);
   }
 
   stage.addEventListener('wheel', (event) => {
-    if (!target || !(event.ctrlKey || event.metaKey)) return; // sem Ctrl, a roda rola a página ampliada
+    if (!(target || simple) || !(event.ctrlKey || event.metaKey)) return; // sem Ctrl, a roda rola a página ampliada
     event.preventDefault(); // não amplia a tela inteira do navegador
     const delta = clamp(event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY, -25, 25);
     const at = [event.clientX, event.clientY];
-    zoomTo(zoom * Math.exp(-delta * 0.01), pageAt(at), at, false);
+    if (simple) simpleTo(simple.level() * Math.exp(-delta * 0.01), at);
+    else zoomTo(zoom * Math.exp(-delta * 0.01), pageAt(at), at, false);
     settleLater();
   }, { passive: false });
 
   // Safari no Mac: a pinça do trackpad chega como gesto. No iPhone o gesto também vem, junto com os dedos (já tratados).
+  // Na visualização, o iPhone continua com a pinça do próprio navegador na imagem (touch-action): só o trackpad do Mac,
+  // sem dedos na tela, passa por aqui.
   stage.addEventListener('gesturestart', (event) => {
-    if (!target) return;
+    if (!(target || simple)) return;
     event.preventDefault();
-    gesture = touches.size ? null : { zoom };
+    gesture = touches.size ? null : { zoom: simple ? simple.level() : zoom };
   });
   stage.addEventListener('gesturechange', (event) => {
-    if (!target) return;
+    if (!(target || simple)) return;
     event.preventDefault();
     if (!gesture || touches.size) return;
     const at = [event.clientX, event.clientY];
-    zoomTo(gesture.zoom * event.scale, pageAt(at), at, false);
+    if (simple) simpleTo(gesture.zoom * event.scale, at);
+    else zoomTo(gesture.zoom * event.scale, pageAt(at), at, false);
     settleLater();
   });
   stage.addEventListener('gestureend', (event) => {
-    if (target) event.preventDefault();
+    if (target || simple) event.preventDefault();
     gesture = null;
   });
 

@@ -77,6 +77,7 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
   let size = { width: 595.28, height: 841.89 }; // a página como aparece, em pontos
   let rotation = 0;
   let zoom = true;
+  let manual = 1; // o zoom da roda do mouse (Ctrl), com o "Ampliar" desligado
   let url = '';
   let stop = null;
   let control = null; // o controle do campo atual (no rádio, o fieldset)
@@ -108,6 +109,8 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
     current = -1;
     message = '';
     zoom = true;
+    manual = 1;
+    zoomButton.setAttribute('aria-pressed', 'true');
     surface.hidden = false;
     panel.hidden = false;
     stage.classList.add('filling');
@@ -361,26 +364,82 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
   nextButton.addEventListener('click', () => select(current + 1));
   zoomButton.addEventListener('click', () => {
     zoom = !zoom;
+    manual = 1;
     zoomButton.setAttribute('aria-pressed', String(zoom));
     layout();
   });
+
+  // Ctrl e a roda do mouse (ou a pinça do trackpad), como nas outras telas da página (page-zoom.js): amplia no ponto do
+  // cursor. O "Ampliar" (que segue o campo em foco) desliga, para os dois zooms não brigarem; ligar de novo volta a ele.
+  const shownScale = () => surface.getBoundingClientRect().width / Math.max(1, size.width * fitScale());
+  function zoomAt(next, at) {
+    if (zoom) {
+      manual = shownScale();
+      zoom = false;
+      zoomButton.setAttribute('aria-pressed', 'false');
+    }
+    const before = surface.getBoundingClientRect();
+    const point = [(at[0] - before.left) / before.width, (at[1] - before.top) / before.height];
+    manual = Math.min(MAX_ZOOM, Math.max(1, next < 1.02 ? 1 : next));
+    layout({ follow: false });
+    const after = surface.getBoundingClientRect();
+    stage.scrollLeft += after.left + point[0] * after.width - at[0];
+    stage.scrollTop += after.top + point[1] * after.height - at[1];
+  }
+  let settle = 0;
+  const announceZoom = () => {
+    clearTimeout(settle);
+    settle = setTimeout(() => {
+      if (active()) say(manual > 1 ? t('Página em {n}%. Para mover, use a roda do mouse ou as barras de rolagem.', { n: Math.round(manual * 100) }) : t('Página inteira na tela.'));
+    }, 160);
+  };
+  stage.addEventListener('wheel', (event) => {
+    if (!active() || !(event.ctrlKey || event.metaKey)) return;
+    event.preventDefault(); // não amplia a tela inteira do navegador
+    const delta = Math.min(25, Math.max(-25, event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY));
+    zoomAt((zoom ? shownScale() : manual) * Math.exp(-delta * 0.01), [event.clientX, event.clientY]);
+    announceZoom();
+  }, { passive: false });
+  let gesture = null; // a pinça do trackpad no Safari
+  stage.addEventListener('gesturestart', (event) => {
+    if (!active()) return;
+    event.preventDefault();
+    gesture = { scale: zoom ? shownScale() : manual };
+  });
+  stage.addEventListener('gesturechange', (event) => {
+    if (!active() || !gesture) return;
+    event.preventDefault();
+    zoomAt(gesture.scale * event.scale, [event.clientX, event.clientY]);
+    announceZoom();
+  });
+  stage.addEventListener('gestureend', () => { gesture = null; });
 
   // ---------- Página ampliada no campo ----------
 
   // A página cabe no que sobra do palco acima do painel; com "Mostrar na página", amplia até o campo em foco ficar
   // legível (até 4×) e rola até ele.
-  function layout() {
-    if (!active()) return;
+  // A conta da página inteira: a área do palco acima do painel (sem as barras de rolagem, como no page-zoom.js).
+  function frameSize() {
     const frame = stage.getBoundingClientRect();
     const covered = Math.max(0, Math.min(frame.height, frame.bottom - panel.getBoundingClientRect().top));
+    const width = stage.offsetWidth - 16;
+    const height = Math.max(40, stage.offsetHeight - covered - 16);
+    return { frame, covered, width, height };
+  }
+  const fitScale = () => {
+    const { width, height } = frameSize();
+    return Math.min(width / size.width, height / size.height);
+  };
+  // follow: rola até o campo em foco (a roda do mouse não: ela mantém o ponto do cursor).
+  function layout({ follow = true } = {}) {
+    if (!active()) return;
+    const { frame, covered, width, height } = frameSize();
     stage.style.paddingBottom = `${covered + 8}px`;
-    const width = stage.clientWidth - 16;
-    const height = Math.max(40, stage.clientHeight - covered - 16);
     const fit = Math.min(width / size.width, height / size.height);
     const field = fields[current];
     const widget = field?.widgets.find((w) => w.page === index);
     const box = widget ? boxOf(widget) : null;
-    let scale = 1;
+    let scale = zoom ? 1 : manual;
     if (zoom && box) {
       const w = (box.x1 - box.x0) * size.width * fit;
       const h = (box.y1 - box.y0) * size.height * fit;
@@ -388,7 +447,7 @@ export function setupFill({ stage, hint, save, confirm, leave, textItems }) {
     }
     surface.style.width = `${Math.max(40, size.width * fit * scale)}px`;
     surface.style.height = `${Math.max(40, size.height * fit * scale)}px`;
-    if (!box) return;
+    if (!box || !follow) return;
     // O centro do campo, na área que rola do palco.
     const shown = surface.getBoundingClientRect();
     const cx = shown.left - frame.left + stage.scrollLeft + ((box.x0 + box.x1) / 2) * shown.width;

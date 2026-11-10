@@ -380,7 +380,8 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
   // Com zoom 1, a área tem exatamente o tamanho da página na tela, como a das tarjas; o zoom (page-zoom.js) multiplica.
   function wholePage() {
     const margin = 12;
-    const scale = Math.min((stage.clientWidth - margin * 2) / size.width, (stage.clientHeight - margin * 2) / size.height);
+    // Sem as barras de rolagem (offsetWidth): com o zoom, a barra que aparece e some mudaria a conta e a página tremeria.
+    const scale = Math.min((stage.offsetWidth - margin * 2) / size.width, (stage.offsetHeight - margin * 2) / size.height);
     return { width: size.width * scale, height: size.height * scale };
   }
   const centerOf = (item) => [(item.x0 + item.x1) / 2, (item.y0 + item.y1) / 2];
@@ -408,7 +409,7 @@ export function setupEditor({ stage, hint, save, confirm, leave, zoom }) {
   // No quadro seguinte, fora do aviso do ResizeObserver: mudar a superfície dentro dele dava "ResizeObserver loop" no WebKit.
   // O próprio observador também começa no quadro seguinte: o módulo carrega sob demanda, e criado no meio da entrega dos
   // avisos dos outros (a promessa do import resolvida entre um aviso e outro), o WebKit dava o mesmo erro.
-  requestAnimationFrame(() => new ResizeObserver(() => requestAnimationFrame(fit)).observe(stage));
+  requestAnimationFrame(() => new ResizeObserver(() => requestAnimationFrame(fit)).observe(stage, { box: 'border-box' }));
 
   // ---------- Desenho e caixas ----------
 

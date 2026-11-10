@@ -890,4 +890,5 @@ export default {
   'Esta página vai sair como imagem, sem texto. Para o texto continuar pesquisável, ligue o OCR nos ajustes.': 'This page will come out as an image, without text. To keep the text searchable, turn on OCR in the settings.',
   'Desligado · {n} página com tarja sai sem texto': 'Off · {n} redacted page comes out without text',
   'Desligado · {n} páginas com tarja saem sem texto': 'Off · {n} redacted pages come out without text',
+  'Página em {n}%. Para mover, use a roda do mouse ou as barras de rolagem.': 'Page at {n}%. To move around, use the mouse wheel or the scroll bars.',
 };
