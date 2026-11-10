@@ -6,7 +6,7 @@ import { FULL_QUAD, fromRotated, toRotated, isConvex, isFullFrame } from './geom
 import { normalizeRect } from './redact.js';
 import { replacementLayout, winAnsiText, droppedMessage } from './edit-text.js';
 import { followKeyboard } from './keyboard-panel.js';
-import { setupPageZoom } from './page-zoom.js';
+import { setupPageZoom, MAX as ZOOM_MAX } from './page-zoom.js';
 import { nudgeControls, nudgeOf } from './edit-nudge.js';
 import { wordCount } from './page-text.js';
 import { t, plural } from './i18n.js';
@@ -43,6 +43,7 @@ const CORNERS = [t('Canto superior esquerdo'), t('Canto superior direito'), t('C
 const START_INSET = 0.04; // sem recorte ainda: os cantos começam um pouco para dentro, fáceis de pegar
 const LOUPE_SIZE = 120; // diâmetro da lupa do recorte, em px da tela
 const LOUPE_ZOOM = 3; // ampliação sobre a foto como ela aparece na tela
+const VIEW_TAP = 2.25; // o toque na imagem da visualização amplia direto em dois passos do + (1,5 × 1,5)
 const LOUPE_GAP = 48; // do dedo até a borda da lupa: o dedo não cobre
 const TAP = 6; // px da tela: menos que isso, no canto do recorte, é um toque (escolhe o canto), não um arrasto
 
@@ -123,6 +124,12 @@ export function setupViewer({
   // Zoom da página (page-zoom.js): os botões ficam na barra do título. No Tarjar e no Editar, a página amplia em
   // passos; na visualização, entre a página inteira e a ampliada (como no toque na imagem).
   const zoom = setupPageZoom({ stage, controls: $('#page-zoom'), say: (message) => { hint.textContent = message; } });
+  let viewScale = 1; // o zoom da visualização (setViewZoom)
+  function resetViewZoom() {
+    viewScale = 1;
+    stage.classList.remove('zoomed');
+    image.style.width = '';
+  }
 
   let page = null;
   let label = '';
@@ -195,7 +202,7 @@ export function setupViewer({
     copyButton.hidden = !canCopy(page) || !clipboardWorks();
     updateNav(true);
     image.hidden = false;
-    stage.classList.remove('zoomed');
+    resetViewZoom();
     zoom.view(viewZoom);
     image.src = page.thumbUrl; // aparece na hora; a versão nítida entra em seguida
     image.alt = t('{label}, como vai sair no PDF', { label });
@@ -225,7 +232,7 @@ export function setupViewer({
     updateNav(false); // no meio do recorte, trocar de página perderia os cantos arrastados
     image.hidden = true;
     viewActions.hidden = true;
-    stage.classList.remove('zoomed');
+    resetViewZoom();
     zoom.view(null);
     hint.textContent = t('Preparando a foto…');
     const blob = await renderOriginal(page);
@@ -471,7 +478,7 @@ export function setupViewer({
     updateNav(false);
     image.hidden = true;
     viewActions.hidden = true;
-    stage.classList.remove('zoomed');
+    resetViewZoom();
     zoom.view(null);
     hint.textContent = t('Preparando a página…');
     let blob;
@@ -832,7 +839,7 @@ export function setupViewer({
     updateNav(false);
     image.hidden = true;
     viewActions.hidden = true;
-    stage.classList.remove('zoomed');
+    resetViewZoom();
     zoom.view(null);
     hint.textContent = t('Preparando a página…');
     let base;
@@ -877,7 +884,7 @@ export function setupViewer({
     updateNav(false);
     image.hidden = true;
     viewActions.hidden = true;
-    stage.classList.remove('zoomed');
+    resetViewZoom();
     zoom.view(null);
     hint.textContent = t('Preparando a página…');
     let base;
@@ -1029,10 +1036,14 @@ export function setupViewer({
     nextButton.style.right = `${Math.max(12, frame.right - box.right - size - gap)}px`;
   }
   image.addEventListener('load', () => {
+    sizeView(); // a versão nítida tem outro tamanho natural: a largura ampliada é refeita
     placeSteps();
     zoom.refresh(); // a versão nítida tem outro tamanho: o número do zoom acompanha
   });
-  new ResizeObserver(() => requestAnimationFrame(placeSteps)).observe(stage);
+  new ResizeObserver(() => requestAnimationFrame(() => {
+    sizeView();
+    placeSteps();
+  })).observe(stage);
 
   // Na primeira e na última página, a seta que não leva a lugar nenhum some; no recorte, as duas.
   function updateNav(enabled) {
@@ -1081,28 +1092,48 @@ export function setupViewer({
 
   $('#viewer-crop').addEventListener('click', showCrop);
   $('#viewer-close').addEventListener('click', () => leaveIfSure(() => dialog.close()));
-  image.addEventListener('click', () => {
+  // O toque na imagem amplia no ponto tocado, ou volta à página inteira.
+  image.addEventListener('click', (event) => {
     if (swiped) { swiped = false; return; }
-    setViewZoom(!stage.classList.contains('zoomed'));
+    const box = image.getBoundingClientRect();
+    const point = [(event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height];
+    setViewZoom(viewScale > 1 ? 1 : VIEW_TAP, point, [event.clientX, event.clientY]);
   });
 
-  // Zoom da visualização: a página inteira ou ampliada (a imagem com 2,2× a largura do palco, no CSS). O toque na
-  // imagem e os botões de zoom da barra do título (page-zoom.js, também pelo teclado) fazem o mesmo.
-  function setViewZoom(on) {
-    stage.classList.toggle('zoomed', on);
+  // Zoom da visualização, em relação à página inteira (1). O toque na imagem e os botões de zoom da barra do título
+  // (page-zoom.js, em passos, também pelo teclado) mudam o mesmo número. O ponto point da imagem (de 0 a 1) fica no
+  // ponto at da tela; sem eles, o que estava no meio da tela continua no meio.
+  function setViewZoom(level, point, at) {
+    const frame = stage.getBoundingClientRect();
+    at ??= [frame.left + stage.clientWidth / 2, frame.top + stage.clientHeight / 2];
+    if (!point) {
+      const box = image.getBoundingClientRect();
+      point = [(at[0] - box.left) / box.width, (at[1] - box.top) / box.height].map((v) => Math.min(1, Math.max(0, v)));
+    }
+    viewScale = Math.min(ZOOM_MAX, Math.max(1, level));
+    sizeView();
+    if (viewScale > 1) {
+      const box = image.getBoundingClientRect();
+      stage.scrollLeft += box.left + point[0] * box.width - at[0];
+      stage.scrollTop += box.top + point[1] * box.height - at[1];
+    }
     placeSteps();
     zoom.refresh();
   }
-  const viewZoom = { level: viewLevel, set: setViewZoom };
-  // O zoom da imagem na tela, em relação à página inteira (o número que o botão do meio mostra).
-  function viewLevel() {
-    if (!stage.classList.contains('zoomed') || !image.naturalWidth) return 1;
+  // A largura da imagem ampliada: a da página inteira na tela vezes o zoom.
+  function sizeView() {
+    stage.classList.toggle('zoomed', viewScale > 1);
+    if (viewScale <= 1 || !image.naturalWidth) {
+      image.style.width = '';
+      return;
+    }
     const style = getComputedStyle(stage);
     const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
     const height = stage.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-    const fit = image.naturalWidth * Math.min(1, width / image.naturalWidth, height / image.naturalHeight);
-    return Math.max(1, (width * 2.2) / fit);
+    const fit = Math.min(width, height * (image.naturalWidth / image.naturalHeight));
+    image.style.width = `${fit * viewScale}px`;
   }
+  const viewZoom = { level: () => viewScale, set: (level) => setViewZoom(level) };
 
   $('#crop-detect').addEventListener('click', () => {
     const quad = detect(page);

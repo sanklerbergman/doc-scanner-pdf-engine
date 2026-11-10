@@ -765,9 +765,10 @@ html:has(.viewer[open], .camera[open]) { overflow: hidden; }
   overflow: hidden; background: var(--surface-2); padding: 8px;
 }
 .viewer-image { max-width: 100%; max-height: 100%; display: block; cursor: zoom-in; box-shadow: var(--shadow), 0 0 0 1px var(--border); touch-action: pan-y pinch-zoom; }
-/* Ampliado: a imagem passa a ter 2,2× a largura da tela e a área rola nos dois sentidos. */
-.viewer-stage.zoomed { display: block; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-.viewer-stage.zoomed .viewer-image { max-width: none; max-height: none; width: 220%; cursor: zoom-out; touch-action: auto; }
+/* Ampliado: o JS dá a largura da imagem (viewer.js, sizeView) e a área rola nos dois sentidos. A margem automática
+   centraliza a imagem enquanto ela é menor que a área, sem cortar o começo quando passa dela. */
+.viewer-stage.zoomed { align-items: flex-start; justify-content: flex-start; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.viewer-stage.zoomed .viewer-image { flex: none; margin: auto; max-width: none; max-height: none; height: auto; cursor: zoom-out; touch-action: auto; }
 /* Altura fixa (duas linhas): trocar o texto não pode mexer no tamanho da foto no meio de um arrasto. */
 .viewer-hint { margin: 0; padding: 8px 16px 0; height: 3.8em; overflow: hidden; text-align: center; font-size: 0.875rem; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); }
 .viewer-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 8px 12px 14px; background: var(--surface); }
