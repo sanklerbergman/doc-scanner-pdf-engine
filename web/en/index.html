@@ -410,6 +410,8 @@
         <!-- Tarjas (js/viewer.js e js/redact.js): a página sem as tarjas, com as caixas por cima para editar. -->
         <div id="redact" class="redact" hidden>
           <img id="redact-image" alt="Page, to mark redactions">
+          <!-- Os textos da página no Trocar texto (#38): um botão por texto, só para o teclado; o toque vai pela área toda. -->
+          <div id="redact-targets" class="redact-targets" role="group" aria-label="Text on the page" hidden></div>
           <div id="redact-boxes" class="redact-boxes"></div>
           <div id="redact-preview" class="redact-box redact-preview" hidden></div>
         </div>
@@ -455,6 +457,8 @@
       <button id="viewer-crop" type="button" class="btn btn-primary"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-crop"/></svg> Crop</button>
       <button id="viewer-redact" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-redact"/></svg> Redact</button>
       <button id="viewer-edit" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-edit"/></svg> Edit</button>
+      <!-- Trocar texto (#38): abre o Tarjar com os textos da página contornados; tocar num deles troca o texto. -->
+      <button id="viewer-replace" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-text"/></svg> Replace text</button>
       <button id="viewer-fill" type="button" class="btn" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-form"/></svg> Fill in</button>
       <button id="viewer-copy" type="button" class="btn"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-copy"/></svg> Copy text</button>
     </div>
@@ -482,6 +486,7 @@
         </div>
         <button id="redact-adjust-open" type="button" class="btn" aria-expanded="false" aria-controls="redact-adjust">Adjust redaction</button>
       </div>
+      <button id="redact-replace" type="button" class="btn btn-ghost" aria-pressed="false">Replace text</button>
       <button id="redact-add" type="button" class="btn btn-ghost">New redaction</button>
       <button id="redact-undo" type="button" class="btn btn-ghost">Undo</button>
       <button id="redact-cancel" type="button" class="btn">Cancel</button>
@@ -635,7 +640,7 @@
   <footer class="site-footer">
     <div class="wrap">
       <p>Made by the community, for the community. Open source under the MIT license — <a data-repo-link href="#" rel="noopener noreferrer">contribute on GitHub</a>.</p>
-      <p class="version">Version <a data-release-link href="#" rel="noopener noreferrer">5.8.2</a></p>
+      <p class="version">Version <a data-release-link href="#" rel="noopener noreferrer">5.9.0</a></p>
       <p class="signature"><a href="https://sankler.com.br" rel="noopener noreferrer">by <picture><source srcset="../sankler-logo-reduzido-fundo-escuro.svg" media="(prefers-color-scheme: dark)"><img src="../sankler-logo-reduzido-fundo-claro.svg" alt="Sankler" width="114" height="18"></picture></a></p>
     </div>
   </footer>

@@ -9,6 +9,7 @@ import { LANG, LOCALE, t, plural } from './i18n.js';
 import { parseRanges } from './ranges.js';
 import { paintRedactions, rotateRedactions, toUnrotated, toRotatedRects, redactLayout, filterWords, textUnderRedactions } from './redact.js';
 import { findInPieces, padRect, TYPE_LABELS } from './find-data.js';
+import { textTargets, familyOf } from './replace-text.js';
 import { plainText, linesText, documentText, looksLikeForm } from './page-text.js';
 import { textWidth } from './fonts.js';
 import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex, stampCharacters } from './stamp.js';
@@ -1112,11 +1113,17 @@ const viewer = setupViewer({
     renderPages();
     const index = state.pages.indexOf(page) + 1;
     const also = copied ? ` ${plural(copied, 'A tarja repetida foi também para a outra página.', 'A tarja repetida foi também para {n} outras páginas.')}` : '';
+    // Página de PDF com tarja e o OCR desligado: sai como imagem, sem texto. O aviso vai na lista e na tela cheia.
+    const noText = pdfAsImage(page) && !els.ocr.checked
+      ? t('Esta página vai sair como imagem, sem texto. Para o texto continuar pesquisável, ligue o OCR nos ajustes.')
+      : '';
     announce(`${list.length
       ? plural(list.length, 'Página {page}: {n} tarja. O que está embaixo vai ser apagado do PDF.', 'Página {page}: {n} tarjas. O que está embaixo vai ser apagado do PDF.', { page: index })
-      : t('Página {page}: sem tarjas.', { page: index })}${also}`);
+      : t('Página {page}: sem tarjas.', { page: index })}${also}${noText ? ` ${noText}` : ''}`);
+    return noText;
   },
   copyText: pageText,
+  textTargets: pageTextTargets,
   canCopy: () => !state.busy, // gerando o PDF ou procurando dados, o OCR e as páginas estão em uso
   editBase,
   async saveEdits(page, list) {
@@ -1822,14 +1829,14 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     const hadText = !withText ? '' : plural(withText, 'Uma página de PDF já tinha texto e ficou como estava.', '{n} páginas de PDF já tinham texto e ficaram como estavam.');
     const locked = !password ? '' : plural(files.length, 'Ele só abre com a senha que você escolheu.', 'Eles só abrem com a senha que você escolheu.');
     const redacted = list.filter((page) => page.redactions?.length);
-    const rasterized = list.map((page, i) => (page.kind === 'pdf' && page.redactions?.length ? i + 1 : 0)).filter(Boolean);
+    const rasterized = list.map((page, i) => (pdfAsImage(page) ? i + 1 : 0)).filter(Boolean);
     // Com o OCR, a página tarjada que virou imagem ganha o texto reconhecido (sem o que estava sob as tarjas).
     const pagesText = rasterized.join(', ');
     const asImage = !rasterized.length ? '' : rasterized.length === 1
       ? (useOcr ? t('A página {pages}, de PDF, saiu como imagem: o texto vem do OCR, sem o que estava sob as tarjas.', { pages: pagesText })
-        : t('A página {pages}, de PDF, saiu como imagem: o texto dela não fica selecionável.', { pages: pagesText }))
+        : t('A página {pages}, de PDF, saiu como imagem: o texto dela não fica selecionável. Para ele continuar pesquisável, ligue "Texto pesquisável (OCR)" nos ajustes e gere de novo.', { pages: pagesText }))
       : (useOcr ? t('As páginas {pages}, de PDF, saíram como imagem: o texto vem do OCR, sem o que estava sob as tarjas.', { pages: pagesText })
-        : t('As páginas {pages}, de PDF, saíram como imagem: o texto delas não fica selecionável.', { pages: pagesText }));
+        : t('As páginas {pages}, de PDF, saíram como imagem: o texto delas não fica selecionável. Para ele continuar pesquisável, ligue "Texto pesquisável (OCR)" nos ajustes e gere de novo.', { pages: pagesText }));
     const covered = !redacted.length ? '' : t('Tarjas conferidas: não sobrou texto embaixo delas.');
     // O cartão mostra o que foi conferido de verdade, como carimbo, e os avisos; o leitor de tela ouve tudo uma vez só,
     // pela região de aviso (que fica escondida na tela com o sucesso: o cartão já diz).
@@ -2211,6 +2218,9 @@ function fieldShown(control) {
   return !control.closest('.field').hidden;
 }
 
+// Página de PDF que vai sair como imagem: a que tem tarja (o texto embaixo precisa sumir do arquivo).
+const pdfAsImage = (page) => page.kind === 'pdf' && !!page.redactions?.length;
+
 function updateSummaries() {
   const look = [
     fieldShown(els.filterAll) && t('Filtro: {value}', { value: chosen(els.filterAll) }),
@@ -2227,7 +2237,12 @@ function updateSummaries() {
   els.moreAllState.textContent = on.length ? on.join(', ') : t('Nada ligado');
 
   els.moreOcr.hidden = els.ocrField.hidden;
-  els.moreOcrState.textContent = els.ocr.checked ? t('Ligado') : t('Desligado');
+  // Página de PDF com tarja (ou texto trocado, #38) sai como imagem: sem o OCR, sem texto. O resumo avisa antes de gerar.
+  const asImage = state.pages.filter(pdfAsImage).length;
+  els.moreOcrState.textContent = els.ocr.checked ? t('Ligado')
+    : asImage ? plural(asImage, 'Desligado · {n} página com tarja sai sem texto', 'Desligado · {n} páginas com tarja saem sem texto')
+      : t('Desligado');
+  els.moreOcrState.classList.toggle('more-state-warn', !els.ocr.checked && asImage > 0);
 
   els.moreSecureState.textContent = [
     els.protect.checked ? t('Senha: ligada') : t('Senha: desligada'),
@@ -2622,35 +2637,9 @@ async function pageText(page, { signal, progress }) {
     if (!text) throw copyError(t('Esta página não tem texto.'));
     return text;
   }
-  const previous = copyDone;
-  let finish;
-  copyDone = new Promise((resolve) => { finish = resolve; });
-  let ocr = null;
-  const cancel = () => ocr?.cancel();
-  signal.addEventListener('abort', cancel);
-  const aborted = new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
-  const startEngine = async () => {
-    if (ocr) return ocr;
-    progress(t('Reconhecendo o texto desta página (na primeira vez, o app baixa uns 5 MB). Fechar a tela cancela.'));
-    // Um motor por vez na memória: espera o da cópia anterior (cancelada) desligar, mas não para sempre.
-    await Promise.race([previous, aborted, new Promise((resolve) => setTimeout(resolve, COPY_WAIT_MS))]);
-    if (signal.aborted) throw new Cancelled();
-    const { startOcr } = await loadOcr().catch(() => {
-      throw ocrError(t('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.'));
-    });
-    if (signal.aborted) throw new Cancelled();
-    ocr = await startOcr();
-    if (signal.aborted) throw new Cancelled();
-    return ocr;
-  };
-  try {
-    const { words, hasText } = await ensureOcr(page, startEngine).catch((err) => {
-      // PDF que o PDF.js não leu: o título da tela cheia já diz qual é a página, e o aviso curto cabe na dica.
-      if (err?.pdfPage) {
-        throw copyError(t('Não deu para ler esta página para reconhecer o texto. Confira a conexão e tente de novo.'));
-      }
-      throw err;
-    });
+  const message = t('Reconhecendo o texto desta página (na primeira vez, o app baixa uns 5 MB). Fechar a tela cancela.');
+  return withOcrEngine({ signal, progress, message }, async (startEngine) => {
+    const { words, hasText } = await readPageOcr(page, startEngine);
     // Página de PDF com texto (e sem tarja: a tarjada é sempre lida pelo OCR): o texto do próprio PDF.
     if (hasText && !page.redactions?.length) {
       const tools = await loadPdfTools();
@@ -2664,11 +2653,120 @@ async function pageText(page, { signal, progress }) {
     const text = plainText(words);
     if (!text) throw copyError(t('Não achei texto impresso nesta página.'));
     return text;
+  });
+}
+
+// O OCR da página (ensureOcr), com o aviso curto quando o PDF.js não leu a página.
+function readPageOcr(page, startEngine) {
+  return ensureOcr(page, startEngine).catch((err) => {
+    // PDF que o PDF.js não leu: o título da tela cheia já diz qual é a página, e o aviso curto cabe na dica.
+    if (err?.pdfPage) {
+      throw copyError(t('Não deu para ler esta página para reconhecer o texto. Confira a conexão e tente de novo.'));
+    }
+    throw err;
+  });
+}
+
+// Um motor do OCR para a tela cheia ("Copiar texto" e "Trocar texto"): liga só se run pedir (startEngine), um por vez
+// na memória, cancelado pelo signal (fechar a tela ou trocar de página) e desligado no fim, dê certo ou não.
+async function withOcrEngine({ signal, progress, message }, run) {
+  const previous = copyDone;
+  let finish;
+  copyDone = new Promise((resolve) => { finish = resolve; });
+  let ocr = null;
+  const cancel = () => ocr?.cancel();
+  signal.addEventListener('abort', cancel);
+  const aborted = new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+  const startEngine = async () => {
+    if (ocr) return ocr;
+    progress(message);
+    // Um motor por vez na memória: espera o da tarefa anterior (cancelada) desligar, mas não para sempre.
+    await Promise.race([previous, aborted, new Promise((resolve) => setTimeout(resolve, COPY_WAIT_MS))]);
+    if (signal.aborted) throw new Cancelled();
+    const { startOcr } = await loadOcr().catch(() => {
+      throw ocrError(t('Não deu para carregar o reconhecimento de texto. Confira a conexão e tente de novo.'));
+    });
+    if (signal.aborted) throw new Cancelled();
+    ocr = await startOcr();
+    if (signal.aborted) throw new Cancelled();
+    return ocr;
+  };
+  try {
+    return await run(startEngine);
   } finally {
     signal.removeEventListener('abort', cancel);
     ocr?.terminate(); // o motor ocupa centenas de MB: sai da memória no fim, dê certo ou não
     finish();
   }
+}
+
+// ---------- Trocar texto (tela cheia, #38) ----------
+// Os textos que já estão na página, como alvos de toque do Tarjar (replace-text.js), na página como aparece: PDF com
+// texto, pelo PDF.js; Word, pelo layout; foto e página escaneada, pelo OCR, que roda agora se precisar e fica guardado
+// para gerar o PDF. Com a letra do original (tamanho e família), menos na página de lado, em que o texto novo sai do
+// maior tamanho que cabe na tarja.
+
+/**
+ * @param {object} page
+ * @param {{signal: AbortSignal, progress: (message: string) => void}} options como em pageText
+ * @returns {Promise<Array<{text: string, x0: number, y0: number, x1: number, y1: number, size?: number, family?: string}>>}
+ */
+// Altura da caixa do OCR de um número ou de uma maiúscula, em tamanhos de letra: 0,72 na Helvetica, mas a caixa do OCR
+// é mais justa (medido com o app: com 0,72, o texto novo saía uns 10% menor que o vizinho).
+const CAP_HEIGHT = 0.66;
+
+async function pageTextTargets(page, { signal, progress }) {
+  const upright = (page.rotation ?? 0) % 180 === 0;
+  const finish = (pieces) => textTargets(upright ? pieces : pieces.map(({ size, ...piece }) => piece));
+  if (isDocument(page)) {
+    const { width, height, items } = page.layout;
+    const pieces = items.filter((item) => item.type === 'text').map((item) => {
+      const spaces = item.wordSpacing ? [...item.text].filter((char) => char === ' ').length * item.wordSpacing : 0;
+      const baseline = item.y - (item.rise ?? 0);
+      return {
+        str: item.text, x0: item.x / width, x1: (item.x + textWidth(item.text, item.font, item.size) + spaces) / width,
+        y0: (baseline - item.size * 0.85) / height, y1: (baseline + item.size * 0.25) / height,
+        size: item.size / height, family: familyOf(item.font),
+      };
+    });
+    return finish(toRotatedRects(pieces, page.rotation ?? 0));
+  }
+  if (page.kind === 'pdf') {
+    const tools = await loadPdfTools();
+    const { items } = await tools.pdfPageTextItems(page.doc, page.index).catch(() => {
+      throw copyError(t('Não deu para ler o texto desta página. Confira a conexão e tente de novo.'));
+    });
+    if (items.length) {
+      // Trecho inclinado (quad): a caixa reta passa da altura da letra, e o texto novo sai do maior tamanho que cabe.
+      const pieces = items.map((item) => ({
+        str: item.str, x0: item.x0, y0: item.y0, x1: item.x1, y1: item.y1, family: familyOf(item.family),
+        ...(item.quad ? {} : { size: item.y1 - item.y0 }),
+      }));
+      return finish(toRotatedRects(pieces, page.rotation ?? 0));
+    }
+  }
+  // Foto e página escaneada: as palavras do OCR, já na página como aparece. O tamanho da letra sai da altura das
+  // caixas das palavras da linha (a do meio, para uma palavra com perna, como "g", não puxar para cima): a caixa é
+  // justa, e número e maiúscula têm uns 0,66 da letra (CAP_HEIGHT). A altura da linha e a linha de base que o OCR dá
+  // erravam o tamanho em uns 30%, para menos e para mais. Na página torta, o maior tamanho que cabe na tarja.
+  const message = t('Reconhecendo o texto desta página para trocar (na primeira vez, o app baixa uns 5 MB). Fechar a tela cancela.');
+  return withOcrEngine({ signal, progress, message }, async (startEngine) => {
+    const { words } = await readPageOcr(page, startEngine);
+    const lines = [[]];
+    for (const word of words) {
+      lines.at(-1).push(word);
+      if (word.last) lines.push([]);
+    }
+    const pieces = lines.flatMap((list, line) => {
+      const heights = list.map((word) => word.y1 - word.y0).sort((a, b) => a - b);
+      const middle = heights[Math.floor(heights.length / 2)];
+      const size = list.some((word) => word.angle) || !(middle > 0) ? 0 : middle / CAP_HEIGHT;
+      return list.map((word) => ({
+        str: word.text, x0: word.x0, y0: word.y0, x1: word.x1, y1: word.y1, line, words: true, ...(size ? { size } : {}),
+      }));
+    });
+    return finish(pieces);
+  });
 }
 
 // ---------- Assinar com certificado digital (A1) ----------

@@ -265,7 +265,9 @@ export function allPagesText(settings, { position, total, size: page }) {
 // ---------- Substituir texto (tarja com texto por cima) ----------
 // A tarja (redact.js) pode levar um texto (rect.text): o que estava embaixo sai, a caixa é pintada e o texto novo vai
 // por cima dela, na cor que contrasta (preto na tarja branca, branco na preta). O texto fica do maior tamanho que cabe
-// na tarja, encostado à esquerda e no meio da altura. A conta não depende da unidade: pontos no PDF, pixels na tela.
+// na tarja, encostado à esquerda e no meio da altura. A tarja do Trocar texto (#38) leva o tamanho (size, em fração da
+// altura da página) e a família (family) da letra do original. A conta não depende da unidade: pontos no PDF, pixels
+// na tela.
 
 /** Cor do texto escrito por cima de uma tarja. */
 export const replacementColor = (rect) => (rect.color === 'white' ? '#000000' : '#ffffff');
@@ -281,15 +283,18 @@ export function replacementEdits(rects, page) {
   for (const rect of rects ?? []) {
     const text = String(rect.text ?? '').replace(/\s+$/, '');
     if (!text.trim()) continue;
-    const [bw, bh] = textBox(text, 'sans', 1);
+    const family = Object.hasOwn(FONTS, rect.family) ? rect.family : 'sans';
+    const [bw, bh] = textBox(text, family, 1);
     const w = (rect.x1 - rect.x0) * page.width;
     const h = (rect.y1 - rect.y0) * page.height;
-    const size = Math.min(w / bw, h / bh);
+    // Com o tamanho da letra do original (Trocar texto, #38): ele mesmo, ou menor se o texto novo não couber na
+    // largura. Sem ele, o maior que cabe na tarja.
+    const size = rect.size > 0 ? Math.min(w / bw, rect.size * page.height) : Math.min(w / bw, h / bh);
     if (!(size > 0)) continue;
     const y0 = rect.y0 + (h - size * bh) / 2 / page.height;
     out.push({
       type: 'text', x0: rect.x0, y0, x1: rect.x0 + (size * bw) / page.width, y1: y0 + (size * bh) / page.height,
-      text, family: 'sans', color: replacementColor(rect),
+      text, family, color: replacementColor(rect),
     });
   }
   return out;

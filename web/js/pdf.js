@@ -249,10 +249,13 @@ export function pageCovers(page) {
       ...rect,
       x0: (x + rect.x0 * w) / page.width, x1: (x + rect.x1 * w) / page.width,
       y0: (top + rect.y0 * h) / page.height, y1: (top + rect.y1 * h) / page.height,
+      // O tamanho da letra é fração da altura da imagem; na folha, da altura da folha.
+      ...(rect.size > 0 ? { size: (rect.size * h) / page.height } : {}),
     }));
   }
   const boxes = page.items.filter((item) => item.type === 'redaction').map((item) => ({
     ...(item.color ? { color: item.color } : {}), ...(item.text ? { text: item.text } : {}),
+    ...(item.size > 0 ? { size: item.size } : {}), ...(item.family ? { family: item.family } : {}),
     x0: item.x / page.width, x1: (item.x + item.w) / page.width, y0: item.y / page.height, y1: (item.y + item.h) / page.height,
   }));
   return toRotatedRects(boxes, page.rotation ?? 0);

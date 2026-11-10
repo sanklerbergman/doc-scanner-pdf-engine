@@ -69,6 +69,8 @@ main:has(#workspace:not([hidden])) .workspace { margin-top: 18px; }
   overflow-wrap: anywhere;
 }
 .more-state:empty { display: none; }
+/* Aviso no resumo (página de PDF com tarja e o OCR desligado: sai sem texto), na cor dos avisos do app. */
+.more-state.more-state-warn { color: var(--danger); font-weight: 600; }
 .more[open] > summary { border-bottom: 1px dashed var(--border); border-radius: var(--radius) var(--radius) 0 0; }
 /* O corpo usa a grade dos ajustes (.settings), sem o cartão dela: nada de cartão dentro de cartão. */
 .more > .more-body { margin: 0; padding: 12px 14px 14px; border: 0; border-radius: 0; background: none; box-shadow: none; }

@@ -7,6 +7,7 @@ import { normalizeRect } from './redact.js';
 import { replacementLayout, winAnsiText, droppedMessage } from './edit-text.js';
 import { followKeyboard } from './keyboard-panel.js';
 import { setupPageZoom, MAX as ZOOM_MAX } from './page-zoom.js';
+import { targetAt, replacementMark, fitMark } from './replace-text.js';
 import { nudgeControls, nudgeOf } from './edit-nudge.js';
 import { wordCount } from './page-text.js';
 import { t, plural } from './i18n.js';
@@ -58,7 +59,8 @@ const TAP = 6; // px da tela: menos que isso, no canto do recorte, é um toque (
  * @param {(page, delta: number) => {page, label: string} | null} deps.step página vizinha (delta -1 ou +1), ou null
  * @param {(page) => Promise<Blob>} deps.renderPlain página como vai sair no PDF, mas sem as tarjas (para editá-las)
  * @param {(page) => string} deps.redactHint texto de ajuda das tarjas para a página
- * @param {(page, list: object[]) => Promise<void>} deps.saveRedactions grava as tarjas e atualiza a miniatura
+ * @param {(page, list: object[]) => Promise<string | void>} deps.saveRedactions grava as tarjas e atualiza a miniatura;
+ *   devolve um aviso para a tela cheia (a página de PDF que vai sair como imagem, sem o OCR)
  * @param {(page, options: {signal: AbortSignal, progress: (message: string) => void}) => Promise<string>} deps.copyText
  *   texto da página, sem o que está sob as tarjas (o OCR roda na hora se precisar; signal cancela)
  * @param {(page) => boolean} deps.canCopy false enquanto o app gera o PDF
@@ -76,7 +78,7 @@ const TAP = 6; // px da tela: menos que isso, no canto do recorte, é um toque (
  */
 export function setupViewer({
   renderProcessed, canCrop, viewHint = () => null, renderOriginal, detect, applyCrop, step, renderPlain, redactHint,
-  saveRedactions, copyText, canCopy, editBase, saveEdits, onClose,
+  saveRedactions, copyText, canCopy, editBase, saveEdits, onClose, textTargets = null,
   canFill = () => false, fillBase, saveForm, fillText = async () => null, formHint = async () => null,
 }) {
   const dialog = $('#viewer');
@@ -118,6 +120,10 @@ export function setupViewer({
   const textInput = $('#redact-text');
   const textNote = $('#redact-text-note');
   const copyButton = $('#viewer-copy');
+  const replaceButton = $('#viewer-replace');
+  const redactReplace = $('#redact-replace');
+  const redactTargets = $('#redact-targets');
+  const textTitle = $('#redact-text-title');
   const editButton = $('#viewer-edit');
   const fillButton = $('#viewer-fill');
   const discard = $('#discard-dialog');
@@ -160,6 +166,7 @@ export function setupViewer({
   function nextToken() {
     copying?.abort();
     copying = null;
+    stopReplacing();
     return ++token;
   }
 
@@ -200,6 +207,7 @@ export function setupViewer({
     cropButton.hidden = !canCrop(page);
     fillButton.hidden = !canFill(page);
     copyButton.hidden = !canCopy(page) || !clipboardWorks();
+    replaceButton.hidden = !textTargets || !canCopy(page);
     updateNav(true);
     image.hidden = false;
     resetViewZoom();
@@ -472,7 +480,8 @@ export function setupViewer({
     redactAdjustOpen.focus();
   });
 
-  async function showRedact() {
+  // replace: abre direto no Trocar texto (o botão da visualização).
+  async function showRedact({ replace = false } = {}) {
     const mine = nextToken();
     setTitle(t('Tarjas: {label}', { label }), t('Tarjar'));
     updateNav(false);
@@ -504,7 +513,13 @@ export function setupViewer({
     });
     fitRedact();
     drawMarks();
-    redactAdd.focus();
+    redactReplace.hidden = !textTargets;
+    if (replace && textTargets) {
+      redactReplace.focus();
+      setReplacing(true);
+    } else {
+      redactAdd.focus();
+    }
   }
 
   // Com zoom 1, a área das tarjas tem exatamente o tamanho da página na tela, como a do recorte; o zoom
@@ -566,6 +581,7 @@ export function setupViewer({
       return box;
     }));
     redactUndo.disabled = !marks.length;
+    if (replacing) drawTargets();
     showOptions();
     if (focus >= 0) redactBoxes.children[focus]?.focus();
   }
@@ -663,7 +679,14 @@ export function setupViewer({
     const rect = normalizeRect({ x0: drawing.x, y0: drawing.y, x1: x, y1: y, ...newColor() });
     drawing = null;
     redactPreview.hidden = true;
-    if (!rect) return; // toque fora das tarjas, sem arrastar: nada
+    if (!rect) {
+      // Toque fora das tarjas, sem arrastar: no Trocar texto, troca o texto tocado; fora dele, nada.
+      if (!replacing || !targets) return;
+      const target = targetAt(visibleTargets(), x, y, redactPage());
+      if (target) replaceTarget(target);
+      else hint.textContent = t('Toque ou clique em cima de um dos textos contornados em azul.');
+      return;
+    }
     marks.push(rect);
     current = marks.length - 1;
     drawMarks();
@@ -756,24 +779,41 @@ export function setupViewer({
   }
 
   // Escrever por cima: o painel abre com o texto da tarja selecionada.
+  // A tarja do Trocar texto (com o tamanho da letra do original) tem outro título e outra explicação.
+  const isSwap = (mark) => mark?.size > 0;
+  const textNoteFor = (mark) => (isSwap(mark)
+    ? t('O texto original sai do PDF, e este vai no lugar, com a letra do mesmo tamanho. Se ele for mais comprido, a tarja cresce para a direita.')
+    : t('O que está embaixo da tarja é apagado do PDF, e este texto vai no lugar, do maior tamanho que cabe nela. Para a letra ficar menor, deixe a tarja mais baixa.'));
   function openTextPanel() {
     const mark = marks[current];
     if (!mark) return;
     toggleAdjust(false);
     textInput.value = mark.text ?? '';
-    textNote.textContent = t('O que está embaixo da tarja é apagado do PDF, e este texto vai no lugar, do maior tamanho que cabe nela. Para a letra ficar menor, deixe a tarja mais baixa.');
+    textTitle.textContent = isSwap(mark) ? t('Trocar o texto') : t('Texto por cima da tarja');
+    textNote.textContent = textNoteFor(mark);
     textPanel.hidden = false;
     stopKeyboard?.();
     stopKeyboard = followKeyboard(textPanel);
     textInput.focus();
+    if (fresh >= 0) textInput.select(); // troca recém-tocada: o que a pessoa digitar substitui o original
   }
 
   // focus: devolve o foco à tarja (fechar pelo Cancelar ou pelo "Pôr na tarja").
+  // A troca recém-tocada (fresh) que fecha sem "Pôr na tarja" (Cancelar, Esc, sair) é desfeita: a tarja some.
   function closeTextPanel(focus = true) {
     if (textPanel.hidden) return;
     textPanel.hidden = true;
     stopKeyboard?.();
     stopKeyboard = null;
+    if (fresh >= 0) {
+      marks.splice(fresh, 1);
+      fresh = -1;
+      current = marks.length - 1;
+      drawMarks();
+      hint.textContent = t('Troca cancelada: o texto original continua.');
+      if (focus) (redactTargets.querySelector('.redact-target') ?? redactReplace).focus();
+      return;
+    }
     if (focus) (redactBoxes.children[current] ?? redactAdd).focus();
   }
 
@@ -784,11 +824,20 @@ export function setupViewer({
     const clean = text.replace(/\s+$/, '');
     if (clean.trim()) mark.text = clean;
     else delete mark.text;
+    // Troca com texto mais comprido: a tarja cresce para a direita, e a letra fica do tamanho do original.
+    const { mark: fitted, grew } = fitMark(mark, redactPage());
+    marks[current] = fitted;
+    const swapped = fresh >= 0 && !!mark.text;
+    fresh = -1;
     closeTextPanel(false);
     drawMarks(current);
     const note = droppedMessage(dropped);
-    hint.textContent = (mark.text ? t('Texto posto na tarja {n}.', { n: current + 1 }) : t('Texto tirado da tarja {n}.', { n: current + 1 }))
-      + (note ? ` ${note}` : '');
+    // A dica tem duas linhas no celular: a da troca é curta, e a da tarja que cresceu toma o lugar dela.
+    const done = grew
+      ? t('Texto trocado. A tarja cresceu para ele caber: confira se ela não cobre nada ao lado.')
+      : swapped ? t('Texto trocado. Toque em outro texto, ou use "Aplicar tarjas".')
+        : mark.text ? t('Texto posto na tarja {n}.', { n: current + 1 }) : t('Texto tirado da tarja {n}.', { n: current + 1 });
+    hint.textContent = done + (note ? ` ${note}` : '');
   }
 
   redactWrite.addEventListener('click', openTextPanel);
@@ -796,23 +845,133 @@ export function setupViewer({
   $('#redact-text-clear').addEventListener('click', () => setMarkText(''));
   $('#redact-text-cancel').addEventListener('click', () => closeTextPanel());
   textInput.addEventListener('input', () => {
-    textNote.textContent = droppedMessage(winAnsiText(textInput.value).dropped)
-      || t('O que está embaixo da tarja é apagado do PDF, e este texto vai no lugar, do maior tamanho que cabe nela. Para a letra ficar menor, deixe a tarja mais baixa.');
+    textNote.textContent = droppedMessage(winAnsiText(textInput.value).dropped) || textNoteFor(marks[current]);
   });
+
+  // ---------- Trocar texto (#38) ----------
+  // Os textos da página (textTargets, em app.js) ficam contornados por cima da página do Tarjar. Tocar num deles cria
+  // uma tarja branca do tamanho dele, com o texto original por cima (replace-text.js), e abre o painel para corrigir.
+  // Pelo teclado, cada texto é um botão. Os textos são lidos uma vez por visita ao Tarjar (no OCR, leva segundos).
+
+  let replacing = false;
+  let targets = null; // os textos da página, depois de lidos
+  let targetsJob = null; // AbortController da leitura em andamento
+  let fresh = -1; // a tarja que a troca acabou de criar, enquanto o painel está aberto
+
+  function stopReplacing() {
+    targetsJob?.abort();
+    targetsJob = null;
+    replacing = false;
+    targets = null;
+    fresh = -1;
+    redact.classList.remove('replacing');
+    redactReplace.setAttribute('aria-pressed', 'false');
+    redactTargets.hidden = true;
+    redactTargets.replaceChildren();
+  }
+
+  // Os textos que ainda não estão sob uma tarja (o trocado some da lista; tirar a tarja traz ele de volta).
+  const covered = (target) => marks.some((mark) => {
+    const x = (target.x0 + target.x1) / 2;
+    const y = (target.y0 + target.y1) / 2;
+    return x > mark.x0 && x < mark.x1 && y > mark.y0 && y < mark.y1;
+  });
+  const visibleTargets = () => (targets ?? []).filter((target) => !covered(target));
+
+  function drawTargets() {
+    redactTargets.replaceChildren(...visibleTargets().map((target) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'redact-target';
+      button.textContent = target.text;
+      button.setAttribute('aria-label', t('Trocar "{text}"', { text: target.text }));
+      button.targetData = target;
+      place(button, target);
+      return button;
+    }));
+  }
+
+  async function setReplacing(on) {
+    replacing = on;
+    redactReplace.setAttribute('aria-pressed', String(on));
+    redact.classList.toggle('replacing', on);
+    redactTargets.hidden = !on;
+    if (!on) {
+      hint.textContent = redactHint(page);
+      return;
+    }
+    if (!targets) {
+      if (targetsJob) return; // já está lendo: ao terminar, os textos aparecem
+      const mine = token;
+      const job = new AbortController();
+      targetsJob = job;
+      hint.textContent = t('Procurando os textos da página…');
+      const say = (message) => {
+        if (mine === token && replacing) hint.textContent = message;
+      };
+      let found;
+      try {
+        found = await textTargets(page, { signal: job.signal, progress: say });
+      } catch (err) {
+        if (job.signal.aborted || mine !== token) return;
+        targetsJob = null;
+        const known = ['CopyError', 'OcrError'].includes(err?.name);
+        if (!known) console.error(err);
+        setReplacing(false);
+        hint.textContent = known ? err.message : t('Não deu para ler os textos desta página.');
+        return;
+      }
+      if (job.signal.aborted || mine !== token) return;
+      targetsJob = null;
+      targets = found;
+    }
+    if (!replacing) return;
+    drawTargets();
+    hint.textContent = visibleTargets().length
+      ? t('Toque ou clique no texto que quer trocar. Os textos da página estão contornados em azul.')
+      : t('Não achei texto nesta página para trocar.');
+  }
+
+  function replaceTarget(target) {
+    marks.push(replacementMark(target, redactPage()));
+    current = marks.length - 1;
+    fresh = current;
+    drawMarks(current);
+    openTextPanel();
+  }
+
+  // No mouse, o texto sob o ponteiro ganha o destaque antes do clique.
+  redact.addEventListener('pointermove', (event) => {
+    if (!replacing || !targets || event.pointerType === 'touch' || drawing || dragging) return;
+    const { x, y } = pointIn(event);
+    const over = event.target.closest('.redact-box') ? null : targetAt(visibleTargets(), x, y, redactPage());
+    for (const button of redactTargets.children) button.classList.toggle('hover', button.targetData === over);
+  });
+  redact.addEventListener('pointerleave', () => {
+    for (const button of redactTargets.children) button.classList.remove('hover');
+  });
+  redactReplace.addEventListener('click', () => setReplacing(!replacing));
+  // Só o teclado chega aqui (os botões não recebem o toque nem o mouse, que vão pela área toda).
+  redactTargets.addEventListener('click', (event) => {
+    const button = event.target.closest('.redact-target');
+    if (button?.targetData) replaceTarget(button.targetData);
+  });
+  replaceButton.addEventListener('click', () => showRedact({ replace: true }));
 
   const redactDirty = () => !redact.hidden && JSON.stringify(marks) !== JSON.stringify(page?.redactions ?? []);
   $('#redact-cancel').addEventListener('click', () => leaveIfSure(showView));
   redactApply.addEventListener('click', async () => {
     redactApply.disabled = true;
     hint.textContent = t('Aplicando as tarjas…');
+    let note = '';
     try {
-      await saveRedactions(page, marks.map((mark) => ({ ...mark })));
+      note = await saveRedactions(page, marks.map((mark) => ({ ...mark })));
     } finally {
       redactApply.disabled = false;
     }
-    showView();
+    showView(note || ''); // o aviso da página que sai como imagem (saveRedactions), no lugar da dica de sempre
   });
-  $('#viewer-redact').addEventListener('click', showRedact);
+  $('#viewer-redact').addEventListener('click', () => showRedact());
   new ResizeObserver(() => requestAnimationFrame(fitRedact)).observe(stage);
 
   // ---------- Editar ----------
