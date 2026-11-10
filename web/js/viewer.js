@@ -1040,10 +1040,11 @@ export function setupViewer({
     placeSteps();
     zoom.refresh(); // a versão nítida tem outro tamanho: o número do zoom acompanha
   });
+  // Pela caixa inteira (border-box): a barra de rolagem que aparece ou some com o zoom não conta como mudança de tamanho.
   new ResizeObserver(() => requestAnimationFrame(() => {
     sizeView();
     placeSteps();
-  })).observe(stage);
+  })).observe(stage, { box: 'border-box' });
 
   // Na primeira e na última página, a seta que não leva a lugar nenhum some; no recorte, as duas.
   function updateNav(enabled) {
@@ -1127,9 +1128,11 @@ export function setupViewer({
       image.style.width = '';
       return;
     }
+    // A medida da área vai sem as barras de rolagem (offsetWidth, a caixa inteira): com o clientWidth, a barra que
+    // aparece encolhia a imagem, a barra sumia, a imagem crescia de novo, e a página tremia sem parar em 400%.
     const style = getComputedStyle(stage);
-    const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    const height = stage.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    const width = stage.offsetWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const height = stage.offsetHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
     const fit = Math.min(width, height * (image.naturalWidth / image.naturalHeight));
     image.style.width = `${fit * viewScale}px`;
   }
