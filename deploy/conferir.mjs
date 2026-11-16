@@ -1,7 +1,9 @@
 // Confere o site no ar depois do deploy: cada arquivo de web/ tem que chegar byte a byte igual ao do repositório
-// (nada injetado pelo caminho, como script de analytics ou de verificação de robô) e com a CSP certa.
+// (nada injetado pelo caminho, como script de analytics ou de verificação de robô) e com a CSP certa;
+// o HTTP redireciona para o HTTPS e o TLS 1.0 e 1.1 são recusados.
 // Uso: node conferir.mjs [endereço]
 import { readFile, readdir } from 'node:fs/promises';
+import { connect } from 'node:tls';
 import { relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -45,10 +47,55 @@ async function check(file) {
   return null;
 }
 
+// O HTTP tem que responder 301 para o mesmo endereço em HTTPS (Always Use HTTPS no Cloudflare, #39).
+async function checkHttpRedirect() {
+  const url = new URL(BASE);
+  if (url.protocol !== 'https:') return null;
+  const http = new URL(url);
+  http.protocol = 'http:';
+  const response = await fetch(http, { cache: 'no-store', redirect: 'manual' });
+  const location = response.headers.get('location');
+  if (response.status !== 301 || location !== url.href) {
+    return `${http.href}: esperava 301 para ${url.href}, veio ${response.status} ${location ?? ''}`.trim();
+  }
+  return null;
+}
+
+// TLS mínimo 1.2 (#39): o servidor tem que recusar o 1.0 e o 1.1 com o alerta protocol_version e aceitar o 1.2.
+// Só esse alerta conta como recusa; qualquer outro erro (ex.: o OpenSSL local sem TLS antigo) faz a conferência falhar.
+function tryTls(version) {
+  const { hostname, port } = new URL(BASE);
+  return new Promise((resolve) => {
+    const socket = connect({
+      host: hostname, port: Number(port) || 443, servername: hostname,
+      minVersion: version, maxVersion: version, ciphers: 'DEFAULT@SECLEVEL=0', timeout: 10000,
+    }, () => {
+      resolve('aceito');
+      socket.end();
+    });
+    socket.on('timeout', () => socket.destroy(new Error('tempo esgotado')));
+    socket.on('error', (err) => resolve(err.code === 'ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION' ? 'recusado' : `erro ${err.code ?? err.message}`));
+  });
+}
+
+async function checkTls() {
+  if (new URL(BASE).protocol !== 'https:') return null;
+  const problems = [];
+  for (const [version, expected] of [['TLSv1', 'recusado'], ['TLSv1.1', 'recusado'], ['TLSv1.2', 'aceito']]) {
+    const result = await tryTls(version);
+    if (result !== expected) problems.push(`${version}: esperava ${expected}, veio ${result}`);
+  }
+  return problems.length ? problems.join('; ') : null;
+}
+
 for (let attempt = 1; ; attempt++) {
-  const problems = (await Promise.all(files.map((file) => check(file).catch((err) => `${file}: ${err.message}`)))).filter(Boolean);
+  const problems = (await Promise.all([
+    ...files.map((file) => check(file).catch((err) => `${file}: ${err.message}`)),
+    checkHttpRedirect().catch((err) => `redirecionamento do HTTP: ${err.message}`),
+    checkTls().catch((err) => `TLS: ${err.message}`),
+  ])).filter(Boolean);
   if (!problems.length) {
-    console.log(`${files.length} arquivos no ar iguais aos do repositório, com os cabeçalhos de segurança.`);
+    console.log(`${files.length} arquivos no ar iguais aos do repositório, com os cabeçalhos de segurança; HTTP com 301 para HTTPS e TLS mínimo 1.2.`);
     break;
   }
   if (attempt === TRIES) {
