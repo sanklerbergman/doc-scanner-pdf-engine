@@ -63,3 +63,15 @@ Cada uma vira issue quando houver pedido ou decisão do dono.
 - Rubricar um PDF assinado mantendo a assinatura (anotação numa atualização incremental, com a permissão do autor)
 - Formulário que continua editável depois de preenchido; preencher mantendo a assinatura de outra pessoa (`DocMDP` 2, atualização incremental)
 - Carimbo da assinatura no lugar do campo de assinatura vazio do formulário
+
+### Da comparação com os grandes do mercado (2026-11-16)
+
+O que foi escolhido virou as issues #41, #42 e #43. Ficaram como ideia:
+
+- **RG e CNH: frente e verso numa folha só.** Duas fotos lado a lado num A4, no tamanho real do cartão (85,6 × 54 mm). É o caso mais comum de quem usa no celular; hoje sai uma página por lado, no tamanho errado. Referência: Adobe Scan (ID Card), CamScanner, Microsoft Lens
+- **Captura automática na câmera.** Com o papel parado, um anel conta e a foto sai sozinha (escolha Auto/Manual). A câmera já diz "Papel encontrado"; falta disparar. Ajuda no lote, com a outra mão virando a página. Referência: Adobe Scan, scanner das Notas do iPhone, Genius Scan
+- **Entrada pela tarefa.** Com a lista vazia, botões "Juntar PDFs · Dividir · Comprimir · Assinar · Tarjar · Preencher" que já deixam os ajustes no jeito; hoje essas funções ficam recolhidas nos ajustes. Referência: página inicial do iLovePDF e do Acrobat online
+- **Filtros em miniatura de prévia** (Original, Documento, Cinza, P&B) na própria página, no lugar da lista de nomes em "Aparência". Referência: Microsoft Lens, scanner do iPhone
+- **Borracha de manchas.** Pintar de branco sombra de dedo, grampo ou mancha na foto. Referência: Google Drive (Limpar), Adobe Scan (Clean up)
+
+Descartadas por regra do projeto: assinatura e rubrica salvas entre visitas (nada fica guardado), nuvem e compartilhamento por link (precisam de rede), tradução e resumo por IA (rede ou modelo pesado demais).
