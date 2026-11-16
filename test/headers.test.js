@@ -28,7 +28,10 @@ const metaCsp = readFileSync(new URL('../web/index.html', import.meta.url), 'utf
 test('todo arquivo sai com os cabeçalhos de segurança', () => {
   const all = rules.get('/*');
   assert.ok(all, 'falta a regra /*');
-  assert.match(all.headers.get('strict-transport-security'), /^max-age=\d{8,}/);
+  assert.match(all.headers.get('strict-transport-security'), /^max-age=\d{8,}; includeSubDomains$/);
+  // Sem "preload": a lista só aceita o domínio raiz e amarraria a zona inteira (#40).
+  assert.doesNotMatch(all.headers.get('strict-transport-security'), /preload/i);
+  assert.equal(all.headers.get('x-permitted-cross-domain-policies'), 'none');
   assert.equal(all.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(all.headers.get('x-frame-options'), 'DENY');
   assert.equal(all.headers.get('referrer-policy'), 'no-referrer');

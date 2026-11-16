@@ -1,14 +1,16 @@
 # Cabeçalhos de segurança, enviados pelo Cloudflare junto com cada arquivo (este arquivo não é publicado).
 # Não afrouxe nenhuma política daqui (ver SECURITY.md). O teste test/headers.test.js confere as regras.
 
-# Todo arquivo: só HTTPS, sem adivinhar tipo, sem enviar endereço de origem, nunca dentro de iframe,
-# câmera só para o próprio site. A CSP não fica aqui: o Cloudflare junta os valores de regras que casam com o mesmo
+# Todo arquivo: só HTTPS (também nos subdomínios, que não existem abaixo de scanner; sem "preload", que amarraria
+# a zona inteira), sem adivinhar tipo, sem enviar endereço de origem, nunca dentro de iframe, nenhuma política
+# de domínio cruzado para clientes Adobe, câmera só para o próprio site. A CSP não fica aqui: o Cloudflare junta os valores de regras que casam com o mesmo
 # caminho, e o "! Content-Security-Policy" não funcionou no "/" em produção. Por isso cada CSP fica só no seu caminho.
 /*
-  Strict-Transport-Security: max-age=31536000
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   X-Frame-Options: DENY
+  X-Permitted-Cross-Domain-Policies: none
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
   Permissions-Policy: camera=(self), microphone=(), geolocation=(), display-capture=(), payment=(), usb=()
