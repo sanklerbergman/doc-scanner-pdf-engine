@@ -75,3 +75,12 @@ O que foi escolhido virou as issues #41, #42 e #43. Ficaram como ideia:
 - **Borracha de manchas.** Pintar de branco sombra de dedo, grampo ou mancha na foto. Referência: Google Drive (Limpar), Adobe Scan (Clean up)
 
 Descartadas por regra do projeto: assinatura e rubrica salvas entre visitas (nada fica guardado), nuvem e compartilhamento por link (precisam de rede), tradução e resumo por IA (rede ou modelo pesado demais).
+
+### Da pesquisa das maiores dores de quem usa (2026-11-16)
+
+O que foi escolhido virou as issues #44 a #49, e o nome seguro para sistema entrou na #43. Ficaram como ideia:
+
+- **"Para onde vai?"** Escolher o destino (PJe, Meu INSS, edital, e-mail) e o app já deixa o limite de tamanho (#42), o PDF/A e o nome seguro no jeito. O limite do PJe muda por tribunal (1,5, 3 ou 10 MB), então o destino traz o mais comum e a pessoa ajusta. Referência: guias do TRT-2, TRT-11, TRT-12, TRT-15 e do TJPE
+- **Um arquivo por tipo de documento.** O PJe pede que petição, procuração e documentos pessoais não vão no mesmo PDF (TRT-11). Marcar onde começa cada documento na lista e gerar um arquivo por trecho, já com o nome de cada um
+
+Já resolvido, e vale dizer na primeira tela como prova: sem marca d'água, sem limite por dia e sem cadastro (a queixa nº 1 do CamScanner e o limite do Smallpdf); nada sobe para servidor (iLovePDF e Smallpdf processam no servidor); site, não app de loja que some (o Microsoft Lens foi aposentado em fevereiro de 2026); o PDF assinado no gov.br continua valendo quando é só juntado ou assinado de novo, sem reescrever.
