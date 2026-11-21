@@ -10,7 +10,7 @@ export const SAFE_MAX = 50;
 // todos os outros (boleto, nota, extrato).
 export const TYPES = [
   { pt: 'rg', en: 'id-card', words: ['REGISTRO GERAL', 'CARTEIRA DE IDENTIDADE'] },
-  { pt: 'cnh', en: 'driver-license', words: ['CARTEIRA NACIONAL DE HABILITA'] },
+  { pt: 'cnh', en: 'driver-license', words: ['CARTEIRA NACIONAL DE H', 'PERMISSAO PARA DIRIGIR'] },
   { pt: 'contracheque', en: 'payslip', words: ['CONTRACHEQUE', 'HOLERITE', 'DEMONSTRATIVO DE PAGAMENTO'] },
   { pt: 'nota-fiscal', en: 'invoice', words: ['NOTA FISCAL', 'DANFE'] },
   { pt: 'boleto', en: 'bank-slip', words: ['BOLETO'] },
@@ -20,7 +20,7 @@ export const TYPES = [
   { pt: 'certidao', en: 'certificate', words: ['CERTIDAO'] },
   { pt: 'contrato', en: 'contract', words: ['CONTRATO'] },
   { pt: 'declaracao', en: 'declaration', words: ['DECLARAÇAO'] },
-  { pt: 'recibo', en: 'receipt', words: ['RECIBO'] },
+  { pt: 'recibo', en: 'receipt', words: ['RECIBO', 'RECEBI DE', 'RECEBEMOS DE', 'A QUANTIA DE', 'A IMPORTANCIA DE'] },
   { pt: 'curriculo', en: 'resume', words: ['CURRICULO'] },
   { pt: 'comprovante', en: 'proof', words: ['COMPROVANTE'] },
 ];
@@ -31,23 +31,52 @@ const unaccent = (text) => text.normalize('NFD').replace(/\p{M}+/gu, '');
 // Cada palavra casa no começo de uma palavra do texto ("CONTRATOS" casa, "SUBCONTRATO" não); entre as palavras de
 // uma expressão, qualquer espaço ou quebra de linha. O OCR em inglês (página /en/) lê o "Ç" como "G"
 // ("HABILITAGAO", "DECLARAGAO"): na tabela, "Ç" aceita o C e as leituras erradas dele; a CNH casa só até
-// "HABILITA", o que já basta depois de "CARTEIRA NACIONAL DE".
+// o "H", o que já basta depois de "CARTEIRA NACIONAL DE" (#50: foto ruim lê "H/" e "HARILITACA"). Expressão que termina em "DE" exige a palavra inteira:
+// "RECEBI DEZ" e "A QUANTIA DEVIDA" não casam.
 const MISREAD_C = '[CG¢Q(]';
-const PATTERNS = TYPES.map((type) => ({
+const wordPattern = (words) => `(?<![\\p{L}\\p{N}])${words.split(' ').join('\\s+').replaceAll('Ç', MISREAD_C)}${words.endsWith(' DE') ? '(?![\\p{L}\\p{N}])' : ''}`;
+const PATTERNS = TYPES.map((type) => ({ type, re: new RegExp(type.words.map(wordPattern).join('|'), 'u') }));
+
+// Uma letra errada no título (#50): só palavra-chave de uma palavra e com 6 letras ou mais.
+const TOLERANT_MIN = 6;
+const TOLERANT = TYPES.map((type) => ({
   type,
-  re: new RegExp(type.words.map((words) => `(?<![\\p{L}\\p{N}])${words.split(' ').join('\\s+').replaceAll('Ç', MISREAD_C)}`).join('|'), 'u'),
-}));
+  keys: type.words.filter((words) => !words.includes(' ') && words.length >= TOLERANT_MIN).map((words) => words.replaceAll('Ç', 'C')),
+})).filter(({ keys }) => keys.length);
+
+// Palavras de verdade a uma letra de uma chave: nunca casam pela tolerância.
+const NOT_A_TYPE = new Set([
+  'BOLETIM', 'RECEBIDO', 'RECEITA', 'CONTRATE', 'EXTRAIDO', 'CERTIFICADO', 'DECLARA', 'PROCURADOR', 'PROCURAR', 'HABILITADO', 'CURRICULAR',
+  'RECEBO', 'RECIBA', 'RECIBE', 'RECITO', 'CONTRATA', 'CONTATO', 'CONTRAIO', 'CONTRITO', 'CONTRASTO', 'FARTURA', 'FATURE', 'FATURO', 'FATUA',
+  'BOLETA', 'BOLERO', 'EXTRATA', 'EXTRAIO', 'CURRICULA',
+]);
+
+// Uma letra trocada, faltando ou sobrando: tirado o começo e o fim iguais, sobra no máximo uma letra de cada lado.
+function oneEdit(a, b) {
+  if (Math.abs(a.length - b.length) > 1 || a === b) return false;
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start += 1;
+  let end = 0;
+  while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end += 1;
+  return Math.max(a.length, b.length) - start - end === 1;
+}
+
+const nearKey = (word, key) => word.startsWith(key.slice(0, 2)) && oneEdit(word, key);
 
 /**
- * O tipo do documento pelo texto, sem diferença de acento e maiúscula.
+ * O tipo do documento pelo texto, sem diferença de acento e maiúscula. Um tipo que casa exato ganha de um que casa só
+ * com uma letra errada, mesmo mais abaixo na tabela.
  * @param {string} text
  * @returns {{pt: string, en: string} | null}
  */
 export function documentType(text) {
   if (!text) return null;
   const upper = unaccent(text).toUpperCase();
-  const found = PATTERNS.find(({ re }) => re.test(upper));
-  return found ? { pt: found.type.pt, en: found.type.en } : null;
+  const exact = PATTERNS.find(({ re }) => re.test(upper));
+  if (exact) return { pt: exact.type.pt, en: exact.type.en };
+  const read = [...new Set(upper.match(/[\p{L}\p{N}]+/gu) ?? [])].filter((word) => !NOT_A_TYPE.has(word));
+  const near = TOLERANT.find(({ keys }) => keys.some((key) => read.some((word) => nearKey(word, key))));
+  return near ? { pt: near.type.pt, en: near.type.en } : null;
 }
 
 /**

@@ -63,6 +63,68 @@ test('tipo: o fim da palavra mal lido pelo OCR em inglês (Ç virou G) ainda cas
   assert.equal(documentType('HABILITADO a dirigir'), null);
 });
 
+test('tipo tolerante: recibo pelas outras expressões, sem passar na frente da tabela', () => {
+  for (const text of ['Recebi de Maria', 'RECEBEMOS DE João', 'a quantia de R$ 50,00', 'A importância de R$ 100', 'A IMPORTANCIA\nDE R$ 100']) {
+    assert.equal(documentType(text)?.pt, 'recibo', text);
+  }
+  assert.equal(documentType('Recebi dez reais'), null);
+  assert.equal(documentType('a quantia devida'), null);
+  assert.equal(documentType('Contrato ... a quantia de R$ 10')?.pt, 'contrato');
+  assert.equal(documentType('Declaração ... recebi de Maria')?.pt, 'declaracao');
+});
+
+test('tipo tolerante: CNH pelas outras expressões; HABILITA ou HABILITADO sozinhos não', () => {
+  for (const text of ['PERMISSÃO PARA DIRIGIR', 'permissao\npara  dirigir', 'CARTEIRA NACIONAL\nDE HAB1LITAÇÃO', 'CARTEIRA NACIONAL DE HABILITAÇÃO']) {
+    assert.equal(documentType(text)?.pt, 'cnh', text);
+  }
+  for (const text of ['HABILITA', 'HABILITADO', 'CARTEIRA NACIONAL DE TRABALHO']) assert.equal(documentType(text), null, text);
+  assert.equal(documentType('Profissional habilitado conforme contrato')?.pt, 'contrato');
+});
+
+test('tipo tolerante: textos reais do OCR do app nas fotos do QA (#50)', () => {
+  assert.equal(documentType('Recebi de Fulano a quantia de R$ 100,00\nreferente a serviços prestados.\nNOME: FULANO DE TAL DA SILVA')?.pt, 'recibo');
+  assert.equal(documentType('REPUBLICA FEDERATIVA DO ERAS\nCARTEIRA NACIONAL DE H/\nDEPARTAMENTO DE TRÂNSITO\nNOVE: FULANO DE TAL DA')?.pt, 'cnh');
+  assert.equal(documentType('REPUBLICA FEDERATIVA DO BRAS.\nCARTEIRA NACIONAL DE HARILITACA\nDEPARTAMENTO DE TRANSITO\nNOME: FULANO DE TAL DA')?.pt, 'cnh');
+});
+
+test('tipo tolerante: uma letra trocada, faltando ou sobrando no título', () => {
+  for (const [text, pt] of [['RECIB0 N° 12', 'recibo'], ['REClBO', 'recibo'], ['RECJBO', 'recibo'], ['RECIBOO', 'recibo'], ['RECBO', 'recibo'],
+    ['BOLET0', 'boleto'], ['FATUR4', 'fatura'], ['EXTRAT0', 'extrato'], ['CONTRAT0 de locação', 'contrato'],
+    ['CERTIDA0', 'certidao'], ['PROCURACA0', 'procuracao'], ['DECLARACA0', 'declaracao'], ['CURRICUL0', 'curriculo'],
+    ['HOLER1TE', 'contracheque'], ['CONTRACHEQU3', 'contracheque'], ['COMPROVANT3', 'comprovante']]) {
+    assert.equal(documentType(text)?.pt, pt, text);
+  }
+});
+
+test('tipo tolerante: fora do limite não casa', () => {
+  for (const text of ['RXCIBO', 'R3CIBO', 'RECIB00', 'REC1B0', 'SUBRECIB0', 'RECIB0XY', 'DANF3', 'NOTA F1SCAL', 'REGISTRO GERA1']) {
+    assert.equal(documentType(text), null, text);
+  }
+});
+
+test('tipo tolerante: palavra de verdade perto de uma chave fica sem tipo', () => {
+  for (const word of ['BOLETIM', 'RECEBIDO', 'RECEITA', 'CONTRATE', 'EXTRAIDO', 'CERTIFICADO', 'DECLARA', 'PROCURADOR', 'PROCURAR', 'HABILITADO', 'CURRICULAR',
+    'RECEBO', 'RECIBA', 'RECIBE', 'RECITO', 'CONTRATA', 'CONTATO', 'CONTRAIO', 'CONTRITO', 'CONTRASTO', 'FARTURA', 'FATURE', 'FATURO', 'FATUA',
+    'BOLETA', 'BOLERO', 'EXTRATA', 'EXTRAIO', 'CURRICULA']) {
+    assert.equal(documentType(word), null, word);
+    assert.equal(documentType(word.toLowerCase()), null, word);
+  }
+  assert.equal(documentType('Boletim escolar'), null);
+  assert.equal(documentType('Contrate já'), null);
+  assert.equal(documentType('Certificado de conclusão'), null);
+  assert.equal(documentType('A empresa contrata'), null);
+  assert.equal(documentType('Eu recebo'), null);
+  assert.equal(documentType('Telefone para contato'), null);
+});
+
+test('tipo tolerante: o exato ganha do tolerado, mesmo mais abaixo na tabela; entre tolerados, a ordem da tabela', () => {
+  assert.equal(documentType('CONTRAT0 de locação ... RECIBO')?.pt, 'recibo');
+  assert.equal(documentType('B0LET0 FATUR4 ... COMPROVANTE')?.pt, 'comprovante');
+  assert.equal(documentType('CONTRAT0 ... RECIB0')?.pt, 'contrato');
+  assert.equal(documentType('REClBO  Recebi de Maria a quantia de R$ 50,00')?.pt, 'recibo');
+  assert.equal(documentType('R E C I B O ... A importância de R$ 100')?.pt, 'recibo');
+});
+
 test('tipo: texto vazio ou sem palavra da tabela', () => {
   assert.equal(documentType(''), null);
   assert.equal(documentType(undefined), null);
