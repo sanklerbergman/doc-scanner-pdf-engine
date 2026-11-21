@@ -20,7 +20,7 @@ export const TYPES = [
   { pt: 'certidao', en: 'certificate', words: ['CERTIDAO'] },
   { pt: 'contrato', en: 'contract', words: ['CONTRATO'] },
   { pt: 'declaracao', en: 'declaration', words: ['DECLARAÇAO'] },
-  { pt: 'recibo', en: 'receipt', words: ['RECIBO', 'RECEBI DE', 'RECEBEMOS DE', 'A QUANTIA DE', 'A IMPORTANCIA DE'] },
+  { pt: 'recibo', en: 'receipt', words: ['RECIBO', 'RECEBI DE', 'RECEBEMOS DE'], weak: ['A QUANTIA DE', 'A IMPORTANCIA DE'] },
   { pt: 'curriculo', en: 'resume', words: ['CURRICULO'] },
   { pt: 'comprovante', en: 'proof', words: ['COMPROVANTE'] },
 ];
@@ -37,18 +37,20 @@ const MISREAD_C = '[CG¢Q(]';
 const wordPattern = (words) => `(?<![\\p{L}\\p{N}])${words.split(' ').join('\\s+').replaceAll('Ç', MISREAD_C)}${words.endsWith(' DE') ? '(?![\\p{L}\\p{N}])' : ''}`;
 const PATTERNS = TYPES.map((type) => ({ type, re: new RegExp(type.words.map(wordPattern).join('|'), 'u') }));
 
-// Uma letra errada no título (#50): só palavra-chave de uma palavra e com 6 letras ou mais.
+// Casamento fraco (#50): uma letra errada no título, só em palavra-chave de uma palavra e com 6 letras ou mais, ou
+// expressão `weak` seguida de valor ("R$" ou número). Perde para qualquer casamento exato; entre fracos, vale a tabela.
 const TOLERANT_MIN = 6;
 const TOLERANT = TYPES.map((type) => ({
   type,
   keys: type.words.filter((words) => !words.includes(' ') && words.length >= TOLERANT_MIN).map((words) => words.replaceAll('Ç', 'C')),
+  weak: type.weak && new RegExp(type.weak.map((words) => `${wordPattern(words)}\\s+(?:R\\s?\\$|\\d)`).join('|'), 'u'),
 })).filter(({ keys }) => keys.length);
 
 // Palavras de verdade a uma letra de uma chave: nunca casam pela tolerância.
 const NOT_A_TYPE = new Set([
   'BOLETIM', 'RECEBIDO', 'RECEITA', 'CONTRATE', 'EXTRAIDO', 'CERTIFICADO', 'DECLARA', 'PROCURADOR', 'PROCURAR', 'HABILITADO', 'CURRICULAR',
   'RECEBO', 'RECIBA', 'RECIBE', 'RECITO', 'CONTRATA', 'CONTATO', 'CONTRAIO', 'CONTRITO', 'CONTRASTO', 'FARTURA', 'FATURE', 'FATURO', 'FATUA',
-  'BOLETA', 'BOLERO', 'EXTRATA', 'EXTRAIO', 'CURRICULA',
+  'BOLETA', 'BOLERO', 'EXTRATA', 'EXTRAIO', 'CURRICULA', 'DECLARARAO', 'DECLAMACAO', 'PROCURARAO', 'CONTRAPO', 'CONTRALTO', 'FATORA', 'COMPROVASTE',
 ]);
 
 // Uma letra trocada, faltando ou sobrando: tirado o começo e o fim iguais, sobra no máximo uma letra de cada lado.
@@ -61,11 +63,12 @@ function oneEdit(a, b) {
   return Math.max(a.length, b.length) - start - end === 1;
 }
 
-const nearKey = (word, key) => word.startsWith(key.slice(0, 2)) && oneEdit(word, key);
+// Futuro do verbo ("declararão", "procurarão") não é o substantivo em -AÇÃO.
+const nearKey = (word, key) => word.startsWith(key.slice(0, 2)) && oneEdit(word, key) && !(word.endsWith('ARAO') && key.endsWith('ACAO'));
 
 /**
- * O tipo do documento pelo texto, sem diferença de acento e maiúscula. Um tipo que casa exato ganha de um que casa só
- * com uma letra errada, mesmo mais abaixo na tabela.
+ * O tipo do documento pelo texto, sem diferença de acento e maiúscula. Um tipo que casa exato ganha de um casamento
+ * fraco (uma letra errada ou expressão com valor), mesmo mais abaixo na tabela.
  * @param {string} text
  * @returns {{pt: string, en: string} | null}
  */
@@ -75,7 +78,7 @@ export function documentType(text) {
   const exact = PATTERNS.find(({ re }) => re.test(upper));
   if (exact) return { pt: exact.type.pt, en: exact.type.en };
   const read = [...new Set(upper.match(/[\p{L}\p{N}]+/gu) ?? [])].filter((word) => !NOT_A_TYPE.has(word));
-  const near = TOLERANT.find(({ keys }) => keys.some((key) => read.some((word) => nearKey(word, key))));
+  const near = TOLERANT.find(({ keys, weak }) => weak?.test(upper) || keys.some((key) => read.some((word) => nearKey(word, key))));
   return near ? { pt: near.type.pt, en: near.type.en } : null;
 }
 

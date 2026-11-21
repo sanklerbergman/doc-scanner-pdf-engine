@@ -105,7 +105,7 @@ test('tipo tolerante: fora do limite não casa', () => {
 test('tipo tolerante: palavra de verdade perto de uma chave fica sem tipo', () => {
   for (const word of ['BOLETIM', 'RECEBIDO', 'RECEITA', 'CONTRATE', 'EXTRAIDO', 'CERTIFICADO', 'DECLARA', 'PROCURADOR', 'PROCURAR', 'HABILITADO', 'CURRICULAR',
     'RECEBO', 'RECIBA', 'RECIBE', 'RECITO', 'CONTRATA', 'CONTATO', 'CONTRAIO', 'CONTRITO', 'CONTRASTO', 'FARTURA', 'FATURE', 'FATURO', 'FATUA',
-    'BOLETA', 'BOLERO', 'EXTRATA', 'EXTRAIO', 'CURRICULA']) {
+    'BOLETA', 'BOLERO', 'EXTRATA', 'EXTRAIO', 'CURRICULA', 'DECLARARAO', 'DECLAMACAO', 'PROCURARAO', 'CONTRAPO', 'CONTRALTO', 'FATORA', 'COMPROVASTE']) {
     assert.equal(documentType(word), null, word);
     assert.equal(documentType(word.toLowerCase()), null, word);
   }
@@ -115,6 +115,33 @@ test('tipo tolerante: palavra de verdade perto de uma chave fica sem tipo', () =
   assert.equal(documentType('A empresa contrata'), null);
   assert.equal(documentType('Eu recebo'), null);
   assert.equal(documentType('Telefone para contato'), null);
+});
+
+test('tipo tolerante: futuro em -ARÃO não vira chave em -AÇÃO; o Ç mal lido continua casando', () => {
+  for (const text of ['declararão', 'DECLARARAO', 'Procurarão', 'PROCURARAO', 'As partes declararão o valor']) assert.equal(documentType(text), null, text);
+  for (const [text, pt] of [['DECLARAGAO', 'declaracao'], ['DECLARAÇAO', 'declaracao'], ['DECLARA0AO', 'declaracao'], ['DECLARACA0', 'declaracao'],
+    ['PROCURAGAO', 'procuracao'], ['PROCURA0AO', 'procuracao'], ['PROCURACA0', 'procuracao']]) {
+    assert.equal(documentType(text)?.pt, pt, text);
+  }
+});
+
+test('tipo tolerante: "a quantia de" e "a importância de" só com valor, e como casamento fraco', () => {
+  for (const text of ['a quantia de R$ 50,00', 'A importância de R$ 100', 'A IMPORTANCIA\nDE R$ 100', 'a quantia de 50 reais', 'a importância de 1.200,00']) {
+    assert.equal(documentType(text)?.pt, 'recibo', text);
+  }
+  for (const text of ['Destacamos a importância de manter o cadastro', 'a quantia de cinquenta reais', 'a importância de R', 'a quantia de']) {
+    assert.equal(documentType(text), null, text);
+  }
+  // Perde para qualquer exato, mesmo mais abaixo na tabela.
+  assert.equal(documentType('Currículo: destaco a importância de 10 anos de experiência')?.pt, 'curriculo');
+  assert.equal(documentType('Currículo: a importância de trabalhar em equipe')?.pt, 'curriculo');
+  assert.equal(documentType('Comprovante de depósito: a quantia de R$ 50,00')?.pt, 'comprovante');
+  // Entre fraco e uma letra, a ordem da tabela.
+  assert.equal(documentType('CONTRAT0 ... a quantia de R$ 10')?.pt, 'contrato');
+  assert.equal(documentType('CURRICUL0 ... a quantia de R$ 10')?.pt, 'recibo');
+  // "Recebi de" e "Recebemos de" seguem exatos: ganham de quem está mais abaixo na tabela.
+  assert.equal(documentType('Recebi de Maria ... Comprovante')?.pt, 'recibo');
+  assert.equal(documentType('Recebemos de Maria ... Currículo')?.pt, 'recibo');
 });
 
 test('tipo tolerante: o exato ganha do tolerado, mesmo mais abaixo na tabela; entre tolerados, a ordem da tabela', () => {
