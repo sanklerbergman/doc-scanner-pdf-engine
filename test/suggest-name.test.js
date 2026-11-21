@@ -47,6 +47,22 @@ test('tipo: casa no começo de uma palavra, não no meio; expressão com quebra 
   assert.equal(documentType('NOTAFISCAL'), null);
 });
 
+test('tipo: o fim da palavra mal lido pelo OCR em inglês (Ç virou G) ainda casa', () => {
+  // Leitura real do OCR eng na página /en/ (2026-11-20).
+  assert.deepEqual(documentType('CARTEIRA NACIONAL DE HABILITAGAO'), { pt: 'cnh', en: 'driver-license' });
+  assert.equal(suggestName({ text: 'CARTEIRA NACIONAL\nDE HABILITAGAO', date, lang: 'en' }).name, 'driver-license-2026-11-20');
+  assert.equal(documentType('CARTEIRA NACIONAL DE HABILITA¢AO')?.pt, 'cnh');
+  assert.equal(documentType('DECLARAGAO DE RESIDENCIA')?.pt, 'declaracao');
+  assert.equal(documentType('Declara¢ao')?.pt, 'declaracao');
+  assert.equal(documentType('PROCURAGAO AD JUDICIA')?.pt, 'procuracao');
+  assert.equal(documentType('CERTIDAO DE NASCIMENTO')?.pt, 'certidao');
+  // Sem falso positivo: o verbo e o cargo não viram declaração nem procuração.
+  assert.equal(documentType('O inquilino declara que recebeu o recibo')?.pt, 'recibo');
+  assert.equal(documentType('Procurador: fulano. Recibo')?.pt, 'recibo');
+  assert.equal(documentType('procurar o recibo')?.pt, 'recibo');
+  assert.equal(documentType('HABILITADO a dirigir'), null);
+});
+
 test('tipo: texto vazio ou sem palavra da tabela', () => {
   assert.equal(documentType(''), null);
   assert.equal(documentType(undefined), null);

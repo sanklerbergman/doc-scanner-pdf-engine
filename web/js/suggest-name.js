@@ -10,16 +10,16 @@ export const SAFE_MAX = 50;
 // todos os outros (boleto, nota, extrato).
 export const TYPES = [
   { pt: 'rg', en: 'id-card', words: ['REGISTRO GERAL', 'CARTEIRA DE IDENTIDADE'] },
-  { pt: 'cnh', en: 'driver-license', words: ['CARTEIRA NACIONAL DE HABILITACAO'] },
+  { pt: 'cnh', en: 'driver-license', words: ['CARTEIRA NACIONAL DE HABILITA'] },
   { pt: 'contracheque', en: 'payslip', words: ['CONTRACHEQUE', 'HOLERITE', 'DEMONSTRATIVO DE PAGAMENTO'] },
   { pt: 'nota-fiscal', en: 'invoice', words: ['NOTA FISCAL', 'DANFE'] },
   { pt: 'boleto', en: 'bank-slip', words: ['BOLETO'] },
   { pt: 'fatura', en: 'bill', words: ['FATURA'] },
   { pt: 'extrato', en: 'statement', words: ['EXTRATO'] },
-  { pt: 'procuracao', en: 'power-of-attorney', words: ['PROCURACAO'] },
+  { pt: 'procuracao', en: 'power-of-attorney', words: ['PROCURAÇAO'] },
   { pt: 'certidao', en: 'certificate', words: ['CERTIDAO'] },
   { pt: 'contrato', en: 'contract', words: ['CONTRATO'] },
-  { pt: 'declaracao', en: 'declaration', words: ['DECLARACAO'] },
+  { pt: 'declaracao', en: 'declaration', words: ['DECLARAÇAO'] },
   { pt: 'recibo', en: 'receipt', words: ['RECIBO'] },
   { pt: 'curriculo', en: 'resume', words: ['CURRICULO'] },
   { pt: 'comprovante', en: 'proof', words: ['COMPROVANTE'] },
@@ -29,10 +29,13 @@ export const TYPES = [
 const unaccent = (text) => text.normalize('NFD').replace(/\p{M}+/gu, '');
 
 // Cada palavra casa no começo de uma palavra do texto ("CONTRATOS" casa, "SUBCONTRATO" não); entre as palavras de
-// uma expressão, qualquer espaço ou quebra de linha.
+// uma expressão, qualquer espaço ou quebra de linha. O OCR em inglês (página /en/) lê o "Ç" como "G"
+// ("HABILITAGAO", "DECLARAGAO"): na tabela, "Ç" aceita o C e as leituras erradas dele; a CNH casa só até
+// "HABILITA", o que já basta depois de "CARTEIRA NACIONAL DE".
+const MISREAD_C = '[CG¢Q(]';
 const PATTERNS = TYPES.map((type) => ({
   type,
-  re: new RegExp(type.words.map((words) => `(?<![\\p{L}\\p{N}])${words.split(' ').join('\\s+')}`).join('|'), 'u'),
+  re: new RegExp(type.words.map((words) => `(?<![\\p{L}\\p{N}])${words.split(' ').join('\\s+').replaceAll('Ç', MISREAD_C)}`).join('|'), 'u'),
 }));
 
 /**
