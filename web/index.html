@@ -177,10 +177,13 @@
               <option value="high">Alta (arquivo maior)</option>
             </select>
           </fieldset>
-          <label class="field">
-            <span>Nome do arquivo</span>
-            <input id="file-name" type="text" value="documento" maxlength="80" autocomplete="off" spellcheck="false">
-          </label>
+          <!-- Nome sugerido pelo conteúdo ou pelo nome do arquivo (#43, js/app.js): a nota diz de onde veio, ou oferece o
+               nome seguro para sistemas quando a pessoa digita acento, espaço ou maiúscula. -->
+          <div class="field">
+            <label for="file-name">Nome do arquivo</label>
+            <input id="file-name" type="text" value="documento" maxlength="80" autocomplete="off" spellcheck="false" aria-describedby="file-name-note">
+            <p id="file-name-note" class="field-note" hidden></p>
+          </div>
           <p id="quality-tip" class="tip field-wide" hidden>
             <span><strong>Página comprida ou com letra miúda:</strong> na qualidade Alta o texto pequeno sai mais nítido (o arquivo fica maior).</span>
             <button id="quality-tip-apply" type="button" class="btn">Usar qualidade Alta</button>
@@ -640,7 +643,7 @@
   <footer class="site-footer">
     <div class="wrap">
       <p>Feito pela comunidade, para a comunidade. Código aberto sob licença MIT — <a data-repo-link href="#" rel="noopener noreferrer">contribua no GitHub</a>.</p>
-      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">5.10.2</a></p>
+      <p class="version">Versão <a data-release-link href="#" rel="noopener noreferrer">5.11.0</a></p>
       <p class="signature"><a href="https://sankler.com.br" rel="noopener noreferrer">por <picture><source srcset="sankler-logo-reduzido-fundo-escuro.svg" media="(prefers-color-scheme: dark)"><img src="sankler-logo-reduzido-fundo-claro.svg" alt="Sankler" width="114" height="18"></picture></a></p>
     </div>
   </footer>

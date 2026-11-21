@@ -14,6 +14,7 @@ import { plainText, linesText, documentText, looksLikeForm } from './page-text.j
 import { textWidth } from './fonts.js';
 import { STAMP_POSITIONS, stampLayout, placeStamp, stampPageIndex, stampCharacters } from './stamp.js';
 import { ocrWorkers, progressNote } from './ocr-plan.js';
+import { suggestName, safeName, needsSafeName } from './suggest-name.js';
 import { moveItem, setupReorder } from './reorder.js';
 import { paintEdits, rotateEdits, fileExtras, editCharacters, redactEdits } from './edits.js';
 import './edit-types.js';
@@ -104,6 +105,7 @@ const els = {
   margin: $('#margin'),
   quality: $('#quality'),
   fileName: $('#file-name'),
+  fileNameNote: $('#file-name-note'),
   generate: $('#generate'),
   result: $('#result'),
   resultInfo: $('#result-info'),
@@ -364,6 +366,7 @@ async function addFiles(fileList) {
   if (compressTipNews) messages.push(compressTipNews);
   compressTipNews = '';
   announce(messages.join(' '), failed.length || documentErrors.length ? 'error' : 'info');
+  await suggestFileName();
 }
 
 function imagesMessage(count, cropped) {
@@ -1334,7 +1337,13 @@ function protectionPassword() {
   return password;
 }
 els.quality.addEventListener('change', updateQualityTip);
-els.fileName.addEventListener('input', discardPdf);
+els.fileName.addEventListener('input', () => {
+  discardPdf();
+  nameChosen = true;
+  suggestRun++; // uma sugestão ainda em andamento não troca mais o campo
+  const typed = baseFileName();
+  showNameNote('', needsSafeName(typed) ? safeName(typed, { fallback: t('documento') }) : '');
+});
 
 // "Limpar tudo" pede um segundo toque em vez de abrir um diálogo.
 let clearTimer;
@@ -1354,6 +1363,7 @@ els.clear.addEventListener('click', () => {
   state.compressChosen = false;
   els.pdfCompress.value = 'none';
   discardPdf();
+  forgetFileName();
   renderPages();
   announce(t('Tudo limpo. Nada ficou guardado.'));
 });
@@ -1368,6 +1378,71 @@ function disarmClear() {
 
 function baseFileName() {
   return els.fileName.value.trim().replace(/\.pdf$/i, '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-') || t('documento');
+}
+
+// ---------- Nome do arquivo sugerido (#43) ----------
+// Enquanto a pessoa não digita no campo, o nome sai do tipo do documento (texto da primeira página que tem texto) ou
+// do nome do primeiro arquivo, com a data de hoje (suggest-name.js). É recalculado ao adicionar arquivos e quando o
+// OCR termina de ler (gerar com OCR, procurar dados). Só usa o texto que o app já tem: não roda OCR para isso. Nada
+// fica guardado: "Limpar tudo" e recarregar a página voltam ao "documento".
+let nameChosen = false; // a pessoa digitou no campo: nenhuma sugestão troca mais o nome
+let suggestRun = 0; // a sugestão mais nova: uma mais antiga que termine depois não vale
+
+async function suggestFileName() {
+  if (nameChosen) return;
+  const run = ++suggestRun;
+  let text = '';
+  for (const page of [...state.pages]) {
+    text = await textForName(page).catch(() => '');
+    if (run !== suggestRun) return;
+    if (text.trim()) break;
+  }
+  const first = state.pages[0];
+  const suggestion = suggestName({ text, fileName: first ? (isPhoto(first) ? first.file.name : first.name) : '', date: new Date(), lang: LANG });
+  const name = suggestion?.name ?? t('documento');
+  if (els.fileName.value !== name) {
+    els.fileName.value = name;
+    discardPdf(); // o PDF já gerado tem o nome antigo
+    renderOutputPreview();
+  }
+  showNameNote(!suggestion ? '' : suggestion.from === 'content' ? t('Sugerido pelo conteúdo') : t('Sugerido pelo nome do arquivo'));
+}
+
+// Texto da página que o app já tem: Word, pelo layout (sem o que está sob as tarjas); OCR já feito e em dia; PDF com
+// texto e sem tarja, pelo PDF.js. Foto sem OCR: nenhum.
+async function textForName(page) {
+  if (isDocument(page)) return documentText(page.layout, page.redactions?.length ? toUnrotated(page.redactions, page.rotation) : []);
+  if (page.ocr?.key === ocrKey(page) && page.ocr.words?.length) return plainText(page.ocr.words);
+  if (page.kind !== 'pdf' || page.redactions?.length) return '';
+  const tools = await loadPdfTools();
+  const { items, width, height } = await tools.pdfPageTextItems(page.doc, page.index);
+  return linesText(items, { width, height });
+}
+
+// A nota embaixo do campo: de onde veio a sugestão, ou o botão que troca o nome digitado pelo nome seguro.
+function showNameNote(text, safe = '') {
+  if (safe) {
+    const button = el('button', { type: 'button', className: 'note-link', textContent: t('Usar nome seguro para sistemas ({name})', { name: safe }) });
+    button.addEventListener('click', () => {
+      els.fileName.value = safe;
+      discardPdf();
+      renderOutputPreview();
+      showNameNote('');
+      els.fileName.focus();
+    });
+    els.fileNameNote.replaceChildren(button);
+  } else {
+    els.fileNameNote.textContent = text;
+  }
+  els.fileNameNote.hidden = !text && !safe;
+}
+
+// "Limpar tudo": o campo volta ao "documento", sem nota, e a próxima leva de arquivos sugere de novo.
+function forgetFileName() {
+  nameChosen = false;
+  suggestRun++;
+  els.fileName.value = t('documento');
+  showNameNote('');
 }
 
 // Um PDF com tudo, um por página ou um por intervalo: posições da lista em cada arquivo.
@@ -1658,6 +1733,8 @@ async function generate({ signer, stamp = null, append = null } = {}) {
     ocr = null;
     els.cancel.hidden = true;
     state.cancel = null;
+    // O OCR acabou de ler: a sugestão de nome vê o texto novo antes de o nome dos arquivos sair (#43).
+    if (toRead.length) await suggestFileName();
 
     // Edições de cada página em cada arquivo: as da própria página e as de "em todas as páginas" (all-pages.js), que
     // contam a posição dentro do arquivo. Páginas montadas acima (foto, Word, PDF tarjado) recebem as edições na hora
@@ -2541,6 +2618,7 @@ async function findData() {
     els.findData.focus();
     return;
   }
+  await suggestFileName(); // o OCR pode ter acabado de ler páginas (#43)
   const missed = !unreadable.length ? '' : ` ${plural(unreadable.length, 'Não deu para ler o texto da página {pages}.', 'Não deu para ler o texto das páginas {pages}.', { pages: unreadable.join(', ') })}`;
   if (!groups.size) {
     announce(`${t('Não achei CPF, CNPJ, e-mail, telefone, CEP nem cartão no texto das páginas.')}${missed}`);

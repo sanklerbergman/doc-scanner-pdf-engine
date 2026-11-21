@@ -498,6 +498,11 @@ select option { background: var(--surface); color: var(--text); }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 0.875rem; font-weight: 600; min-width: 0; }
 .field select, .field input, .field textarea { font-weight: normal; font-size: 1rem; }
 .field-wide { grid-column: 1 / -1; }
+/* Nota do nome do arquivo (#43): o nome seguro para sistemas, como um link (área de toque de 44 px). */
+.note-link {
+  min-height: 44px; padding: 0; border: 0; background: none; color: var(--accent-ink); font: inherit; text-align: left;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.22em; cursor: pointer;
+}
 .check-field { gap: 2px; }
 .check-field .field-note { padding-left: 32px; }
 .tip {
